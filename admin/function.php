@@ -21,8 +21,8 @@ function sendTeacherCredentials(string $email, string $defaultPassword): bool {
         $mail->isSMTP();
         $mail->Host       = 'smtp.gmail.com';
         $mail->SMTPAuth   = true;
-        $mail->Username   = 'banahis2008@gmail.com';
-        $mail->Password   = 'hsun enai nmca lyem';
+        $mail->Username   = 'Your_Gmail';
+        $mail->Password   = '"Your_Google_app_pass"';
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = 587;
 
@@ -65,8 +65,8 @@ function sendStudentCredentials(string $email, string $defaultPassword): bool {
         $mail->isSMTP();
         $mail->Host       = 'smtp.gmail.com';
         $mail->SMTPAuth   = true;
-        $mail->Username   = 'banahis2008@gmail.com';
-        $mail->Password   = 'hsun enai nmca lyem';
+        $mail->Username   = 'Your_Gmail';
+        $mail->Password   = 'Your_google_app_pass';
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = 587;
 
