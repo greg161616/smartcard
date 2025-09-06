@@ -29,8 +29,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['grade_file'])) {
         } else {
             try {
                 // Load the spreadsheet
-                $spreadsheet = IOFactory::load($file['tmp_name']);
-                
+               // $spreadsheet = IOFactory::load($file['tmp_name']);
+                $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($file['tmp_name']);
+                $reader->setReadDataOnly(true);
+                $spreadsheet = $reader->load($file['tmp_name']);
+
                 // Determine which sheet to use based on quarter selection
                 $quarter_sheet_name = null;
                 $sheet_names = $spreadsheet->getSheetNames();
@@ -49,7 +52,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['grade_file'])) {
                 $quarter_sheet = $spreadsheet->getSheetByName($quarter_sheet_name);
                 
                 // Extract subject and school year from the quarter sheet
-                $subject_name = trim($quarter_sheet->getCell('AG7')->getValue());
+                $raw = $quarter_sheet->getCell('AG7')->getValue();
+                if (is_string($raw) && str_starts_with($raw, '=')) {
+                    $raw = $quarter_sheet->getCell('AG7')->getOldCalculatedValue();
+                }
+                $subject_name = trim((string)$raw);
+                if ($subject_name === '' || strtoupper($subject_name) === '#REF!') {
+                    throw new Exception('Could not read subject from INPUT DATA!');
+                }
 
                 $syRaw = $quarter_sheet->getCell('AG5')->getValue();
                 if (is_string($syRaw) && str_starts_with($syRaw, '=')) {
@@ -143,12 +153,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['grade_file'])) {
                 if (!$insert_hps->execute()) {
                     throw new Exception("Error inserting highest possible scores: " . $insert_hps->error);
                 }
+
+                $hpsID = $conn->insert_id; // Get the last inserted highest_possible_score ID
                 
                 // Process student data (male students rows 12-61, female students rows 63-112)
                 for ($row = 12; $row <= 112; $row++) {
                     if ($row == 62) continue; // Skip the gap between male and female
-                    
-                    $student_name = trim($quarter_sheet->getCell('B' . $row)->getValue());
+
+                    $student_name = trim($quarter_sheet->getCell('B' . $row)->getCalculatedValue());
                     if (empty($student_name)) continue;
                     
                     // Parse student name
@@ -192,9 +204,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['grade_file'])) {
                         'ww8' => $quarter_sheet->getCell('M' . $row)->getValue(),
                         'ww9' => $quarter_sheet->getCell('N' . $row)->getValue(),
                         'ww10' => $quarter_sheet->getCell('O' . $row)->getValue(),
-                        'ww_total' => $quarter_sheet->getCell('P' . $row)->getValue(),
-                        'ww_ps' => $quarter_sheet->getCell('Q' . $row)->getValue(),
-                        'ww_ws' => $quarter_sheet->getCell('R' . $row)->getValue(),
+                        'ww_total' => $quarter_sheet->getCell('P' . $row)->getCalculatedValue(),
+                        'ww_ps' => $quarter_sheet->getCell('Q' . $row)->getCalculatedValue(),
+                        'ww_ws' => $quarter_sheet->getCell('R' . $row)->getCalculatedValue(),
                         'pt1' => $quarter_sheet->getCell('S' . $row)->getValue(),
                         'pt2' => $quarter_sheet->getCell('T' . $row)->getValue(),
                         'pt3' => $quarter_sheet->getCell('U' . $row)->getValue(),
@@ -205,23 +217,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['grade_file'])) {
                         'pt8' => $quarter_sheet->getCell('Z' . $row)->getValue(),
                         'pt9' => $quarter_sheet->getCell('AA' . $row)->getValue(),
                         'pt10' => $quarter_sheet->getCell('AB' . $row)->getValue(),
-                        'pt_total' => $quarter_sheet->getCell('AC' . $row)->getValue(),
-                        'pt_ps' => $quarter_sheet->getCell('AD' . $row)->getValue(),
-                        'pt_ws' => $quarter_sheet->getCell('AE' . $row)->getValue(),
+                        'pt_total' => $quarter_sheet->getCell('AC' . $row)->getCalculatedValue(),
+                        'pt_ps' => $quarter_sheet->getCell('AD' . $row)->getCalculatedValue(),
+                        'pt_ws' => $quarter_sheet->getCell('AE' . $row)->getCalculatedValue(),
                         'qa1' => $quarter_sheet->getCell('AF' . $row)->getValue(),
-                        'qa_ps' => $quarter_sheet->getCell('AG' . $row)->getValue(),
-                        'qa_ws' => $quarter_sheet->getCell('AH' . $row)->getValue(),
-                        'initial_grade' => $quarter_sheet->getCell('AI' . $row)->getValue(),
-                        'quarterly_grade' => $quarter_sheet->getCell('AJ' . $row)->getValue()
+                        'qa_ps' => $quarter_sheet->getCell('AG' . $row)->getCalculatedValue(),
+                        'qa_ws' => $quarter_sheet->getCell('AH' . $row)->getCalculatedValue(),
+                        'initial_grade' => $quarter_sheet->getCell('AI' . $row)->getCalculatedValue(),
+                        'quarterly_grade' => $quarter_sheet->getCell('AJ' . $row)->getCalculatedValue()
                     ];
                     
                     // Save student grades
-                    $insert_grades = $conn->prepare("INSERT INTO grades_details 
-                        (studentID, subjectID, teacherID, quarter, school_year, 
+                    $insert_grades_details = $conn->prepare("INSERT INTO grades_details 
+                        (hpsID, studentID, subjectID, teacherID, quarter, school_year, 
                         ww1, ww2, ww3, ww4, ww5, ww6, ww7, ww8, ww9, ww10, ww_total, ww_ps, ww_ws,
                         pt1, pt2, pt3, pt4, pt5, pt6, pt7, pt8, pt9, pt10, pt_total, pt_ps, pt_ws,
                         qa1, qa_ps, qa_ws, initial_grade, quarterly_grade, uploaded)
-                        VALUES (?, ?, ?, ?, ?, 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 
                         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
                         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
                         ?, ?, ?, ?, ?, NOW())
@@ -236,9 +248,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['grade_file'])) {
                         initial_grade=VALUES(initial_grade), quarterly_grade=VALUES(quarterly_grade),
                         uploaded=NOW()");
                     
-                    $insert_grades->bind_param(
-                        "iiiisiiiiiiiiiiiddiiiiiiiiiiiddidd", 
-                        $student_id, $subject_id, $teacher_id, $quarter, $school_year,
+                    $insert_grades_details->bind_param(
+                        "iiiiisiiiiiiiiiiiddiiiiiiiiiiiddidddi", 
+                        $hpsID, $student_id, $subject_id, $teacher_id, $quarter, $school_year,
                         $student_scores['ww1'], $student_scores['ww2'], $student_scores['ww3'], $student_scores['ww4'], $student_scores['ww5'],
                         $student_scores['ww6'], $student_scores['ww7'], $student_scores['ww8'], $student_scores['ww9'], $student_scores['ww10'],
                         $student_scores['ww_total'], $student_scores['ww_ps'], $student_scores['ww_ws'],
@@ -249,8 +261,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['grade_file'])) {
                         $student_scores['initial_grade'], $student_scores['quarterly_grade']
                     );
                     
-                    if (!$insert_grades->execute()) {
-                        throw new Exception("Error inserting student grades: " . $insert_grades->error);
+                    if (!$insert_grades_details->execute()) {
+                        throw new Exception("Error inserting student grades: " . $insert_grades_details->error);
                     }
                     
                     $students_processed++;
@@ -469,9 +481,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['grade_file'])) {
         // Set current quarter based on month
         const currentMonth = new Date().getMonth() + 1;
         let currentQuarter = 1;
-        if (currentMonth >= 4 && currentMonth <= 6) currentQuarter = 2;
-        else if (currentMonth >= 7 && currentMonth <= 9) currentQuarter = 3;
-        else if (currentMonth >= 10) currentQuarter = 4;
+        if (currentMonth >= 9 && currentMonth <= 10) currentQuarter = 2;
+        else if (currentMonth >= 11 && currentMonth <= 12) currentQuarter = 3;
+        else if (currentMonth >= 1) currentQuarter = 3;
         
         document.getElementById('quarter').value = currentQuarter;
     </script>
