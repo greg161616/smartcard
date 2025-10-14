@@ -108,5 +108,5 @@ if (isset($_POST['import_file'])) {
 }
 
 // go back to the list
-header("Location: ../admin/teacher.php");
+header("Location: ../head/teacher.php");
 exit;

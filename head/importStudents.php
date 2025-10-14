@@ -1,4 +1,9 @@
 <?php
+// Add at the very beginning of importStudents.php
+set_time_limit(600); // Increase timeout to 10 minutes
+ini_set('max_execution_time', 600);
+ini_set('memory_limit', '512M'); // Increase memory limit if needed
+
 session_start();
 
 require __DIR__ . '/../vendor/autoload.php';
@@ -41,7 +46,8 @@ if (isset($_POST['import_file'])) {
                     continue;
                 }
 
-                // Expect columns: [LRN, FirstName, MiddleName, LastName, Sex, Email, SectionID]
+                // Updated column mapping based on your file structure:
+                // [LRN, FirstName, MiddleName, LastName, Sex, Email, SectionName, GradeLevel]
                 [
                     $lRn,
                     $firstName,
@@ -49,14 +55,15 @@ if (isset($_POST['import_file'])) {
                     $lastName,
                     $sex,
                     $email,
-                    $sectionId
-                ] = array_pad($row, 7, null);
+                    $sectionName,
+                    $gradeLevel
+                ] = array_pad($row, 8, null);
 
-                // Basic validation
+                // Basic validation (middle name, grade level and section are optional)
                 if (empty($lRn) || empty($firstName) || empty($lastName) || 
                     empty($sex) || !in_array(strtolower($sex), ['male', 'female', 'm', 'f']) ||
-                    !filter_var($email, FILTER_VALIDATE_EMAIL) || !is_numeric($sectionId)) {
-                    $errors[] = "Row {$rowNum}: Missing or invalid fields (LRN: {$lRn}, Name: {$firstName} {$lastName}, Sex: {$sex}, Email: {$email}, SectionID: {$sectionId})";
+                    !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $errors[] = "Row {$rowNum}: Missing or invalid required fields (LRN: {$lRn}, Name: {$firstName} {$lastName}, Sex: {$sex}, Email: {$email})";
                     continue;
                 }
 
@@ -82,27 +89,51 @@ if (isset($_POST['import_file'])) {
                     $newUserId = $conn->insert_id;
                     $stmt1->close();
 
-                    // 2) Insert into student table (with Sex field)
+                    // 2) Insert into student table (with optional MiddleName)
                     $stmt2 = $conn->prepare("
                         INSERT INTO `student` (UserID, LRN, FirstName, MiddleName, LastName, Sex)
                         VALUES (?, ?, ?, ?, ?, ?)
                     ");
+                    // Handle empty middle name (set to NULL if empty)
+                    $middleName = empty($middleName) ? '' : $middleName;
                     $stmt2->bind_param("isssss", $newUserId, $lRn, $firstName, $middleName, $lastName, $sex);
                     $stmt2->execute();
                     $newStudentId = $conn->insert_id;
                     $stmt2->close();
 
-                    // 3) Insert into section_enrollment
-                    $currentYear = date('Y');
-                    $schoolYear = $currentYear . '-' . ($currentYear + 1);
-                    
-                    $stmt3 = $conn->prepare("
-                        INSERT INTO `section_enrollment` (SectionID, StudentID, SchoolYear, status)
-                        VALUES (?, ?, ?, 'active')
-                    ");
-                    $stmt3->bind_param("iis", $sectionId, $newStudentId, $schoolYear);
-                    $stmt3->execute();
-                    $stmt3->close();
+                    // 3) Only create section enrollment if both grade level and section are provided AND section exists
+                    $sectionId = '';
+                    if (!empty($gradeLevel) && !empty($sectionName)) {
+                        // Check if section exists
+                        $stmtCheckSection = $conn->prepare("
+                            SELECT SectionID FROM section 
+                            WHERE SectionName = ? AND GradeLevel = ?
+                        ");
+                        $stmtCheckSection->bind_param("ss", $sectionName, $gradeLevel);
+                        $stmtCheckSection->execute();
+                        $result = $stmtCheckSection->get_result();
+                        
+                        if ($result->num_rows > 0) {
+                            $section = $result->fetch_assoc();
+                            $sectionId = $section['SectionID'];
+                            
+                            // Insert into section_enrollment
+                            $currentYear = date('Y');
+                            $schoolYear = $currentYear . '-' . ($currentYear + 1);
+                            
+                            $stmt3 = $conn->prepare("
+                                INSERT INTO `section_enrollment` (SectionID, StudentID, SchoolYear, status)
+                                VALUES (?, ?, ?, 'active')
+                            ");
+                            $stmt3->bind_param("iis", $sectionId, $newStudentId, $schoolYear);
+                            $stmt3->execute();
+                            $stmt3->close();
+                        } else {
+                            // Section doesn't exist - add warning but continue with import
+                            $errors[] = "Row {$rowNum}: Section '{$sectionName}' for grade level '{$gradeLevel}' does not exist. Student was imported without section assignment.";
+                        }
+                        $stmtCheckSection->close();
+                    }
 
                     $conn->commit();
                     $success++;
@@ -119,17 +150,23 @@ if (isset($_POST['import_file'])) {
                 }
             }
 
-            $_SESSION['message'] = "{$success} student(s) imported successfully.";
+            // Return JSON response instead of redirecting
             if (!empty($errors)) {
-                $_SESSION['error'] = implode('<br>', $errors);
+                echo json_encode(['success' => false, 'message' => implode('<br>', $errors)]);
+            } else {
+                echo json_encode(['success' => true, 'message' => "{$success} student(s) imported successfully."]);
             }
+            exit;
+            
         } catch (Exception $e) {
-            $_SESSION['error'] = "Import failed: " . $e->getMessage();
+            echo json_encode(['success' => false, 'message' => "Import failed: " . $e->getMessage()]);
+            exit;
         }
     } else {
-        $_SESSION['error'] = "No file uploaded or upload error.";
+        echo json_encode(['success' => false, 'message' => "No file uploaded or upload error."]);
+        exit;
     }
-
-    header("Location: studentlist.php");
+} else {
+    echo json_encode(['success' => false, 'message' => "Invalid request."]);
     exit;
 }

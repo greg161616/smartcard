@@ -1,491 +1,330 @@
 <?php
 session_start();
-require_once 'config.php';
+include 'config.php'; 
 
-include 'vendor/autoload.php';
-
-use PhpOffice\PhpSpreadsheet\IOFactory;
-
-$teacher_id = $_SESSION['teacher_id'] ?? 11;
-$message = '';
-$message_type = 'info';
-$students_not_found = [];
-$students_processed = 0;
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['grade_file'])) {
-    $quarter = $_POST['quarter'];
-    $file = $_FILES['grade_file'];
-    
-    if ($file['error'] !== UPLOAD_ERR_OK) {
-        $message = "File upload failed with error code: " . $file['error'];
-        $message_type = 'danger';
-    } else {
-        $allowed_extensions = ['xlsx', 'xls'];
-        $file_extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-        
-        if (!in_array($file_extension, $allowed_extensions)) {
-            $message = "Invalid file format. Please upload an Excel file (.xlsx or .xls).";
-            $message_type = 'danger';
-        } else {
-            try {
-                // Load the spreadsheet
-               // $spreadsheet = IOFactory::load($file['tmp_name']);
-                $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($file['tmp_name']);
-                $reader->setReadDataOnly(true);
-                $spreadsheet = $reader->load($file['tmp_name']);
-
-                // Determine which sheet to use based on quarter selection
-                $quarter_sheet_name = null;
-                $sheet_names = $spreadsheet->getSheetNames();
-                
-                foreach ($sheet_names as $sheet_name) {
-                    if (strpos(strtoupper($sheet_name), '_Q' . $quarter) !== false) {
-                        $quarter_sheet_name = $sheet_name;
-                        break;
-                    }
-                }
-                
-                if (!$quarter_sheet_name) {
-                    throw new Exception("No sheet found for Quarter $quarter. Sheet names should contain '_Q$quarter'.");
-                }
-                
-                $quarter_sheet = $spreadsheet->getSheetByName($quarter_sheet_name);
-                
-                // Extract subject and school year from the quarter sheet
-                $raw = $quarter_sheet->getCell('AG7')->getValue();
-                if (is_string($raw) && str_starts_with($raw, '=')) {
-                    $raw = $quarter_sheet->getCell('AG7')->getOldCalculatedValue();
-                }
-                $subject_name = trim((string)$raw);
-                if ($subject_name === '' || strtoupper($subject_name) === '#REF!') {
-                    throw new Exception('Could not read subject from INPUT DATA!');
-                }
-
-                $syRaw = $quarter_sheet->getCell('AG5')->getValue();
-                if (is_string($syRaw) && str_starts_with($syRaw, '=')) {
-                    $syRaw = $quarter_sheet->getCell('AG5')->getOldCalculatedValue();
-                }
-                $school_year = trim((string)$syRaw);
-                if ($school_year === '' || strtoupper($school_year) === '#REF!') {
-                    throw new Exception('Could not read school year');
-                }
-
-                if (empty($subject_name) || empty($school_year)) {
-                    throw new Exception("Could not extract subject or school year from the selected quarter sheet.");
-                }
-                
-                // Get subject ID (create if doesn't exist)
-                $subject_stmt = $conn->prepare("SELECT SubjectID FROM subject WHERE SubjectName = ? AND teacherID = ?");
-                $subject_stmt->bind_param("si", $subject_name, $teacher_id);
-                $subject_stmt->execute();
-                $subject_result = $subject_stmt->get_result();
-                $subject = $subject_result->fetch_assoc();
-                
-                if (!$subject) {
-                    $message = "Subject '$subject_name' not found for the logged-in teacher."; 
-                    $message_type = 'danger';
-                    throw new Exception($message);
-                } else {
-                    $subject_id = $subject['SubjectID'];
-                }
-                
-                // Extract highest possible scores (row 10)
-                $highest_scores = [
-                    'ww1' => $quarter_sheet->getCell('F10')->getValue(),
-                    'ww2' => $quarter_sheet->getCell('G10')->getValue(),
-                    'ww3' => $quarter_sheet->getCell('H10')->getValue(),
-                    'ww4' => $quarter_sheet->getCell('I10')->getValue(),
-                    'ww5' => $quarter_sheet->getCell('J10')->getValue(),
-                    'ww6' => $quarter_sheet->getCell('K10')->getValue(),
-                    'ww7' => $quarter_sheet->getCell('L10')->getValue(),
-                    'ww8' => $quarter_sheet->getCell('M10')->getValue(),
-                    'ww9' => $quarter_sheet->getCell('N10')->getValue(),
-                    'ww10' => $quarter_sheet->getCell('O10')->getValue(),
-                    'ww_total' => $quarter_sheet->getCell('P10')->getValue(),
-                    'ww_ps' => $quarter_sheet->getCell('Q10')->getValue(),
-                    'ww_ws' => $quarter_sheet->getCell('R10')->getValue(),
-                    'pt1' => $quarter_sheet->getCell('S10')->getValue(),
-                    'pt2' => $quarter_sheet->getCell('T10')->getValue(),
-                    'pt3' => $quarter_sheet->getCell('U10')->getValue(),
-                    'pt4' => $quarter_sheet->getCell('V10')->getValue(),
-                    'pt5' => $quarter_sheet->getCell('W10')->getValue(),
-                    'pt6' => $quarter_sheet->getCell('X10')->getValue(),
-                    'pt7' => $quarter_sheet->getCell('Y10')->getValue(),
-                    'pt8' => $quarter_sheet->getCell('Z10')->getValue(),
-                    'pt9' => $quarter_sheet->getCell('AA10')->getValue(),
-                    'pt10' => $quarter_sheet->getCell('AB10')->getValue(),
-                    'pt_total' => $quarter_sheet->getCell('AC10')->getValue(),
-                    'pt_ps' => $quarter_sheet->getCell('AD10')->getValue(),
-                    'pt_ws' => $quarter_sheet->getCell('AE10')->getValue(),
-                    'qa1' => $quarter_sheet->getCell('AF10')->getValue(),
-                    'qa_ps' => $quarter_sheet->getCell('AG10')->getValue(),
-                    'qa_ws' => $quarter_sheet->getCell('AH10')->getValue()
-                ];
-                
-                // Save highest possible scores
-                $insert_hps = $conn->prepare("INSERT INTO highest_possible_score 
-                    (teacherID, subjectID, quarter, school_year, ww1, ww2, ww3, ww4, ww5, ww6, ww7, ww8, ww9, ww10, ww_total, ww_ps, ww_ws, 
-                    pt1, pt2, pt3, pt4, pt5, pt6, pt7, pt8, pt9, pt10, pt_total, pt_ps, pt_ws, 
-                    qa1, qa_ps, qa_ws, uploaded) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-                    ON DUPLICATE KEY UPDATE
-                    ww1=VALUES(ww1), ww2=VALUES(ww2), ww3=VALUES(ww3), ww4=VALUES(ww4), ww5=VALUES(ww5),
-                    ww6=VALUES(ww6), ww7=VALUES(ww7), ww8=VALUES(ww8), ww9=VALUES(ww9), ww10=VALUES(ww10),
-                    ww_total=VALUES(ww_total), ww_ps=VALUES(ww_ps), ww_ws=VALUES(ww_ws),
-                    pt1=VALUES(pt1), pt2=VALUES(pt2), pt3=VALUES(pt3), pt4=VALUES(pt4), pt5=VALUES(pt5),
-                    pt6=VALUES(pt6), pt7=VALUES(pt7), pt8=VALUES(pt8), pt9=VALUES(pt9), pt10=VALUES(pt10),
-                    pt_total=VALUES(pt_total), pt_ps=VALUES(pt_ps), pt_ws=VALUES(pt_ws),
-                    qa1=VALUES(qa1), qa_ps=VALUES(qa_ps), qa_ws=VALUES(qa_ws),
-                    uploaded=NOW()");
-                
-                $insert_hps->bind_param(
-                    "iiisiiiiiiiiiiiddiiiiiiiiiiiddidd", 
-                    $teacher_id, $subject_id, $quarter, $school_year,
-                    $highest_scores['ww1'], $highest_scores['ww2'], $highest_scores['ww3'], $highest_scores['ww4'], $highest_scores['ww5'],
-                    $highest_scores['ww6'], $highest_scores['ww7'], $highest_scores['ww8'], $highest_scores['ww9'], $highest_scores['ww10'],
-                    $highest_scores['ww_total'], $highest_scores['ww_ps'], $highest_scores['ww_ws'],
-                    $highest_scores['pt1'], $highest_scores['pt2'], $highest_scores['pt3'], $highest_scores['pt4'], $highest_scores['pt5'],
-                    $highest_scores['pt6'], $highest_scores['pt7'], $highest_scores['pt8'], $highest_scores['pt9'], $highest_scores['pt10'],
-                    $highest_scores['pt_total'], $highest_scores['pt_ps'], $highest_scores['pt_ws'],
-                    $highest_scores['qa1'], $highest_scores['qa_ps'], $highest_scores['qa_ws']
-                );
-                
-                if (!$insert_hps->execute()) {
-                    throw new Exception("Error inserting highest possible scores: " . $insert_hps->error);
-                }
-
-                $hpsID = $conn->insert_id; // Get the last inserted highest_possible_score ID
-                
-                // Process student data (male students rows 12-61, female students rows 63-112)
-                for ($row = 12; $row <= 112; $row++) {
-                    if ($row == 62) continue; // Skip the gap between male and female
-
-                    $student_name = trim($quarter_sheet->getCell('B' . $row)->getCalculatedValue());
-                    if (empty($student_name)) continue;
-                    
-                    // Parse student name
-
-                    if (str_contains($student_name, ',')) {
-                        [$last_name, $first_name] = array_map('trim', explode(',', $student_name, 2));
-                        $first_name = explode(' ', $first_name)[0];
-                    } else {
-                        $parts = explode(' ', $student_name);
-                        $first_name = array_shift($parts);
-                        $last_name  = array_pop($parts) ?: '';
-                    }
-                    
-                    // Find student in database
-                    $student_id = null;
-                    $student_stmt = $conn->prepare("SELECT StudentID FROM student 
-                    WHERE LOWER(TRIM(LastName)) = LOWER(TRIM(?))
-                    AND LOWER(TRIM(FirstName)) = LOWER(TRIM(?))
-           ");
-                    $student_stmt->bind_param("ss", $last_name, $first_name);
-                    $student_stmt->execute();
-                    $student_result = $student_stmt->get_result();
-                    
-                    if ($student_result->num_rows > 0) {
-                        $student = $student_result->fetch_assoc();
-                        $student_id = $student['StudentID'];
-                    } else {
-                        $students_not_found[] = $student_name;
-                        continue;
-                    }
-                    
-                    // Extract student scores
-                    $student_scores = [
-                        'ww1' => $quarter_sheet->getCell('F' . $row)->getValue(),
-                        'ww2' => $quarter_sheet->getCell('G' . $row)->getValue(),
-                        'ww3' => $quarter_sheet->getCell('H' . $row)->getValue(),
-                        'ww4' => $quarter_sheet->getCell('I' . $row)->getValue(),
-                        'ww5' => $quarter_sheet->getCell('J' . $row)->getValue(),
-                        'ww6' => $quarter_sheet->getCell('K' . $row)->getValue(),
-                        'ww7' => $quarter_sheet->getCell('L' . $row)->getValue(),
-                        'ww8' => $quarter_sheet->getCell('M' . $row)->getValue(),
-                        'ww9' => $quarter_sheet->getCell('N' . $row)->getValue(),
-                        'ww10' => $quarter_sheet->getCell('O' . $row)->getValue(),
-                        'ww_total' => $quarter_sheet->getCell('P' . $row)->getCalculatedValue(),
-                        'ww_ps' => $quarter_sheet->getCell('Q' . $row)->getCalculatedValue(),
-                        'ww_ws' => $quarter_sheet->getCell('R' . $row)->getCalculatedValue(),
-                        'pt1' => $quarter_sheet->getCell('S' . $row)->getValue(),
-                        'pt2' => $quarter_sheet->getCell('T' . $row)->getValue(),
-                        'pt3' => $quarter_sheet->getCell('U' . $row)->getValue(),
-                        'pt4' => $quarter_sheet->getCell('V' . $row)->getValue(),
-                        'pt5' => $quarter_sheet->getCell('W' . $row)->getValue(),
-                        'pt6' => $quarter_sheet->getCell('X' . $row)->getValue(),
-                        'pt7' => $quarter_sheet->getCell('Y' . $row)->getValue(),
-                        'pt8' => $quarter_sheet->getCell('Z' . $row)->getValue(),
-                        'pt9' => $quarter_sheet->getCell('AA' . $row)->getValue(),
-                        'pt10' => $quarter_sheet->getCell('AB' . $row)->getValue(),
-                        'pt_total' => $quarter_sheet->getCell('AC' . $row)->getCalculatedValue(),
-                        'pt_ps' => $quarter_sheet->getCell('AD' . $row)->getCalculatedValue(),
-                        'pt_ws' => $quarter_sheet->getCell('AE' . $row)->getCalculatedValue(),
-                        'qa1' => $quarter_sheet->getCell('AF' . $row)->getValue(),
-                        'qa_ps' => $quarter_sheet->getCell('AG' . $row)->getCalculatedValue(),
-                        'qa_ws' => $quarter_sheet->getCell('AH' . $row)->getCalculatedValue(),
-                        'initial_grade' => $quarter_sheet->getCell('AI' . $row)->getCalculatedValue(),
-                        'quarterly_grade' => $quarter_sheet->getCell('AJ' . $row)->getCalculatedValue()
-                    ];
-                    
-                    // Save student grades
-                    $insert_grades_details = $conn->prepare("INSERT INTO grades_details 
-                        (hpsID, studentID, subjectID, teacherID, quarter, school_year, 
-                        ww1, ww2, ww3, ww4, ww5, ww6, ww7, ww8, ww9, ww10, ww_total, ww_ps, ww_ws,
-                        pt1, pt2, pt3, pt4, pt5, pt6, pt7, pt8, pt9, pt10, pt_total, pt_ps, pt_ws,
-                        qa1, qa_ps, qa_ws, initial_grade, quarterly_grade, uploaded)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, 
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
-                        ?, ?, ?, ?, ?, NOW())
-                        ON DUPLICATE KEY UPDATE
-                        ww1=VALUES(ww1), ww2=VALUES(ww2), ww3=VALUES(ww3), ww4=VALUES(ww4), ww5=VALUES(ww5),
-                        ww6=VALUES(ww6), ww7=VALUES(ww7), ww8=VALUES(ww8), ww9=VALUES(ww9), ww10=VALUES(ww10),
-                        ww_total=VALUES(ww_total), ww_ps=VALUES(ww_ps), ww_ws=VALUES(ww_ws),
-                        pt1=VALUES(pt1), pt2=VALUES(pt2), pt3=VALUES(pt3), pt4=VALUES(pt4), pt5=VALUES(pt5),
-                        pt6=VALUES(pt6), pt7=VALUES(pt7), pt8=VALUES(pt8), pt9=VALUES(pt9), pt10=VALUES(pt10),
-                        pt_total=VALUES(pt_total), pt_ps=VALUES(pt_ps), pt_ws=VALUES(pt_ws),
-                        qa1=VALUES(qa1), qa_ps=VALUES(qa_ps), qa_ws=VALUES(qa_ws),
-                        initial_grade=VALUES(initial_grade), quarterly_grade=VALUES(quarterly_grade),
-                        uploaded=NOW()");
-                    
-                    $insert_grades_details->bind_param(
-                        "iiiiisiiiiiiiiiiiddiiiiiiiiiiiddidddi", 
-                        $hpsID, $student_id, $subject_id, $teacher_id, $quarter, $school_year,
-                        $student_scores['ww1'], $student_scores['ww2'], $student_scores['ww3'], $student_scores['ww4'], $student_scores['ww5'],
-                        $student_scores['ww6'], $student_scores['ww7'], $student_scores['ww8'], $student_scores['ww9'], $student_scores['ww10'],
-                        $student_scores['ww_total'], $student_scores['ww_ps'], $student_scores['ww_ws'],
-                        $student_scores['pt1'], $student_scores['pt2'], $student_scores['pt3'], $student_scores['pt4'], $student_scores['pt5'],
-                        $student_scores['pt6'], $student_scores['pt7'], $student_scores['pt8'], $student_scores['pt9'], $student_scores['pt10'],
-                        $student_scores['pt_total'], $student_scores['pt_ps'], $student_scores['pt_ws'],
-                        $student_scores['qa1'], $student_scores['qa_ps'], $student_scores['qa_ws'],
-                        $student_scores['initial_grade'], $student_scores['quarterly_grade']
-                    );
-                    
-                    if (!$insert_grades_details->execute()) {
-                        throw new Exception("Error inserting student grades: " . $insert_grades_details->error);
-                    }
-                    
-                    $students_processed++;
-                }
-                
-                $message = "Grades successfully uploaded! Processed {$students_processed} students for {$subject_name} - Q{$quarter} ({$school_year}).";
-                
-                if (!empty($students_not_found)) {
-                    $message .= " " . count($students_not_found) . " students not found in database.";
-                    $message_type = 'warning';
-                } else {
-                    $message_type = 'success';
-                }
-                
-            } catch (Exception $e) {
-                $message = "Error processing file: " . $e->getMessage();
-                $message_type = 'danger';
-            }
-        }
-    }
+$userId = $_SESSION['user_id'] ?? 2; // Default to 2 for testing
+$stmt = $conn->prepare("SELECT TeacherID FROM teacher WHERE UserID = ?");
+$stmt->bind_param('i', $userId);
+$stmt->execute();
+$res = $stmt->get_result();
+if (!$res->num_rows) {
+    echo "You are not registered as a teacher.";
+    exit;
 }
-?>
+$teacherId = $res->fetch_assoc()['TeacherID'];
+$stmt->close();
 
+// Fetch students from database
+$students = [];
+$stmt = $conn->prepare("
+    SELECT s.StudentID, s.FirstName, s.MiddleName, s.LastName, s.Sex 
+    FROM student s 
+    JOIN section_enrollment se ON s.StudentID = se.StudentID 
+    JOIN section sec ON se.SectionID = sec.SectionID 
+    WHERE sec.AdviserID = ? AND se.SchoolYear = '2025-2026' AND se.status = 'active'
+    ORDER BY s.Sex, s.LastName, s.FirstName
+");
+$stmt->bind_param('i', $teacherId);
+$stmt->execute();
+$result = $stmt->get_result();
+while ($row = $result->fetch_assoc()) {
+    $students[] = [
+        'id' => $row['StudentID'],
+        'name' => $row['LastName'] . ', ' . $row['FirstName'] . (($row['MiddleName'] != '') ? ' ' . substr($row['MiddleName'], 0, 1) . '.' : ''),
+        'gender' => $row['Sex']
+    ];
+}
+$stmt->close();
+
+$subjectId = $_POST['subjectId'] ?? 4; 
+
+$stmt = $conn->prepare("SELECT SubjectName, written_work_percentage, performance_task_percentage, quarterly_assessment_percentage FROM subject WHERE SubjectID = ?");
+$stmt->bind_param('i', $subjectId);
+$stmt->execute();
+$stmt->bind_result($subjectName, $ww, $pt, $qa);
+$stmt->fetch();
+$wwPercentage = $ww*100;
+$ptPercentage = $pt*100;
+$qaPercentage = $qa*100;
+$stmt->close();
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Upload Grades</title>
+    <title>Science Class Record</title>
+    <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        :root {
-            --primary: #4e73df;
-            --secondary: #6f42c1;
-            --success: #1cc88a;
-            --info: #36b9cc;
-            --warning: #f6c23e;
-            --danger: #e74a3b;
-            --light: #f8f9fc;
-            --dark: #5a5c69;
-        }
-        
-        body {
-            background-color: #f8f9fc;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        
-        .card {
-            border: none;
-            border-radius: 10px;
-            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
-        }
-        
-        .card-header {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-            color: white;
-            border-radius: 10px 10px 0 0 !important;
-        }
-        
-        .btn-primary {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-            border: none;
-        }
-        
-        .btn-primary:hover {
-            background: linear-gradient(135deg, var(--secondary) 0%, var(--primary) 100%);
-        }
-        
-        .upload-area {
-            border: 2px dashed #d1d3e2;
-            border-radius: 8px;
-            padding: 2rem;
-            text-align: center;
-            transition: all 0.3s;
-            background-color: #f8f9fc;
-        }
-        
-        .upload-area:hover {
-            border-color: var(--primary);
-            background-color: #eaecf4;
-        }
-        
-        .upload-icon {
-            font-size: 3rem;
-            color: var(--primary);
-            margin-bottom: 1rem;
-        }
-        
-        .instructions {
-            background-color: #f8f9fc;
-            border-left: 4px solid var(--info);
-            padding: 1rem;
-            border-radius: 4px;
-        }
-        
-        .alert {
-            border: none;
-            border-radius: 8px;
-        }
-        
-        .alert-success {
-            background-color: #d4edda;
-            color: #155724;
-        }
-        
-        .alert-danger {
-            background-color: #f8d7da;
-            color: #721c24;
-        }
-        
-        .alert-info {
-            background-color: #d1ecf1;
-            color: #0c5460;
-        }
-        
-        .alert-warning {
-            background-color: #fff3cd;
-            color: #856404;
-        }
-        
-        .student-list {
-            max-height: 200px;
+        .table-container {
+            max-height: 500px;
             overflow-y: auto;
+        }
+        
+        th {
+            position: sticky;
+            top: 0;
+            background-color: #f8f9fa;
+            z-index: 10;
+        }
+        
+        .gender-header {
+            background-color: #e9ecef !important;
+        }
+        
+        .max-score-input {
+            width: 60px;
+            font-size: 0.8rem;
+        }
+        
+        .save-status {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
         }
     </style>
 </head>
-<body>
-    <div class="container py-5">
-        <div class="row justify-content-center">
-            <div class="col-md-10 col-lg-8">
-                <div class="card">
-                    <div class="card-header py-3">
-                        <h3 class="text-center mb-0"><i class="fas fa-file-upload me-2"></i>Upload Grade File</h3>
+<body class="bg-light">
+    <div class="container-fluid p-4">
+        <div class="card shadow-sm">
+            <!-- Header -->
+            <div class="card-header bg-primary text-white">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <h1 class="h4 mb-0">Class Record</h1>
                     </div>
-                    <div class="card-body p-4">
-                        <?php if (!empty($message)): ?>
-                            <div class="alert alert-<?php echo $message_type; ?> alert-dismissible fade show" role="alert">
-                                <strong><?php echo ucfirst($message_type); ?>!</strong> <?php echo $message; ?>
-                                <?php if (!empty($students_not_found)): ?>
-                                    <div class="mt-2">
-                                        <button class="btn btn-sm btn-outline-<?php echo $message_type; ?>" type="button" data-bs-toggle="collapse" data-bs-target="#missingStudents">
-                                            Show missing students
-                                        </button>
-                                        <div class="collapse mt-2" id="missingStudents">
-                                            <div class="card card-body student-list">
-                                                <ul class="mb-0">
-                                                    <?php foreach ($students_not_found as $student): ?>
-                                                        <li><?php echo htmlspecialchars($student); ?></li>
-                                                    <?php endforeach; ?>
-                                                </ul>
-                                            </div>
-                                        </div>
-                                    </div>
-                                <?php endif; ?>
-                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    <div class="col-auto">
+                        <div class="row g-3 text-start">
+
+                            <div class="col-12 col-md-6">
+                                <small>School Year: 2025-2026</small>
                             </div>
-                        <?php endif; ?>
-                        
-                        <div class="instructions mb-4">
-                            <h5><i class="fas fa-info-circle me-2"></i>Instructions</h5>
-                            <p class="mb-0">Please ensure your Excel file follows the required format with quarter sheets (MATH_Q1, MATH_Q2, etc.). The system will extract student grades and save them to the database.</p>
+                            <div class="col-12 col-md-6">
+                                <small>Grade & Section: 
+                                    <?php
+                                    $stmt = $conn->prepare("
+                                        SELECT sec.GradeLevel, sec.SectionName 
+                                        FROM section sec 
+                                        WHERE sec.AdviserID = ?
+                                    ");
+                                    $stmt->bind_param('i', $teacherId);
+                                    $stmt->execute();
+                                    $sectionResult = $stmt->get_result();
+                                    $sectionResult->num_rows > 0 && $section = $sectionResult->fetch_assoc();
+                                    echo $section['GradeLevel'] . ' - ' . $section['SectionName'];
+                                    $stmt->close();
+                                    ?>
+                                </small>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <small>Teacher: 
+                                    <?php
+                                    $stmt = $conn->prepare("SELECT fName, lName FROM teacher WHERE TeacherID = ?");
+                                    $stmt->bind_param('i', $teacherId);
+                                    $stmt->execute();
+                                    $teacherResult = $stmt->get_result();
+                                    if ($teacherResult->num_rows > 0) {
+                                        $teacher = $teacherResult->fetch_assoc();
+                                        echo $teacher['fName'] . ' ' . $teacher['lName'];
+                                    } else {
+                                        echo "N/A";
+                                    }
+                                    $stmt->close();
+                                    ?>
+                                </small>
+                            </div>
                         </div>
-                        
-                        <form method="POST" enctype="multipart/form-data" id="uploadForm">
-                            <div class="row mb-4">
-                                <div class="col-md-6">
-                                    <label for="quarter" class="form-label">Select Quarter:</label>
-                                    <select class="form-select" id="quarter" name="quarter" required>
-                                        <option value="1">Quarter 1</option>
-                                        <option value="2">Quarter 2</option>
-                                        <option value="3">Quarter 3</option>
-                                        <option value="4">Quarter 4</option>
-                                    </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quarter Selector -->
+            <div class="card-body border-bottom">
+                <div class="row align-items-center">
+                    <div class="col-auto">
+                        <label for="quarterSelect" class="form-label mb-0">Select Quarter:</label>
+                    </div>
+                    <div class="col-auto">
+                        <select id="quarterSelect" class="form-select">
+                            <option value="1">Quarter 1</option>
+                            <option value="2">Quarter 2</option>
+                            <option value="3">Quarter 3</option>
+                            <option value="4">Quarter 4</option>
+                            <option value="Summary">Summary</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quarter 1 Content -->
+            <div id="Q1" class="tab-content">
+                <div class="card-body">
+
+
+                    <!-- Table Container -->
+                    <div class="table-container border rounded">
+                        <table class="table table-bordered table-sm mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="text-center">No.</th>
+                                    <th>Learner's Name</th>
+                                    <th colspan="10" class="text-center">Written Works (<?= htmlspecialchars($wwPercentage) ?>%)</th>
+                                    <th class="text-center">Total</th>
+                                    <th class="text-center">PS</th>
+                                    <th class="text-center">WS</th>
+                                    <th colspan="10" class="text-center">Performance Tasks (<?= htmlspecialchars($ptPercentage) ?>%)</th>
+                                    <th class="text-center">Total</th>
+                                    <th class="text-center">PS</th>
+                                    <th class="text-center">WS</th>
+                                    <th class="text-center">QA (<?= htmlspecialchars($qaPercentage) ?>%)</th>
+                                    <th class="text-center">PS</th>
+                                    <th class="text-center">WS</th>
+                                    <th class="text-center">Initial Grade</th>
+                                    <th class="text-center">Quarterly Grade</th>
+                                </tr>
+                                <tr>
+                                    <th></th>
+                                    <th>Highest possible score</th>
+                                    <?php for ($i = 1; $i <= 10; $i++): ?>
+                                    <th class="text-center">
+                                        <div class="d-flex flex-column align-items-center">
+                                            <span><?= $i ?></span>
+                                            <input type="number" class="form-control form-control-sm max-score-input ww-max" data-quarter="Q1" data-index="<?= $i ?>" value="0" min="0">
+                                        </div>
+                                    </th>
+                                    <?php endfor; ?>
+                                    <th class="text-center"><span class="ww-header-total" data-quarter="Q1">0</span></th>
+                                    <th class="text-center"><span class="ww-header-ps" data-quarter="Q1">100.00</span></th>
+                                    <th class="text-center"><span class="ww-header-ws" data-quarter="Q1">0</span>%</th>
+                                    <?php for ($i = 1; $i <= 10; $i++): ?>
+                                    <th class="text-center">
+                                        <div class="d-flex flex-column align-items-center">
+                                            <span><?= $i ?></span>
+                                            <input type="number" class="form-control form-control-sm max-score-input pt-max" data-quarter="Q1" data-index="<?= $i ?>" value="0" min="0">
+                                        </div>
+                                    </th>
+                                    <?php endfor; ?>
+                                    <th class="text-center"><span class="pt-header-total" data-quarter="Q1">0</span></th>
+                                    <th class="text-center"><span class="pt-header-ps" data-quarter="Q1">100.00</span></th>
+                                    <th class="text-center"><span class="pt-header-ws" data-quarter="Q1">0</span>%</th>
+                                    <th class="text-center">
+                                        <div class="d-flex flex-column align-items-center">
+                                            <span>QA</span>
+                                            <input type="number" class="form-control form-control-sm max-score-input qa-max" data-quarter="Q1" value="0" min="0">
+                                        </div>
+                                    </th>
+                                    <th class="text-center"><span class="qa-header-ps" data-quarter="Q1">100.00</span></th>
+                                    <th class="text-center"><span class="qa-header-ws" data-quarter="Q1">0</span>%</th>
+                                    <th class="text-center"></th>
+                                    <th class="text-center"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="q1DataBody">
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Legend -->
+                    <div class="row mt-4">
+                        <div class="col-12">
+                            <div class="d-flex flex-wrap gap-2 justify-content-center">
+                                <div class="d-flex align-items-center">
+                                    <div class="bg-secondary me-2" style="width: 15px; height: 15px;"></div>
+                                    <small>Written Works (<?= htmlspecialchars($wwPercentage) ?>%)</small>
                                 </div>
-                                <div class="col-md-6">
-                                    <label for="teacher_id" class="form-label">Teacher ID:</label>
-                                    <input type="text" class="form-control" id="teacher_id" name="teacher_id" value="<?php echo $teacher_id; ?>" readonly>
+                                <div class="d-flex align-items-center">
+                                    <div class="bg-secondary me-2" style="width: 15px; height: 15px;"></div>
+                                    <small>Performance Tasks (<?= htmlspecialchars($ptPercentage) ?>%)</small>
+                                </div>
+                                <div class="d-flex align-items-center">
+                                    <div class="bg-secondary me-2" style="width: 15px; height: 15px;"></div>
+                                    <small>Quarterly Assessment (<?= htmlspecialchars($qaPercentage) ?>%)</small>
+                                </div>
+                                <div class="d-flex align-items-center">
+                                    <div class="bg-secondary me-2" style="width: 15px; height: 15px;"></div>
+                                    <small>Final Grade</small>
                                 </div>
                             </div>
-                            
-                            <div class="mb-4">
-                                <label for="grade_file" class="form-label">Upload Grade File:</label>
-                                <div class="upload-area">
-                                    <i class="fas fa-cloud-upload-alt upload-icon"></i>
-                                    <h5>Drag & Drop your file here</h5>
-                                    <p class="text-muted">OR</p>
-                                    <input type="file" class="form-control d-none" id="grade_file" name="grade_file" accept=".xlsx,.xls" required>
-                                    <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('grade_file').click()">
-                                        <i class="fas fa-file-excel me-1"></i> Browse Excel Files
-                                    </button>
-                                    <div class="mt-2" id="file-name">No file chosen</div>
-                                </div>
-                                <div class="form-text">Supported formats: .xlsx, .xls</div>
-                            </div>
-                            
-                            <div class="d-grid">
-                                <button type="submit" class="btn btn-primary btn-lg">
-                                    <i class="fas fa-upload me-2"></i> Upload and Process
-                                </button>
-                            </div>
-                        </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Summary Content -->
+            <div id="Summary" class="tab-content d-none">
+                <div class="card-body">
+                    <!-- Summary Info -->
+                    <div class="row mb-4">
+                        <div class="col-md-4">
+                            <strong>Summary of Grades</strong>
+                        </div>
+                        <div class="col-md-4">
+                            <strong>Subject:</strong> <?= htmlspecialchars($subjectName) ?>
+                        </div>
+                        <div class="col-md-4">
+                            <strong>Grade Level:</strong> Grade 7
+                        </div>
+                    </div>
+
+                    <!-- Summary Table -->
+                    <div class="table-container border rounded">
+                        <table class="table table-bordered table-hover mb-0">
+                            <thead class="table-primary">
+                                <tr>
+                                    <th class="text-center">No.</th>
+                                    <th>Learner's Name</th>
+                                    <th class="text-center">Q1 Grade</th>
+                                    <th class="text-center">Q2 Grade</th>
+                                    <th class="text-center">Q3 Grade</th>
+                                    <th class="text-center">Q4 Grade</th>
+                                    <th class="text-center">Final Grade</th>
+                                    <th class="text-center">Remarks</th>
+                                </tr>
+                            </thead>
+                            <tbody id="summaryDataBody">
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Save Status Indicator -->
+    <div id="saveStatus" class="save-status alert alert-success d-none" role="alert">
+        <i class="fas fa-check-circle me-2"></i>Data saved successfully
+    </div>
+
+    <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        document.getElementById('grade_file').addEventListener('change', function(e) {
-            var fileName = e.target.files[0].name;
-            document.getElementById('file-name').textContent = fileName;
-        });
-        
-        // Set current quarter based on month
-        const currentMonth = new Date().getMonth() + 1;
-        let currentQuarter = 1;
-        if (currentMonth >= 9 && currentMonth <= 10) currentQuarter = 2;
-        else if (currentMonth >= 11 && currentMonth <= 12) currentQuarter = 3;
-        else if (currentMonth >= 1) currentQuarter = 3;
-        
-        document.getElementById('quarter').value = currentQuarter;
-    </script>
+<script>
+
+
+        function getRemarks(grade) {
+            if (grade >= 75) return "PASSED";
+            return "Did Not Meet Expectations";
+        }
+            function transmuteGrade(initialGrade) {
+            // Apply the transmutation formula
+            let transmuted = ((initialGrade - 60) / 1.6) + 75;
+            
+            // Round down to the nearest whole number
+            transmuted = Math.floor(transmuted);
+            
+            // Ensure the grade doesn't go below 0
+            if (transmuted < 0) transmuted = 0;
+            
+            // Ensure the grade doesn't exceed 100
+            if (transmuted > 100) transmuted = 100;
+            
+            return transmuted;
+        }
+</script>
+
+
 </body>
 </html>

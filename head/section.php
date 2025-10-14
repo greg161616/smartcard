@@ -3,6 +3,48 @@
 session_start();
 require __DIR__ . '/../config.php';
 
+// ── Handle AJAX request for students without section ──────────────────
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_students') {
+    $gradeLevel = intval($_POST['grade_level'] ?? 0);
+    
+    if ($gradeLevel > 0) {
+        // Query to get students without a section for this grade level
+      $query = "
+          SELECT s.StudentID, s.FirstName, s.MiddleName, s.LastName 
+          FROM student s
+          WHERE s.GradeLevel = ? 
+          AND NOT EXISTS (
+              SELECT 1 
+              FROM section_enrollment se 
+              JOIN section sec ON se.SectionID = sec.SectionID 
+              WHERE se.StudentID = s.StudentID 
+              AND sec.GradeLevel = s.GradeLevel 
+              AND se.status = 'active'
+          )
+          ORDER BY s.LastName, s.FirstName
+      ";
+        
+        $stmt = $conn->prepare($query);
+        $stmt->bind_param("ii", $gradeLevel, $gradeLevel);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        if ($result->num_rows > 0) {
+            while ($student = $result->fetch_assoc()) {
+                $name = htmlspecialchars("{$student['LastName']}, {$student['FirstName']} {$student['MiddleName']}");
+                echo "<option value='{$student['StudentID']}'>{$name}</option>";
+            }
+        } else {
+            echo "<option value='' disabled>No students available for this grade level</option>";
+        }
+        
+        $stmt->close();
+    } else {
+        echo "<option value='' disabled>Invalid grade level</option>";
+    }
+    exit;
+}
+
 // ── Handle form submissions ───────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
@@ -107,8 +149,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         WHERE SectionID = ? AND StudentID = ? AND SchoolYear = ?
       ");
       $ins = $conn->prepare("
-        INSERT INTO section_enrollment (SectionID, StudentID, SchoolYear)
-        VALUES (?, ?, ?)
+        INSERT INTO section_enrollment (SectionID, StudentID, SchoolYear, status)
+        VALUES (?, ?, ?, 'active')
       ");
       $count = 0;
       foreach ($students as $stu) {
@@ -145,7 +187,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body>
-  <?php include __DIR__ . '/../navs/adminNav.php'; ?>
+  <?php include __DIR__ . '/../navs/headNav.php'; ?>
 
   <div class="container mt-4">
     <!-- messages -->
@@ -174,16 +216,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </thead>
       <tbody>
         <?php
-        $rs = $conn->query("
-          SELECT
-            s.SectionID,
-            s.GradeLevel,
-            s.SectionName,
-            s.AdviserID,
-            CONCAT(t.fName,' ',t.mName,' ',t.lName) AS AdviserName
-          FROM section s
-          LEFT JOIN teacher t ON s.AdviserID = t.TeacherID
-        ");
+        $rs = $conn->query("SELECT s.SectionID, s.GradeLevel, s.SectionName, s.AdviserID, CONCAT(t.fName,' ',t.mName,' ',t.lName) AS AdviserName
+                            FROM section s LEFT JOIN teacher t ON s.AdviserID = t.TeacherID");
         while ($r = $rs->fetch_assoc()):
         ?>
         <tr>
@@ -200,6 +234,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               data-name="<?= htmlspecialchars($r['SectionName']) ?>"
               data-adv="<?= $r['AdviserID'] ?>">
               Edit
+            </button>
+            <!-- Enroll Students -->
+            <button class="btn btn-sm btn-info"
+              data-bs-toggle="modal"
+              data-bs-target="#enrollModal"
+              data-id="<?= $r['SectionID'] ?>"
+              data-grade="<?= $r['GradeLevel'] ?>">
+              Enroll Students
             </button>
             <!-- Delete -->
             <form method="post" class="d-inline">
@@ -250,7 +292,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <?php endwhile; ?>
               </select>
             </div>
-          </diV>
+          </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
             <button type="submit" name="add_section" class="btn btn-primary">Add</button>
@@ -289,9 +331,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               <select name="adviser_id" class="form-select" required>
                 <option value="" disabled>Select teacher</option>
                 <?php
-                $tr2 = $conn->query("SELECT TeacherID, FirstName, MiddleName, LastName FROM teacher");
+                $tr2 = $conn->query("SELECT TeacherID, fName, mName, lName FROM teacher");
                 while ($t2 = $tr2->fetch_assoc()):
-                  $nm2 = htmlspecialchars("{$t2['FirstName']} {$t2['MiddleName']} {$t2['LastName']}");
+                  $nm2 = htmlspecialchars("{$t2['fName']} {$t2['mName']} {$t2['lName']}");
                 ?>
                   <option value="<?= $t2['TeacherID'] ?>"><?= $nm2 ?></option>
                 <?php endwhile; ?>
@@ -317,26 +359,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body">
-            <input type="hidden" name="section_id">
+            <input type="hidden" name="section_id" id="section_id">
             <div class="mb-3">
               <label class="form-label">School Year</label>
               <input type="text" name="school_year" class="form-control"
                      value="<?= date('Y') . '-' . (date('Y')+1) ?>" required>
             </div>
             <div class="mb-3">
-              <label class="form-label">Students</label>
-              <select name="students[]" class="form-select" multiple required>
-                <?php
-                $sr = $conn->query("
-                  SELECT StudentID, FirstName, MiddleName, LastName
-                  FROM student
-                ");
-                while ($s = $sr->fetch_assoc()):
-                  $nm = htmlspecialchars("{$s['FirstName']} {$s['MiddleName']} {$s['LastName']}");
-                ?>
-                  <option value="<?= $s['StudentID'] ?>"><?= $nm ?></option>
-                <?php endwhile; ?>
+              <label class="form-label">Students (without section for this grade)</label>
+              <div id="studentsLoading" class="text-center">
+                <div class="spinner-border" role="status">
+                  <span class="visually-hidden">Loading...</span>
+                </div>
+                <p>Loading students...</p>
+              </div>
+              <select name="students[]" id="studentsSelect" class="form-select" multiple size="10" required style="display: none;">
+                <!-- Students will be loaded dynamically via AJAX -->
               </select>
+              <small class="form-text text-muted">Hold Ctrl/Cmd to select multiple students</small>
             </div>
           </div>
           <div class="modal-footer">
@@ -361,10 +401,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       m.find('input[name=section_name]').val(b.data('name'));
       m.find('select[name=adviser_id]').val(b.data('adv'));
     });
-    // Populate Enroll modal
+    
+    // Populate Enroll modal and load students without section
     $('#enrollModal').on('show.bs.modal', function(e) {
       var b = $(e.relatedTarget), m = $(this);
-      m.find('input[name=section_id]').val(b.data('id'));
+      var sectionId = b.data('id');
+      var gradeLevel = b.data('grade');
+      
+      m.find('input[name=section_id]').val(sectionId);
+      
+      // Show loading, hide select
+      $('#studentsLoading').show();
+      $('#studentsSelect').hide().empty();
+      
+      // Load students via AJAX
+      $.ajax({
+        url: '<?php echo $_SERVER['PHP_SELF']; ?>?ajax=get_students',
+        method: 'POST',
+        data: {
+          grade_level: gradeLevel,
+          section_id: sectionId
+        },
+        success: function(response) {
+          $('#studentsLoading').hide();
+          var select = $('#studentsSelect');
+          select.html(response);
+          select.show();
+        },
+        error: function() {
+          $('#studentsLoading').html('<div class="alert alert-danger">Error loading students</div>');
+        }
+      });
+    });
+    
+    // Reset modal when closed
+    $('#enrollModal').on('hidden.bs.modal', function() {
+      $('#studentsLoading').show();
+      $('#studentsSelect').hide().empty();
     });
   </script>
 </body>

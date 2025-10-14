@@ -17,7 +17,7 @@ if (isset($_SESSION['email']) || isset($_SESSION['user_id'])) {
 
         if ($row = mysqli_fetch_assoc($result)) {
             if ($row['Role'] === 'teacher') {
-                header("Location: teacher/list.php");
+                header("Location: teacher/tdashboard.php");
                 exit();
             } elseif ($row['Role'] === 'principal' || $row['Role'] === 'staff') {
                 header("Location: admin/principalDash.php");
@@ -25,6 +25,11 @@ if (isset($_SESSION['email']) || isset($_SESSION['user_id'])) {
             } elseif ($row['Role'] === 'student') {
                 header("Location: student/studentPort.php");
                 exit();
+            } elseif ($row['Role'] === 'head') {
+                header("Location: head/studentlist.php");
+                exit();
+            } else {
+                $error = 'Unknown role for this account.';
             }
         }
         mysqli_stmt_close($stmt);
@@ -51,13 +56,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['role'] = $row['Role'];
             // Redirect based on role
             if ($row['Role'] === 'teacher') {
-                header('Location: teacher/list.php');
+                header('Location: teacher/tdashboard.php');
                 exit();
             } elseif ($row['Role'] === 'principal') {
                 header('Location: admin/principalDash.php');
                 exit();
             } elseif ($row['Role'] === 'student') {
                 header('Location: student/studentPort.php');
+                exit();
+            } elseif ($row['Role'] === 'head') {
+                header('Location: head/studentlist.php');
                 exit();
             } else {
                 $error = 'Unknown role for this account.';

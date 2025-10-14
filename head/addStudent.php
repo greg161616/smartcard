@@ -24,7 +24,7 @@ if (isset($_POST['add_student'])) {
     // Validate required fields
     if (!$lrn || !$firstName || !$lastName || !filter_var($email, FILTER_VALIDATE_EMAIL) || !$sectionID) {
         $_SESSION['error'] = "Please fill all required fields correctly.";
-        header("Location: ../admin/studentlist.php"); 
+        header("Location: ../head/studentlist.php"); 
         exit;
     }
 
@@ -36,7 +36,7 @@ if (isset($_POST['add_student'])) {
     if ($chkEmail->num_rows > 0) {
         $_SESSION['error'] = "Email already registered.";
         $chkEmail->close();
-        header("Location: ../admin/studentlist.php"); 
+        header("Location: ../head/studentlist.php"); 
         exit;
     }
     $chkEmail->close();
@@ -49,7 +49,7 @@ if (isset($_POST['add_student'])) {
     if ($chkLrn->num_rows > 0) {
         $_SESSION['error'] = "LRN already exists.";
         $chkLrn->close();
-        header("Location: ../admin/studentlist.php"); 
+        header("Location: ../head/studentlist.php"); 
         exit;
     }
     $chkLrn->close();
@@ -61,7 +61,7 @@ if (isset($_POST['add_student'])) {
     $insU->bind_param("ss", $email, $passwordHash);
     if (!$insU->execute()) {
         $_SESSION['error'] = "Failed to create user: " . $conn->error;
-        header("Location: ../admin/studentlist.php"); 
+        header("Location: ../head/studentlist.php"); 
         exit;
     }
     $userId = $insU->insert_id; 
@@ -83,7 +83,7 @@ if (isset($_POST['add_student'])) {
     
     if (!$insS->execute()) {
         $_SESSION['error'] = "Failed to create student: " . $conn->error;
-        header("Location: ../admin/studentlist.php"); 
+        header("Location: ../head/studentlist.php"); 
         exit;
     }
     $studentId = $insS->insert_id;
@@ -96,7 +96,7 @@ if (isset($_POST['add_student'])) {
     if (!$insE->execute()) {
         $_SESSION['error'] = "Student created but enrollment failed: " . $conn->error;
         $insE->close();
-        header("Location: ../admin/studentlist.php"); 
+        header("Location: ../head/studentlist.php"); 
         exit;
     }
     $insE->close();
@@ -108,5 +108,5 @@ if (isset($_POST['add_student'])) {
         $_SESSION['error'] = "Student added but email failed.";
     }
 }
-header("Location: ../admin/studentlist.php");
+header("Location: ../head/studentlist.php");
 exit;

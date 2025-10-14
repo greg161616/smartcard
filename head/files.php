@@ -2,27 +2,23 @@
 include '../config.php';
 session_start();
 
-// Check if user is logged in as teacher
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'teacher') {
+// Check if user is logged in as principal
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'head') {
     header("Location: ../login.php");
     exit();
 }
 
-// Get teacher information
-$teacher_id = $_SESSION['user_id'];
-$teacher_query = "SELECT * FROM teacher WHERE userID = '$teacher_id'";
-$teacher_result = mysqli_query($conn, $teacher_query);
-$teacher = mysqli_fetch_assoc($teacher_result);
+// Get student ID from query parameter
+$student_id = isset($_GET['student_id']) ? $_GET['student_id'] : null;
 
 // Get the current year and the next year
 $year = (string)date("Y");  // Get the current year
 $next_year = (string)($year + 1);  // Get the next year and cast it to a string
 $current_year = $year . '-' . $next_year;  // Combine them as a string for the school year
 
-// Get student ID from query parameter
-$student_id = isset($_GET['student_id']) ? $_GET['student_id'] : null;
-
-// Initialize student data
+// Initialize variables
+$teacher = null;
+$teacher_id = null;
 $student = null;
 $grades = [];
 $attendance = [];
@@ -35,73 +31,85 @@ if ($student_id) {
     $student_result = mysqli_query($conn, $student_query);
     $student = mysqli_fetch_assoc($student_result);
     
-    // Get student's current section
-    $section_query = "
-        SELECT s.*, se.SchoolYear 
-        FROM section_enrollment se 
-        JOIN section s ON se.SectionID = s.SectionID 
-        WHERE se.StudentID = '$student_id' 
-        AND se.SchoolYear = '$current_year'
-        AND se.status = 'active'
-        LIMIT 1
-    ";
-    $section_result = mysqli_query($conn, $section_query);
-    if (mysqli_num_rows($section_result) > 0) {
-        $section = mysqli_fetch_assoc($section_result);
-    }
-    
-    // Get grades
-    $grades_query = "
-        SELECT g.*, s.SubjectName 
-        FROM grades g 
-        JOIN subject s ON g.subject = s.SubjectID 
-        WHERE g.student_id = '$student_id'
-    ";
-    $grades_result = mysqli_query($conn, $grades_query);
-    while ($row = mysqli_fetch_assoc($grades_result)) {
-        $grades[] = $row;
-    }
-    
-    // Get attendance data for the current school year
-    $attendance_query = "
-        SELECT MONTH(Date) as month_num, 
-               COUNT(*) as total_days,
-               SUM(CASE WHEN Status = 'Present' THEN 1 ELSE 0 END) as present_days
-        FROM attendance 
-        WHERE StudentID = '$student_id'
-        AND YEAR(Date) = '$year'
-        GROUP BY MONTH(Date)
-    ";
-    $attendance_result = mysqli_query($conn, $attendance_query);
-    $attendance_data = [];
-    while ($row = mysqli_fetch_assoc($attendance_result)) {
-        $attendance_data[$row['month_num']] = [
-            'present' => $row['present_days'],
-            'absent' => $row['total_days'] - $row['present_days']
+    if ($student) {
+        // Get student's current section and teacher
+        $section_query = "
+            SELECT s.*, se.SchoolYear, s.AdviserID
+            FROM section_enrollment se 
+            JOIN section s ON se.SectionID = s.SectionID 
+            WHERE se.StudentID = '$student_id' 
+            AND se.SchoolYear = '$current_year'
+            AND se.status = 'active'
+            LIMIT 1
+        ";
+        $section_result = mysqli_query($conn, $section_query);
+        if (mysqli_num_rows($section_result) > 0) {
+            $section = mysqli_fetch_assoc($section_result);
+            $teacher_id = $section['AdviserID'];
+            
+            // Get teacher information
+            if ($teacher_id) {
+                $teacher_query = "SELECT * FROM teacher WHERE userID = '$teacher_id'";
+                $teacher_result = mysqli_query($conn, $teacher_query);
+                if ($teacher_result && mysqli_num_rows($teacher_result) > 0) {
+                    $teacher = mysqli_fetch_assoc($teacher_result);
+                }
+            }
+        }
+        
+        // Get grades
+        $grades_query = "
+            SELECT g.*, s.SubjectName 
+            FROM grades g 
+            JOIN subject s ON g.subject = s.SubjectID 
+            WHERE g.student_id = '$student_id'
+        ";
+        $grades_result = mysqli_query($conn, $grades_query);
+        while ($row = mysqli_fetch_assoc($grades_result)) {
+            $grades[] = $row;
+        }
+        
+        // Get attendance data for the current school year
+        $attendance_query = "
+            SELECT MONTH(Date) as month_num, 
+                   COUNT(*) as total_days,
+                   SUM(CASE WHEN Status = 'Present' THEN 1 ELSE 0 END) as present_days
+            FROM attendance 
+            WHERE StudentID = '$student_id'
+            AND YEAR(Date) = '$year'
+            GROUP BY MONTH(Date)
+        ";
+        $attendance_result = mysqli_query($conn, $attendance_query);
+        $attendance_data = [];
+        while ($row = mysqli_fetch_assoc($attendance_result)) {
+            $attendance_data[$row['month_num']] = [
+                'present' => $row['present_days'],
+                'absent' => $row['total_days'] - $row['present_days']
+            ];
+        }
+        
+        // Map month numbers to names as in the report card
+        $month_names = [
+            9 => 'Sept', 10 => 'Oct', 11 => 'Nov', 12 => 'Dec',
+            1 => 'Jan', 2 => 'Feb', 3 => 'Mar', 4 => 'Apr', 
+            5 => 'May', 6 => 'Jun', 7 => 'Jul'
+        ];
+        
+        foreach ($month_names as $num => $name) {
+            $attendance[$name] = isset($attendance_data[$num]) ? $attendance_data[$num] : ['present' => 0, 'absent' => 0];
+        }
+        
+        // Note: Observed values would require an additional table in your schema
+        // For now, we'll create placeholder data
+        $observed_values = [
+            ['value' => 'Maka-Diyos', 'statement' => 'Expresses one\'s spiritual beliefs while respecting the spiritual beliefs of others'],
+            ['value' => 'Maka-tao', 'statement' => 'Shows adherence to ethical principles by upholding truth and respecting individuals, social, and cultural differences'],
+            ['value' => 'Makakalikasan', 'statement' => 'Demonstrates contributions towards solidarity'],
+            ['value' => 'Makabansa', 'statement' => 'Cares for the environment and utilizes resources responsibly, effectively, and economically'],
+            ['value' => 'Makabansa', 'statement' => 'Demonstrates pride in being a Filipino; exercises the rights and responsibilities of a Filipino citizen'],
+            ['value' => 'Makabansa', 'statement' => 'Demonstrates appropriate behavior in carrying out activities in the school, community, and country']
         ];
     }
-    
-    // Map month numbers to names as in the report card
-    $month_names = [
-        9 => 'Sept', 10 => 'Oct', 11 => 'Nov', 12 => 'Dec',
-        1 => 'Jan', 2 => 'Feb', 3 => 'Mar', 4 => 'Apr', 
-        5 => 'May', 6 => 'Jun', 7 => 'Jul'
-    ];
-    
-    foreach ($month_names as $num => $name) {
-        $attendance[$name] = isset($attendance_data[$num]) ? $attendance_data[$num] : ['present' => 0, 'absent' => 0];
-    }
-    
-    // Note: Observed values would require an additional table in your schema
-    // For now, we'll create placeholder data
-    $observed_values = [
-        ['value' => 'Maka-Diyos', 'statement' => 'Expresses one\'s spiritual beliefs while respecting the spiritual beliefs of others'],
-        ['value' => 'Maka-tao', 'statement' => 'Shows adherence to ethical principles by upholding truth and respecting individuals, social, and cultural differences'],
-        ['value' => 'Makakalikasan', 'statement' => 'Demonstrates contributions towards solidarity'],
-        ['value' => 'Makabansa', 'statement' => 'Cares for the environment and utilizes resources responsibly, effectively, and economically'],
-        ['value' => 'Makabansa', 'statement' => 'Demonstrates pride in being a Filipino; exercises the rights and responsibilities of a Filipino citizen'],
-        ['value' => 'Makabansa', 'statement' => 'Demonstrates appropriate behavior in carrying out activities in the school, community, and country']
-    ];
 }
 
 // Function to calculate age from birthdate
@@ -115,13 +123,12 @@ function calculateAge($birthdate) {
 }
 ?>
 
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Student Report Card</title>
+    <title>BANAHIS | Student Report Card</title>
     <link rel="icon" type="image/png" href="../img/logo.png" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
@@ -188,7 +195,7 @@ function calculateAge($birthdate) {
     </style>
 </head>
 <body>
-    <?php include '../navs/teacherNav.php';?>
+    <?php include '../navs/headNav.php';?>
     
     <div class="container mt-4 no-print">
         <div class="row">
@@ -364,6 +371,7 @@ function calculateAge($birthdate) {
             <?php echo strtoupper($student['Middlename']); ?></div>
             <div><strong>Age:</strong>&nbsp;&nbsp; <?php echo calculateAge($student['Birthdate']); ?>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>Sex:</strong>&nbsp;&nbsp; <?php echo strtoupper($student['Sex']); ?></div>
             <div><strong>Grade:&nbsp;&nbsp; </strong> <?php echo !empty($section) ? "{$section['GradeLevel']}": ''; ?>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>Section: </strong><?php echo !empty($section) ? "{$section['SectionName']}": ''; ?></div>
+            <div><strong>School Year:&nbsp;&nbsp; </strong> <?php echo $current_year; ?> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
         </div>
 
         <!-- Parent Message -->

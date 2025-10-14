@@ -12,7 +12,7 @@ if (isset($_POST['add_teacher'])) {
 
     if (!$firstName || !$lastName || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $_SESSION['error'] = "Please fill all required fields correctly.";
-        header("Location: ../admin/teacher.php"); exit;
+        header("Location: ../head/teacher.php"); exit;
     }
 
     // Duplicate?
@@ -22,7 +22,7 @@ if (isset($_POST['add_teacher'])) {
     if ($chk->num_rows > 0) {
         $_SESSION['error'] = "Email already registered.";
         $chk->close();
-        header("Location: ../admin/teacher.php"); exit;
+        header("Location: ../head/teacher.php"); exit;
     }
     $chk->close();
 
@@ -34,7 +34,7 @@ if (isset($_POST['add_teacher'])) {
     $insU->bind_param("ss", $email, $passwordHash);
     if (!$insU->execute()) {
         $_SESSION['error'] = "Failed to create user.";
-        header("Location: ../admin/teacher.php"); exit;
+        header("Location: ../head/teacher.php"); exit;
     }
     $userId = $insU->insert_id; $insU->close();
 
@@ -42,7 +42,7 @@ if (isset($_POST['add_teacher'])) {
     $insT->bind_param("sssi", $firstName, $middleName, $lastName, $userId);
     if (!$insT->execute()) {
         $_SESSION['error'] = "Failed to create teacher.";
-        header("Location: ../admin/teacher.php"); exit;
+        header("Location: ../head/teacher.php"); exit;
     }
     $insT->close();
 
@@ -53,5 +53,5 @@ if (isset($_POST['add_teacher'])) {
         $_SESSION['error']   = "Teacher added but email failed.";
     }
 }
-header("Location: ../admin/teacher.php");
+header("Location: ../head/teacher.php");
 exit;

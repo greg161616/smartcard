@@ -1,143 +1,534 @@
 <?php
+// Start session and include config at the top
 session_start();
-require_once '../config.php';
+include __DIR__ . '/../config.php';
 
-// 1) Ensure teacher is logged in
-if (!isset($_SESSION['email']) || $_SESSION['role'] !== 'teacher') {
-    header('Location: ../login.php');
+// Check if teacher is logged in
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'teacher') {
+    header("Location: ../login.php");
     exit();
 }
 
-// 2) Lookup TeacherID from session email
-$teacherID = null;
-$stmt = $conn->prepare("
-    SELECT t.TeacherID
-      FROM teacher t
-      JOIN user u ON t.UserID = u.UserID
-     WHERE u.Email = ?
-");
-$stmt->bind_param('s', $_SESSION['email']);
+// Get teacher_id from session or database
+$userId = $_SESSION['user_id'];
+$stmt = $conn->prepare("SELECT TeacherID FROM teacher WHERE UserID = ?");
+$stmt->bind_param('i', $userId);
 $stmt->execute();
-$stmt->bind_result($teacherID);
-$stmt->fetch();
+$res = $stmt->get_result();
+if (!$res->num_rows) {
+    echo "You are not registered as a teacher.";
+    exit;
+}
+$teacherId = $res->fetch_assoc()['TeacherID'];
 $stmt->close();
 
-if (!$teacherID) {
-    die("Teacher record not found. Please contact your administrator.");
+// Handle AJAX request for student details
+if (isset($_GET['action']) && $_GET['action'] == 'getStudentDetails' && isset($_GET['id'])) {
+    $studentId = $_GET['id'];
+    
+    // Query to get student details based on your schema
+    $sql = "
+        SELECT 
+            s.*, 
+            u.Email,
+            sec.GradeLevel,
+            sec.SectionName,
+            t.fName as TeacherFirstName,
+            t.lName as TeacherLastName,
+            t.mName as TeacherMiddleName
+        FROM student s
+        JOIN user u ON u.UserID = s.userID
+        LEFT JOIN section_enrollment se ON se.StudentID = s.StudentID AND se.status = 'active'
+        LEFT JOIN section sec ON sec.SectionID = se.SectionID
+        LEFT JOIN teacher t ON t.TeacherID = sec.AdviserID
+        WHERE s.StudentID = ?
+    ";
+    
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("i", $studentId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    if ($result->num_rows > 0) {
+        $student = $result->fetch_assoc();
+        ?>
+        <div class="row">
+            <div class="col-md-6">
+                <h5>Personal Information</h5>
+                <p><strong>Name:</strong> <?= htmlspecialchars($student['FirstName'] . ' ' . $student['Middlename'] . ' ' . $student['LastName']) ?></p>
+                <p><strong>LRN:</strong> <?= htmlspecialchars($student['LRN']) ?></p>
+                <p><strong>Sex:</strong> <?= htmlspecialchars($student['Sex']) ?></p>
+                <p><strong>Birthdate:</strong> <?= htmlspecialchars($student['Birthdate']) ?></p>
+                <p><strong>Civil Status:</strong> <?= htmlspecialchars($student['CivilStatus']) ?></p>
+                <p><strong>Religion:</strong> <?= htmlspecialchars($student['Religion']) ?></p>
+                <p><strong>Barangay:</strong> <?= htmlspecialchars($student['Barangay'] ?? '') ?></p>
+            </div>
+            <div class="col-md-6">
+                <h5>Contact Information</h5>
+                <p><strong>Email:</strong> <?= htmlspecialchars($student['Email']) ?></p>
+                <p><strong>Contact Number:</strong> <?= htmlspecialchars($student['contactNumber']) ?></p>
+                <p><strong>Address:</strong> <?= htmlspecialchars($student['Address']) ?></p>
+                <p><strong>Parent's Name:</strong> <?= htmlspecialchars($student['parentname']) ?></p>
+                <p><strong>Parent's Contact:</strong> <?= htmlspecialchars($student['ParentsContact']) ?></p>
+            </div>
+        </div>
+        <div class="row mt-3">
+            <div class="col-12">
+                <h5>Academic Information</h5>
+                <p><strong>Grade Level:</strong> <?= htmlspecialchars($student['GradeLevel'] ?? '') ?></p>
+                <p><strong>Section:</strong> <?= htmlspecialchars($student['SectionName'] ?? '') ?></p>
+                <p><strong>Adviser:</strong> <?= htmlspecialchars(($student['TeacherFirstName'] ?? '') . ' ' . ($student['TeacherMiddleName'] ?? '') . ' ' . ($student['TeacherLastName'] ?? '')) ?></p>
+            </div>
+        </div>
+        <?php
+    } else {
+        echo "<p>Student not found.</p>";
+    }
+    exit();
 }
 
-// 3) (Optional) Filter by current school year if you store that in session
-//    e.g. $_SESSION['school_year'] = '2025-2026';
-$filterYear = isset($_SESSION['school_year']) ? $_SESSION['school_year'] : null;
+// Get teacher's basic info
+$teacher_sql = "SELECT fName, lName, mName FROM teacher WHERE TeacherID = ?";
+$teacher_stmt = $conn->prepare($teacher_sql);
+$teacher_stmt->bind_param("i", $teacherId);
+$teacher_stmt->execute();
+$teacher_result = $teacher_stmt->get_result();
+$teacher = $teacher_result->fetch_assoc();
+$teacher_name = $teacher['fName'] . ' ' . $teacher['mName'] . ' ' . $teacher['lName'];
 
-// 4) Fetch students in teacher’s sections
-$sql = "
-    SELECT DISTINCT 
-        s.LRN,
-        s.FirstName,
-        s.MiddleName,
-        s.LastName,
-        s.Sex,
-        s.ContactNumber,
-        s.ParentsContact
-      FROM student s
-      JOIN section_enrollment se 
-        ON s.StudentID = se.StudentID
-      JOIN sched sc 
-        ON se.SectionID = sc.SectionID
-     WHERE sc.TeacherID = ?
+// Get list of classes/sections that this teacher teaches
+$sectionSql = "
+    SELECT DISTINCT sec.SectionID, CONCAT(sec.GradeLevel, ' - ', sec.SectionName) as SectionDisplay 
+    FROM section sec 
+    LEFT JOIN sched sch ON sec.SectionID = sch.SectionID 
+    LEFT JOIN subject sub ON sch.SubjectID = sub.SubjectID 
+    WHERE sub.TeacherID = ?
+    ORDER BY sec.GradeLevel, sec.SectionName
 ";
-if ($filterYear) {
-    $sql .= " AND se.SchoolYear = ?";
+
+$sectionStmt = $conn->prepare($sectionSql);
+$sectionStmt->bind_param("i", $teacherId);
+$sectionStmt->execute();
+$sectionResult = $sectionStmt->get_result();
+
+$sections = [];
+if ($sectionResult && $sectionResult->num_rows > 0) {
+    while ($section = $sectionResult->fetch_assoc()) {
+        $sections[] = $section;
+    }
+}
+$sectionStmt->close();
+
+// Get available school years from section_enrollment
+$schoolYearSql = "
+    SELECT DISTINCT se.SchoolYear 
+    FROM section_enrollment se
+    JOIN section sec ON sec.SectionID = se.SectionID
+    WHERE sec.SectionID IN (
+        SELECT DISTINCT sec2.SectionID 
+        FROM section sec2 
+        LEFT JOIN sched sch ON sec2.SectionID = sch.SectionID 
+        LEFT JOIN subject sub ON sch.SubjectID = sub.SubjectID 
+        WHERE sub.TeacherID = ?
+    )
+    ORDER BY se.SchoolYear DESC
+";
+
+$schoolYearStmt = $conn->prepare($schoolYearSql);
+$schoolYearStmt->bind_param("i", $teacherId);
+$schoolYearStmt->execute();
+$schoolYearResult = $schoolYearStmt->get_result();
+
+$schoolYears = [];
+if ($schoolYearResult && $schoolYearResult->num_rows > 0) {
+    while ($year = $schoolYearResult->fetch_assoc()) {
+        $schoolYears[] = $year['SchoolYear'];
+    }
+}
+$schoolYearStmt->close();
+
+// If no school years found, use current academic year as default
+if (empty($schoolYears)) {
+    $currentYear = date('Y');
+    $nextYear = date('Y') + 1;
+    $defaultSchoolYear = $currentYear . '-' . $nextYear;
+    $schoolYears[] = $defaultSchoolYear;
 }
 
-$stmt = $conn->prepare($sql);
-if ($filterYear) {
-    $stmt->bind_param('is', $teacherID, $filterYear);
+// Get selected filters from form submission or set defaults
+$selectedSection = isset($_POST['section_filter']) ? $_POST['section_filter'] : (isset($sections[0]) ? $sections[0]['SectionID'] : '');
+$selectedSchoolYear = isset($_POST['school_year_filter']) ? $_POST['school_year_filter'] : $schoolYears[0];
+
+// Build the student query with section and school year filters
+$studentSql = "
+    SELECT DISTINCT
+        s.StudentID,
+        s.LRN,
+        CONCAT(s.LastName, ', ', s.FirstName, ' ', s.Middlename) AS FullName,
+        s.Sex,
+        u.Email,
+        sec.GradeLevel,
+        sec.SectionName,
+        se.SchoolYear
+    FROM student AS s
+    JOIN user AS u ON u.UserID = s.userID
+    JOIN section_enrollment AS se ON se.StudentID = s.StudentID AND se.status = 'active'
+    JOIN section AS sec ON sec.SectionID = se.SectionID
+    WHERE sec.SectionID IN (
+        SELECT DISTINCT sec2.SectionID 
+        FROM section sec2 
+        LEFT JOIN sched sch ON sec2.SectionID = sch.SectionID 
+        LEFT JOIN subject sub ON sch.SubjectID = sub.SubjectID 
+        WHERE sec2.AdviserID = ? OR sub.TeacherID = ?
+    )
+    AND se.SchoolYear = ?
+";
+
+// Add specific section filter if selected
+if (!empty($selectedSection)) {
+    $studentSql .= " AND sec.SectionID = ?";
+}
+
+$studentSql .= " ORDER BY s.Sex DESC, s.LastName ASC, s.FirstName ASC";
+
+// Prepare and execute the student query
+$stmt = $conn->prepare($studentSql);
+if (!empty($selectedSection)) {
+    $stmt->bind_param("iisi", $teacherId, $teacherId, $selectedSchoolYear, $selectedSection);
 } else {
-    $stmt->bind_param('i', $teacherID);
+    $stmt->bind_param("iis", $teacherId, $teacherId, $selectedSchoolYear);
 }
 $stmt->execute();
-$result = $stmt->get_result();
+$res = $stmt->get_result();
 
-$students = [];
-while ($row = $result->fetch_assoc()) {
-    $students[] = $row;
-}
-$stmt->close();
+// Separate students by gender
+$maleStudents = [];
+$femaleStudents = [];
 
-if ($conn->error) {
-    die("Database query failed: " . $conn->error);
+if ($res && $res->num_rows > 0) {
+    while ($row = $res->fetch_assoc()) {
+        if ($row['Sex'] == 'Male') {
+            $maleStudents[] = $row;
+        } else {
+            $femaleStudents[] = $row;
+        }
+    }
 }
+
+// Debug: Check what sections and students we're getting
+error_log("Teacher ID: " . $teacherId);
+error_log("Sections found: " . count($sections));
+error_log("School Years found: " . count($schoolYears));
+error_log("Selected School Year: " . $selectedSchoolYear);
+error_log("Male students: " . count($maleStudents));
+error_log("Female students: " . count($femaleStudents));
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Students</title>
-    <link rel="icon" type="image/png" href="../img/logo.png" />
-    <!-- Bootstrap & Icons -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-    <!-- DataTables -->
-    <link href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css" rel="stylesheet">
-    <style>
-        body { background: #f8f9fa; }
-        .main-content { padding: 40px 20px; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Student List</title>
+  <link rel="icon" type="image/png" href="../img/logo.png">
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    .required:after {
+      content: " *";
+      color: red;
+    }
+    .clickable-row {
+      cursor: pointer;
+    }
+    .clickable-row:hover {
+      background-color: #f5f5f5;
+    }
+    .action-cell {
+      cursor: default;
+    }
+    .modal-body .row {
+      margin-bottom: 15px;
+    }
+    .modal-body h5 {
+      border-bottom: 1px solid #dee2e6;
+      padding-bottom: 8px;
+      margin-bottom: 15px;
+      color: #0d6efd;
+    }
+    .filter-container {
+      background-color: #f8f9fa;
+      padding: 15px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+    }
+    .gender-section {
+      margin-bottom: 30px;
+    }
+    .gender-header {
+      background-color: #e9ecef;
+      padding: 10px 15px;
+      border-radius: 5px;
+      margin-bottom: 15px;
+    }
+    .table th {
+      white-space: nowrap;
+    }
+    .empty-table-message {
+      padding: 20px;
+      text-align: center;
+      color: #6c757d;
+      font-style: italic;
+    }
+    .dashboard-header {
+            background: #2c3e50;
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+        }
+    .filter-row {
+      margin-bottom: 15px;
+    }
+  </style>
 </head>
 <body>
-    <?php include '../navs/teacherNav.php'; ?>
+  <?php include __DIR__ . '/../navs/teacherNav.php'; ?>
 
-    <div class="main-content">
+  <div class="container mt-5">
+    <div class="dashboard-header">
         <div class="container">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h2 class="mb-0">My Students</h2>
-            </div>
-
-            <div class="table-responsive">
-                <table id="studentTable" class="table table-striped table-bordered">
-                    <thead class="table-secondary">
-                        <tr>
-                            <th>LRN No.</th>
-                            <th>Name</th>
-                            <th>Sex</th>
-                            <th>Contact No.</th>
-                            <th>Parents Contact</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($students as $stu): ?>
-                            <tr>
-                                <td><?= htmlspecialchars($stu['LRN']) ?></td>
-                                <td>
-                                    <?= htmlspecialchars(
-                                        trim("{$stu['FirstName']} {$stu['MiddleName']} {$stu['LastName']}")
-                                    ) ?>
-                                </td>
-                                <td><?= htmlspecialchars($stu['Sex']) ?></td>
-                                <td><?= htmlspecialchars($stu['ContactNumber']) ?></td>
-                                <td><?= htmlspecialchars($stu['ParentsContact']) ?></td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h1 class="fw-bold">Welcome, Mr./Ms./Mrs.</h1>
+                    <h3 class="display-5 fw-bold"><?php echo htmlspecialchars($teacher_name); ?>!</h3>
+                    
+                    <p class="lead mb-0">Teacher Dashboard - <?php echo date('F j, Y'); ?></p>
+                </div>
+                <div class="col-md-4 text-end">
+                    <div class="bg-white rounded-pill px-3 py-2 d-inline-block">
+                        <small class="text-muted">School Year: <?php echo $selectedSchoolYear; ?></small>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Bootstrap JS & DataTables -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
-    <script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap5.min.js"></script>
-    <script>
-        $(document).ready(function() {
-            $('#studentTable').DataTable({
-                // you can add page length, ordering, etc. here
-            });
+    <?php if (!empty($_SESSION['message'])): ?>
+      <div class="alert alert-success"><?= htmlspecialchars($_SESSION['message']) ?></div>
+      <?php unset($_SESSION['message']); ?>
+    <?php endif; ?>
+    <?php if (!empty($_SESSION['error'])): ?>
+      <div class="alert alert-danger"><?= htmlspecialchars($_SESSION['error']) ?></div>
+      <?php unset($_SESSION['error']); ?>
+    <?php endif; ?>
+
+    <!-- Class and School Year Selection Filter -->
+    <div class="filter-container">
+      <form method="POST" id="filterForm">
+        <div class="row filter-row">
+          <div class="col-md-6">
+            <label for="section_filter" class="form-label">Filter by Class:</label>
+            <select class="form-select" id="section_filter" name="section_filter">
+              <option value="">All My Classes</option>
+              <?php foreach ($sections as $section): ?>
+                <option value="<?= $section['SectionID'] ?>" <?= ($selectedSection == $section['SectionID']) ? 'selected' : '' ?>>
+                  <?= htmlspecialchars($section['SectionDisplay']) ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label for="school_year_filter" class="form-label">Filter by School Year:</label>
+            <select class="form-select" id="school_year_filter" name="school_year_filter">
+              <?php foreach ($schoolYears as $year): ?>
+                <option value="<?= $year ?>" <?= ($selectedSchoolYear == $year) ? 'selected' : '' ?>>
+                  <?= htmlspecialchars($year) ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-12">
+            <button type="submit" class="btn btn-primary">Apply Filters</button>
+            <button type="button" class="btn btn-secondary" onclick="resetFilters()">Reset Filters</button>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <?php if (empty($sections)): ?>
+      <div class="alert alert-warning">
+        <h4>No Classes Assigned</h4>
+        <p class="mb-0">You are not currently assigned as an adviser or teacher for any classes.</p>
+        <p class="mb-0"><small>Teacher ID: <?= $teacherId ?></small></p>
+      </div>
+    <?php else: ?>
+
+      <!-- Display current filter info -->
+      <div class="alert alert-info">
+        <strong>Current Filter:</strong> 
+        School Year: <span class="badge bg-primary"><?= htmlspecialchars($selectedSchoolYear) ?></span>
+        <?php if (!empty($selectedSection)): ?>
+          | Class: <span class="badge bg-secondary">
+            <?php 
+              $selectedSectionName = '';
+              foreach ($sections as $section) {
+                if ($section['SectionID'] == $selectedSection) {
+                  $selectedSectionName = $section['SectionDisplay'];
+                  break;
+                }
+              }
+              echo htmlspecialchars($selectedSectionName);
+            ?>
+          </span>
+        <?php endif; ?>
+      </div>
+
+      <!-- Male Students Table -->
+      <div class="gender-section">
+        <div class="gender-header">
+          <h3 class="mb-0">Male Students (<?= count($maleStudents) ?>)</h3>
+        </div>
+        <?php if (!empty($maleStudents)): ?>
+          <div class="table-responsive">
+            <table class="table table-bordered table-hover align-middle">
+              <thead class="table-primary">
+                <tr>
+                  <th>LRN</th>
+                  <th>Full Name</th>
+                  <th>Sex</th>
+                  <th>Email</th>
+                  <th>Grade Level</th>
+                  <th>Section</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php foreach ($maleStudents as $row): ?>
+                  <tr class="clickable-row" data-id="<?= $row['StudentID'] ?>">
+                    <td><?= htmlspecialchars($row['LRN']) ?></td>
+                    <td><?= htmlspecialchars($row['FullName']) ?></td>
+                    <td><?= htmlspecialchars($row['Sex']) ?></td>
+                    <td><?= htmlspecialchars($row['Email']) ?></td>
+                    <td><?= htmlspecialchars($row['GradeLevel']) ?></td>
+                    <td><?= htmlspecialchars($row['SectionName']) ?></td>
+                  </tr>
+                <?php endforeach; ?>
+              </tbody>
+            </table>
+          </div>
+        <?php else: ?>
+          <div class="empty-table-message">
+            <p>No male students found for the selected filters.</p>
+          </div>
+        <?php endif; ?>
+      </div>
+
+      <!-- Female Students Table -->
+      <div class="gender-section">
+        <div class="gender-header">
+          <h3 class="mb-0">Female Students (<?= count($femaleStudents) ?>)</h3>
+        </div>
+        <?php if (!empty($femaleStudents)): ?>
+          <div class="table-responsive">
+            <table class="table table-bordered table-hover align-middle">
+              <thead class="table-info" style="background-color: #f8d7da;">
+                <tr>
+                  <th>LRN</th>
+                  <th>Full Name</th>
+                  <th>Sex</th>
+                  <th>Email</th>
+                  <th>Grade Level</th>
+                  <th>Section</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php foreach ($femaleStudents as $row): ?>
+                  <tr class="clickable-row" data-id="<?= $row['StudentID'] ?>">
+                    <td><?= htmlspecialchars($row['LRN']) ?></td>
+                    <td><?= htmlspecialchars($row['FullName']) ?></td>
+                    <td><?= htmlspecialchars($row['Sex']) ?></td>
+                    <td><?= htmlspecialchars($row['Email']) ?></td>
+                    <td><?= htmlspecialchars($row['GradeLevel']) ?></td>
+                    <td><?= htmlspecialchars($row['SectionName']) ?></td>
+                  </tr>
+                <?php endforeach; ?>
+              </tbody>
+            </table>
+          </div>
+        <?php else: ?>
+          <div class="empty-table-message">
+            <p>No female students found for the selected filters.</p>
+          </div>
+        <?php endif; ?>
+      </div>
+
+    <?php endif; ?>
+  </div>
+
+  <!-- View Student Modal -->
+  <div class="modal fade" id="viewModal" tabindex="-1" aria-labelledby="viewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="viewModalLabel">Student Details</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="studentDetails">
+          <!-- Details will be loaded via AJAX -->
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap JS Bundle with Popper -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script>
+    $(document).ready(function() {
+      // Function to load student details
+      function viewStudent(studentId) {
+        // Show loading indicator
+        $('#studentDetails').html('<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>');
+        
+        // Fetch student details
+        $.ajax({
+          url: '<?php echo $_SERVER['PHP_SELF']; ?>',
+          type: 'GET',
+          data: { 
+            action: 'getStudentDetails',
+            id: studentId
+          },
+          success: function(response) {
+            $('#studentDetails').html(response);
+            $('#viewModal').modal('show');
+          },
+          error: function() {
+            $('#studentDetails').html('<div class="alert alert-danger">Error loading student details.</div>');
+            $('#viewModal').modal('show');
+          }
         });
-    </script>
+      }
+
+      // View Student Details when clicking row
+      $('.clickable-row').click(function(e) {
+        // Don't trigger if clicking on buttons or inside action cell
+        if ($(e.target).is('button') || $(e.target).closest('td.action-cell').length) {
+          return;
+        }
+        var studentId = $(this).data('id');
+        viewStudent(studentId);
+      });
+    });
+
+    function resetFilters() {
+      document.getElementById('section_filter').value = '';
+      document.getElementById('school_year_filter').value = '<?= $schoolYears[0] ?>';
+      document.getElementById('filterForm').submit();
+    }
+  </script>
 </body>
 </html>
