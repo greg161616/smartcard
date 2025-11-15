@@ -4,6 +4,8 @@ require_once 'config.php';
 
 $error = '';
 
+require_once 'api/log_helper.php';
+
 // Consistent session variable names
 if (isset($_SESSION['email']) || isset($_SESSION['user_id'])) {
     $email = isset($_SESSION['email']) ? $_SESSION['email'] : null;
@@ -26,7 +28,7 @@ if (isset($_SESSION['email']) || isset($_SESSION['user_id'])) {
                 header("Location: student/studentPort.php");
                 exit();
             } elseif ($row['Role'] === 'head') {
-                header("Location: head/studentlist.php");
+                header("Location: administration/studentlist.php");
                 exit();
             } else {
                 $error = 'Unknown role for this account.';
@@ -54,6 +56,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['user_id'] = $row['UserID'];
             $_SESSION['email'] = $row['Email'];
             $_SESSION['role'] = $row['Role'];
+      // Log successful login
+      log_system_action($conn, 'login_success', $row['UserID'], [
+        'email' => $row['Email'],
+        'role' => $row['Role'],
+        'ip' => $_SERVER['REMOTE_ADDR'] ?? null,
+        'ua' => $_SERVER['HTTP_USER_AGENT'] ?? null
+      ], 'info');
             // Redirect based on role
             if ($row['Role'] === 'teacher') {
                 header('Location: teacher/tdashboard.php');
@@ -65,15 +74,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header('Location: student/studentPort.php');
                 exit();
             } elseif ($row['Role'] === 'head') {
-                header('Location: head/studentlist.php');
+                header('Location: administration/studentlist.php');
                 exit();
             } else {
                 $error = 'Unknown role for this account.';
             }
         } else {
+      // Log failed login - wrong password
+      log_system_action($conn, 'login_failed_password', $row['UserID'], [
+        'email' => $email,
+        'ip' => $_SERVER['REMOTE_ADDR'] ?? null,
+        'ua' => $_SERVER['HTTP_USER_AGENT'] ?? null
+      ], 'warning');
             $error = 'Incorrect password. Please try again.';
         }
     } else {
+    // Log failed login - no account found
+    log_system_action($conn, 'login_failed_no_account', null, [
+      'email' => $email,
+      'ip' => $_SERVER['REMOTE_ADDR'] ?? null,
+      'ua' => $_SERVER['HTTP_USER_AGENT'] ?? null
+    ], 'warning');
         $error = 'No account found with that email address.';
     }
 }

@@ -160,16 +160,16 @@
           <i class="bi bi-person-badge" style="font-size:20px;margin-right:8px;"></i> Teacher
         </a>
       <a class="nav-link" href="../admin/select_sec.php">
-        <i class="bi bi-folder2-open" style="font-size:20px;margin-right:12px;"></i> Records
+        <i class="bi bi-folder2-open" style="font-size:20px;margin-right:12px;"></i> Grades
       </a>
       <a class="nav-link" href="../admin/achievement.php">
-        <i class="bi bi-award" style="font-size:20px;margin-right:12px;"></i> Achievements
+        <i class="bi bi-award" style="font-size:20px;margin-right:12px;"></i> Top Students
       </a>
       <a class="nav-link" href="../admin/calendar.php">
         <i class="bi bi-calendar3" style="font-size:20px;margin-right:12px;"></i> Calendar
       </a>
-      <a class="nav-link" href="../admin/user.php">
-        <i class="bi bi-person-add" style="font-size:20px;margin-right:12px;"></i> User
+      <a class="nav-link" href="../admin/view_logs.php">
+        <i class="bi bi-list-check" style="font-size:20px;margin-right:12px;"></i> Logs
       </a>
     </nav>
   </div>

@@ -10,9 +10,7 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-                                    // Fetch teacher's name
-
-
+// Fetch teacher's name
 // Get teacher_id from session or database
 if (!isset($_SESSION['teacher_id'])) {
     // Try to get teacher_id from database based on user_id
@@ -71,6 +69,28 @@ if (!$res->num_rows) {
 $section = $res->fetch_assoc();
 $stmt->close();
 
+// Determine default quarter based on existing uploaded quarters (choose next quarter after latest uploaded)
+$defaultQuarter = 1;
+$qstmt = $conn->prepare("SELECT DISTINCT quarter FROM grades_details WHERE subjectID = ? AND teacherID = ? ORDER BY quarter ASC");
+if ($qstmt) {
+    $qstmt->bind_param('ii', $subjectId, $teacher_id);
+    $qstmt->execute();
+    $qres = $qstmt->get_result();
+    $maxQ = 0;
+    while ($r = $qres->fetch_assoc()) {
+        $qnum = (int)$r['quarter'];
+        if ($qnum > $maxQ) $maxQ = $qnum;
+    }
+    if ($maxQ == 0) {
+        $defaultQuarter = 1;
+    } elseif ($maxQ < 4) {
+        $defaultQuarter = $maxQ + 1;
+    } else {
+        $defaultQuarter = 4;
+    }
+    $qstmt->close();
+}
+
 ?>
 
 <!DOCTYPE html>
@@ -79,6 +99,7 @@ $stmt->close();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Upload Grades</title>
+    <link rel="icon" href="../img/logo.png" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -94,7 +115,7 @@ $stmt->close();
         }
         
         .upload-area {
-            border: 2px dashed #d1d3e2;
+            border: 2px dashed #0cb929ff;
             border-radius: 8px;
             padding: 1rem;
             text-align: center;
@@ -104,7 +125,7 @@ $stmt->close();
         }
         
         .upload-area:hover {
-            border-color: var(--primary);
+            border-color: var(--success);
             background-color: #eaecf4;
         }
         
@@ -151,32 +172,10 @@ $stmt->close();
             overflow-y: auto;
         }
         
-        .progress {
-            height: 20px;
-            margin-bottom: 20px;
-            overflow: hidden;
-            background-color: #f5f5f5;
-            border-radius: 4px;
-            box-shadow: inset 0 1px 2px rgba(0,0,0,.1);
-        }
-        
-        .progress-bar {
-            float: left;
-            width: 0%;
-            height: 100%;
-            font-size: 12px;
-            line-height: 20px;
-            color: #fff;
-            text-align: center;
-            background-color: var(--primary);
-            transition: width .6s ease;
-        }
-        
         .card {
             border: none;
             border-radius: 15px;
-            max-width: 700px;
-            margin: auto;
+            position: relative;
         }
 
         .form-select:focus, .form-control:focus {
@@ -187,20 +186,49 @@ $stmt->close();
         .instructions {
             background: linear-gradient(to right, #f8f9fc 0%, #eaecf4 100%);
         }
+        
+        .modal-success .modal-header {
+            background-color: var(--success);
+            color: white;
+        }
+        
+        .modal-error .modal-header {
+            background-color: var(--danger);
+            color: white;
+        }
+        
+        .result-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+        /* Close/back button in header */
+        .card-header .close-card-btn {
+            position: absolute;
+            right: 12px;
+            top: 8px;
+            color: white;
+            background: transparent;
+            border: none;
+            font-size: 1.25rem;
+            opacity: 0.95;
+        }
+        .card-header .close-card-btn:hover { opacity: 1; color: #fff; }
     </style>
 </head>
 <body>
     <?php include '../navs/teacherNav.php'; ?>
-    <div class="container py-5">
+    <div class="container mb-3">
         <div class="row justify-content-center">
             <div class="col-lg-10">
                 <div class="card shadow-lg">
-                    <div class="card-header py-3 bg-info text-white">
+                    <div class="card-header py-3 bg-info text-white position-relative">
                         <h3 class="text-center mb-0"><i class="fas fa-file-upload me-2"></i>Upload Grade File</h3>
+                        <a href="grading_sheet.php" class="close-card-btn" title="Back to grading sheet">
+                            <i class="fas fa-times" style="font-size: 28px;"></i>
+                        </a>
                     </div>
                     <div class="card-body">
-                        
-                        <div class="instructions mb-4">
+                                                        <div class="instructions">
                             <h5><i class="fas fa-info-circle me-2"></i>Instructions</h5>
                             <p class="mb-0">
                                 - Ensure your Excel file follows the correct format.<br>
@@ -209,45 +237,77 @@ $stmt->close();
                                 - The system will automatically validate and process the grades after upload.
                             </p>
                         </div>
-                        
-
+                        <div class="row">
+                            <div class="col-md-6 mt-3">
                         <form id="uploadForm" enctype="multipart/form-data">
                          <input type="hidden" name="subject_id" value="<?= $subjectId ?>">
                          <input type="hidden" name="section_id" value="<?= $sectionId ?>">
-                            <div class="row mb-4">
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <h4 class="text-secondary">Welcome, Teacher: </h4>
-                                        <h3 class="text-secondary"><strong><?= htmlspecialchars($teacherName) ?></strong></h3>
+                            <div class="row">
+                                <div class="col-md-6 mt-4">
+                                    <div class="mb-4">
+                                        <h4 class="text-secondary">Teacher: </h4>
+                                        <h3><strong><?= htmlspecialchars($teacherName) ?></strong></h3>
                                     </div>
                                     <select name="quarter" class="form-control" required>
-                                        <option value="1">Quarter 1</option>
-                                        <option value="2">Quarter 2</option>
-                                        <option value="3">Quarter 3</option>
-                                        <option value="4">Quarter 4</option>
+                                        <option value="1" <?= isset($defaultQuarter) && $defaultQuarter == 1 ? 'selected' : '' ?>>Quarter 1</option>
+                                        <option value="2" <?= isset($defaultQuarter) && $defaultQuarter == 2 ? 'selected' : '' ?>>Quarter 2</option>
+                                        <option value="3" <?= isset($defaultQuarter) && $defaultQuarter == 3 ? 'selected' : '' ?>>Quarter 3</option>
+                                        <option value="4" <?= isset($defaultQuarter) && $defaultQuarter == 4 ? 'selected' : '' ?>>Quarter 4</option>
                                     </select>
                                 </div>
                                 <div class="col-md-6">
-                                    <div class="mt-2">
-                                        <h5 class="text-secondary">
+                                    <div class="mt-2 text-secondary">
+                                        <h5>
                                             Subject: <strong><?= htmlspecialchars($subjectName) ?></strong>
-                                            | Section: Grade <?= $section['GradeLevel'] ?>-<?= htmlspecialchars($section['SectionName']) ?>
+                                            
                                         </h5>
+                                        <h5>Section: <br>
+                                        Grade <?= $section['GradeLevel'] ?>-<?= htmlspecialchars($section['SectionName']) ?></h5>
                                         <div class="py-4 text-center">
-                                            <a href="view_grades.php?subject_id=<?= $subjectId ?>&section_id=<?= $sectionId ?>" class="btn btn-outline-info">View Grades</a>
-                                            <a href="grading_sheet.php" class="btn btn-outline-secondary">Back</a>
+                                            <a href="view_grades.php?subject_id=<?= $subjectId ?>&section_id=<?= $sectionId ?>" class="btn btn-outline-success">View Grades</a>
+                                            <!-- Back button moved to header (X) -->
                                         </div>
                                     </div>
                                 </div>
+            <div class="text-center mt-3 card py-3">
+    <?php
+    if($subjectName == "Music" || $subjectName == "Arts" ||
+     $subjectName == "PE" || $subjectName == "Health" || $subjectName == "MAPEH") {
+        $templateFilename = "MAPEH.zip";
+    } else {
+        $templateFilename = str_replace(' ', '_', $subjectName) . '.xlsx';
+    }
+    $templatePath = 'ClassRecord/' . $templateFilename;
+    
+    // Check if specific subject template exists, otherwise use default
+    if (file_exists($templatePath)) {
+        $downloadLink = $templatePath;
+        $linkText = "Download " . $subjectName . " Template";
+    } else {
+        // Fallback to default template
+        $downloadLink = 'ClassRecord/Default_Template.xlsx';
+        $linkText = "Download Template";
+        
+        // If default doesn't exist either, show message
+        if (!file_exists($downloadLink)) {
+            echo "<span class='text-warning'><i class='fas fa-exclamation-triangle me-1'></i>Template not available</span>";
+            $downloadLink = "#";
+            $linkText = "Template Not Available";
+        }
+    }
+    ?>
+    <a href="<?= $downloadLink ?>" download class="btn btn-outline-primary btn-sm">
+        <i class="fas fa-download me-1"></i> <?= $linkText ?>
+    </a>
+</div>
                             </div>
-                            
-                        
-                        <div id="message-container"></div>
-                            <div class="mb-4">
+                            </div>
+                            <div class="col-md-6 mt-3">
+                                <div class="mb-4">
                                 <label for="grade_file" class="form-label">Upload Grade File:</label>
                                 <div class="upload-area p-3 mb-3">
                                     <input type="file" class="form-control d-none" id="grade_file" name="grade_file" accept=".xlsx,.xls" required>
-                                    <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('grade_file').click()">
+                                    <button type="button" class="btn btn-success btn-sm" onclick="document.getElementById('grade_file').click()">
                                         <i class="fas fa-file-excel me-1"></i> Browse Excel Files
                                     </button>
                                     <div class="mt-2" id="file-name">No file chosen</div>
@@ -255,18 +315,94 @@ $stmt->close();
                                 <div class="form-text">Supported formats: .xlsx, .xls (Max size: 10MB)</div>
                             </div>
                             
-                            <div class="progress d-none" id="progress-container">
-                                <div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
-                            </div>
-                            
                             <div class="d-grid">
                                 <button type="submit" class="btn btn-primary btn-lg">
                                     <i class="fas fa-upload me-2"></i> Upload and Process
                                 </button>
-
                             </div>
+                            </div>
+
+                        </div>
+                        
+                       
+
                         </form>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Modal -->
+    <div class="modal fade" id="loadingModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-info text-white">
+                    <h5 class="modal-title"><i class="fas fa-sync-alt fa-spin me-2"></i>Processing Upload</h5>
+                </div>
+                <div class="modal-body text-center py-4">
+                    <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mb-0">Please wait while we process your grade file...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success Modal -->
+    <div class="modal fade" id="successModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content modal-success">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-check-circle me-2"></i>Upload Successful</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center py-4">
+                    <i class="fas fa-check-circle result-icon text-success"></i>
+                    <h4 id="successMessage"></h4>
+                    <div id="missingStudentsSuccess" class="mt-3" style="display: none;">
+                        <button class="btn btn-sm btn-outline-success mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#missingStudentsSuccessList">
+                            Show missing students
+                        </button>
+                        <div class="collapse" id="missingStudentsSuccessList">
+                            <div class="card card-body student-list text-start">
+                                <ul class="mb-0" id="missingStudentsSuccessItems"></ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-success" data-bs-dismiss="modal">Continue</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Error Modal -->
+    <div class="modal fade" id="errorModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content modal-error">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Upload Failed</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center py-4">
+                    <i class="fas fa-times-circle result-icon text-danger"></i>
+                    <h4 id="errorMessage"></h4>
+                    <div id="missingStudentsError" class="mt-3" style="display: none;">
+                        <button class="btn btn-sm btn-outline-danger mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#missingStudentsErrorList">
+                            Show missing students
+                        </button>
+                        <div class="collapse" id="missingStudentsErrorList">
+                            <div class="card card-body student-list text-start">
+                                <ul class="mb-0" id="missingStudentsErrorItems"></ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-danger" data-bs-dismiss="modal">Try Again</button>
                 </div>
             </div>
         </div>
@@ -284,96 +420,87 @@ $stmt->close();
             e.preventDefault();
             
             const formData = new FormData(this);
-            const progressContainer = document.getElementById('progress-container');
-            const progressBar = progressContainer.querySelector('.progress-bar');
-            const messageContainer = document.getElementById('message-container');
+            const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
+            const successModal = new bootstrap.Modal(document.getElementById('successModal'));
+            const errorModal = new bootstrap.Modal(document.getElementById('errorModal'));
             
-            // Show progress bar
-            progressContainer.classList.remove('d-none');
-            progressBar.style.width = '0%';
-            progressBar.textContent = '0%';
-            
-            // Clear previous messages
-            messageContainer.innerHTML = '';
+            // Show loading modal
+            loadingModal.show();
             
             const xhr = new XMLHttpRequest();
             
-            // Progress event
-            xhr.upload.addEventListener('progress', function(e) {
-                if (e.lengthComputable) {
-                    const percentComplete = (e.loaded / e.total) * 100;
-                    progressBar.style.width = percentComplete + '%';
-                    progressBar.textContent = Math.round(percentComplete) + '%';
-                }
-            });
-            
             // Load event (when request completes)
             xhr.addEventListener('load', function() {
+                loadingModal.hide();
+                
                 if (xhr.status === 200) {
                     try {
                         const response = JSON.parse(xhr.responseText);
                         
-                        // Create alert message
-                        const alertDiv = document.createElement('div');
-                        alertDiv.className = `alert alert-${response.message_type} alert-dismissible fade show`;
-                        alertDiv.innerHTML = ` 
-                            <strong>${response.message_type.charAt(0).toUpperCase() + response.message_type.slice(1)}!</strong> 
-                            ${response.message}
-                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                        `;
-                        
-                        // Add missing students list if any
-                        if (response.students_not_found && response.students_not_found.length > 0) {
-                            const missingStudentsDiv = document.createElement('div');
-                            missingStudentsDiv.className = 'mt-2';
-                            missingStudentsDiv.innerHTML = `
-                                <button class="btn btn-sm btn-outline-${response.message_type}" type="button" data-bs-toggle="collapse" data-bs-target="#missingStudents">
-                                    Show missing students (${response.students_not_found.length})
-                                </button>
-                                <div class="collapse mt-2" id="missingStudents">
-                                    <div class="card card-body student-list">
-                                        <ul class="mb-0">
-                                            ${response.students_not_found.map(student => `<li>${student}</li>`).join('')}
-                                        </ul>
-                                    </div>
-                                </div>
-                            `;
-                            alertDiv.appendChild(missingStudentsDiv);
+                        if (response.message_type === 'success') {
+                            // Show success modal
+                            const sectionInfo = "Grade " + <?= $section['GradeLevel'] ?> + " - " + "<?= $section['SectionName'] ?>";
+                            document.getElementById('successMessage').textContent = 
+                                "Grades successfully uploaded to " + sectionInfo;
+                            
+                            // Show missing students if any
+                            if (response.students_not_found && response.students_not_found.length > 0) {
+                                document.getElementById('missingStudentsSuccess').style.display = 'block';
+                                const list = document.getElementById('missingStudentsSuccessItems');
+                                list.innerHTML = '';
+                                response.students_not_found.forEach(student => {
+                                    const li = document.createElement('li');
+                                    li.textContent = student;
+                                    list.appendChild(li);
+                                });
+                            } else {
+                                document.getElementById('missingStudentsSuccess').style.display = 'none';
+                            }
+                            
+                            successModal.show();
+                        } else {
+                            // Show error modal
+                            document.getElementById('errorMessage').textContent = response.message;
+                            
+                            // Show missing students if any
+                            if (response.students_not_found && response.students_not_found.length > 0) {
+                                document.getElementById('missingStudentsError').style.display = 'block';
+                                const list = document.getElementById('missingStudentsErrorItems');
+                                list.innerHTML = '';
+                                response.students_not_found.forEach(student => {
+                                    const li = document.createElement('li');
+                                    li.textContent = student;
+                                    list.appendChild(li);
+                                });
+                            } else {
+                                document.getElementById('missingStudentsError').style.display = 'none';
+                            }
+                            
+                            errorModal.show();
                         }
-                        
-                        messageContainer.appendChild(alertDiv);
                     } catch (e) {
-                        messageContainer.innerHTML = `
-                            <div class="alert alert-danger alert-dismissible fade show">
-                                <strong>Error!</strong> ${xhr.responseText}
-                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                            </div>
-                        `;
+                        // Show error modal for parsing errors
+                        document.getElementById('errorMessage').textContent = 
+                            "An error occurred while processing the response: " + e.message;
+                        document.getElementById('missingStudentsError').style.display = 'none';
+                        errorModal.show();
                     }
                 } else {
-                    messageContainer.innerHTML = `
-                        <div class="alert alert-danger alert-dismissible fade show">
-                            <strong>Error!</strong> Upload failed with status: ${xhr.status}.
-                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                        </div>
-                    `;
+                    // Show error modal for HTTP errors
+                    document.getElementById('errorMessage').textContent = 
+                        "Upload failed with status: " + xhr.status;
+                    document.getElementById('missingStudentsError').style.display = 'none';
+                    errorModal.show();
                 }
-                
-                // Hide progress bar
-                setTimeout(() => {
-                    progressContainer.classList.add('d-none');
-                }, 1000);
             });
             
             // Error event
             xhr.addEventListener('error', function() {
-                messageContainer.innerHTML = `
-                    <div class="alert alert-danger alert-dismissible fade show">
-                        <strong>Error!</strong> Upload failed due to a network error.
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                `;
-                progressContainer.classList.add('d-none');
+                loadingModal.hide();
+                document.getElementById('errorMessage').textContent = 
+                    "Upload failed due to a network error. Please check your connection and try again.";
+                document.getElementById('missingStudentsError').style.display = 'none';
+                errorModal.show();
             });
             
             // Open and send the request

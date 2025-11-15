@@ -156,10 +156,10 @@ $grades = $grades_result->fetch_all(MYSQLI_ASSOC);
             <div class="row">
                 <div class="col-md-6">
                     <div class="student-info">
-                        <strong>Student Name:</strong> <?php echo htmlspecialchars($student['LastName'] . ', ' . htmlspecialchars($student['FirstName']). ' '. htmlspecialchars($student['Middlename']).'.'); ?>
+                        <strong>LRN:</strong> <?php echo htmlspecialchars($student['LRN']); ?>
                     </div>
                     <div class="student-info">
-                        <strong>LRN:</strong> <?php echo htmlspecialchars($student['LRN']); ?>
+                        <strong>Student Name:</strong> <?php echo htmlspecialchars($student['LastName'] . ', ' . htmlspecialchars($student['FirstName']). ' '. htmlspecialchars($student['Middlename']).'.'); ?>
                     </div>
                 </div>
                 <div class="col-md-6">

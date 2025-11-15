@@ -24,18 +24,17 @@ $stmt->close();
 
 // 3) Fetch all subject-section assignments for this teacher
 $sql = "
-  SELECT 
+SELECT 
     s.SubjectID,
     s.SubjectName,
     sec.SectionID,
     sec.GradeLevel,
     sec.SectionName
-  FROM sched sc
-  JOIN subject s ON sc.SubjectID = s.SubjectID
-  JOIN section sec ON sc.SectionID = sec.SectionID
-  WHERE sc.TeacherID = ?
-  GROUP BY s.SubjectID, sec.SectionID
-  ORDER BY s.SubjectName, sec.GradeLevel, sec.SectionName
+FROM subject s
+JOIN section sec ON s.secID = sec.SectionID
+WHERE s.TeacherID = ?
+GROUP BY s.SubjectID, sec.SectionID
+ORDER BY s.SubjectName, sec.GradeLevel, sec.SectionName
 ";
 $stmt = $conn->prepare($sql);
 $stmt->bind_param('i', $teacherId);
@@ -77,6 +76,12 @@ $stmt->close();
               <td>Grade <?= $a['GradeLevel'] ?>-<?= htmlspecialchars($a['SectionName']) ?></td>
               <td>
                 <a
+                  href="spread_sheet.php?subject_id=<?= $a['SubjectID'] ?>&section_id=<?= $a['SectionID'] ?>"
+                  class="btn btn-sm btn-success"
+                >
+                  Spreadsheet
+                </a>
+                <a
                   href="grades.php?subject_id=<?= $a['SubjectID'] ?>&section_id=<?= $a['SectionID'] ?>"
                   class="btn btn-sm btn-primary"
                 >
@@ -88,6 +93,7 @@ $stmt->close();
                 >
                   View Grades
                 </a>
+                <a href="values.php" class="btn btn-sm btn-secondary">Student Values Evaluation</a>
               </td>
             </tr>
           <?php endforeach; ?>

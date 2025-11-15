@@ -7,39 +7,75 @@ if (!isset($_SESSION['email']) || $_SESSION['role'] !== 'principal') {
     exit();
 }
 
-// Fetch statistics data
+// Get available school years from existing tables
+$school_years = [];
+$sql = "SELECT DISTINCT school_year FROM grades 
+        UNION 
+        SELECT DISTINCT SchoolYear as school_year FROM section_enrollment 
+        ORDER BY school_year DESC";
+$result = mysqli_query($conn, $sql);
+if ($result && mysqli_num_rows($result) > 0) {
+    while ($row = mysqli_fetch_assoc($result)) {
+        $school_years[] = $row['school_year'];
+    }
+} else {
+    // If no school years in database, use current and previous year as default
+    $current_year = date('Y');
+    $school_years = [
+        $current_year . '-' . ($current_year + 1),
+        ($current_year - 1) . '-' . $current_year
+    ];
+}
+
+// Get selected filters with defaults
+$selected_sy = isset($_GET['school_year']) ? $_GET['school_year'] : ($school_years[0] ?? '');
+$selected_grade = isset($_GET['grade_level']) ? $_GET['grade_level'] : 'all';
+
+// Fetch statistics data with school year filtering
 $students_count = 0;
 $teachers_count = 0;
 $sections_count = 0;
 $male_students = 0;
 $female_students = 0;
-$active_sections = 0;
 
-// Get total students
-$sql = "SELECT COUNT(*) as count FROM student";
+// Get total students for selected school year
+$sql = "SELECT COUNT(DISTINCT se.StudentID) as count 
+        FROM section_enrollment se 
+        WHERE se.SchoolYear = '" . mysqli_real_escape_string($conn, $selected_sy) . "' 
+        AND se.status = 'active'";
 $result = mysqli_query($conn, $sql);
 if ($result) {
     $row = mysqli_fetch_assoc($result);
     $students_count = $row['count'];
 }
 
-// Get male students
-$sql = "SELECT COUNT(*) as count FROM student WHERE Sex = 'Male'";
+// Get male students for selected school year
+$sql = "SELECT COUNT(DISTINCT se.StudentID) as count 
+        FROM section_enrollment se 
+        JOIN student st ON se.StudentID = st.StudentID 
+        WHERE se.SchoolYear = '" . mysqli_real_escape_string($conn, $selected_sy) . "' 
+        AND se.status = 'active' 
+        AND st.Sex = 'Male'";
 $result = mysqli_query($conn, $sql);
 if ($result) {
     $row = mysqli_fetch_assoc($result);
     $male_students = $row['count'];
 }
 
-// Get female students
-$sql = "SELECT COUNT(*) as count FROM student WHERE Sex = 'Female'";
+// Get female students for selected school year
+$sql = "SELECT COUNT(DISTINCT se.StudentID) as count 
+        FROM section_enrollment se 
+        JOIN student st ON se.StudentID = st.StudentID 
+        WHERE se.SchoolYear = '" . mysqli_real_escape_string($conn, $selected_sy) . "' 
+        AND se.status = 'active' 
+        AND st.Sex = 'Female'";
 $result = mysqli_query($conn, $sql);
 if ($result) {
     $row = mysqli_fetch_assoc($result);
     $female_students = $row['count'];
 }
 
-// Get total teachers
+// Get total teachers (not tied to school year)
 $sql = "SELECT COUNT(*) as count FROM teacher";
 $result = mysqli_query($conn, $sql);
 if ($result) {
@@ -47,72 +83,31 @@ if ($result) {
     $teachers_count = $row['count'];
 }
 
-// Get total sections
-$sql = "SELECT COUNT(*) as count FROM section";
+// Get total sections with active enrollments in selected school year
+$sql = "SELECT COUNT(DISTINCT s.SectionID) as count 
+        FROM section s 
+        JOIN section_enrollment se ON s.SectionID = se.SectionID 
+        WHERE se.SchoolYear = '" . mysqli_real_escape_string($conn, $selected_sy) . "' 
+        AND se.status = 'active'";
 $result = mysqli_query($conn, $sql);
 if ($result) {
     $row = mysqli_fetch_assoc($result);
     $sections_count = $row['count'];
 }
 
-// Get active sections (sections with enrolled students)
-$sql = "SELECT COUNT(*) AS failing_students
-FROM grades
-WHERE Final < 74;
-";
-$result = mysqli_query($conn, $sql);
-if ($result) {
-    $row = mysqli_fetch_assoc($result);
-    $active_sections = $row['failing_students'];
-}
-
-// Get teachers by subject
-$teachers_by_subject = [];
-$sql = "SELECT s.SubjectName, COUNT(DISTINCT t.TeacherID) as count 
-        FROM subject s 
-        LEFT JOIN teacher t ON s.teacherID = t.TeacherID 
-        GROUP BY s.SubjectID";
-$result = mysqli_query($conn, $sql);
-if ($result) {
-    while ($row = mysqli_fetch_assoc($result)) {
-        $teachers_by_subject[] = $row;
-    }
-}
-
-// Get upcoming events (next 7 days)
-$upcoming_events = [];
-$sql = "SELECT title, event_date, description, category 
-        FROM events 
-        WHERE event_date >= CURDATE() AND event_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY) 
-        ORDER BY event_date ASC 
-        LIMIT 5";
-$result = mysqli_query($conn, $sql);
-if ($result) {
-    while ($row = mysqli_fetch_assoc($result)) {
-        $upcoming_events[] = $row;
-    }
-}
-
-// Get recent announcements
-$recent_announcements = [];
-$sql = "SELECT title, date, content 
-        FROM announcement 
-        ORDER BY date DESC 
-        LIMIT 5";
-$result = mysqli_query($conn, $sql);
-if ($result) {
-    while ($row = mysqli_fetch_assoc($result)) {
-        $recent_announcements[] = $row;
-    }
-}
-
-// Get students per section
+// Get students per section with gender breakdown for selected school year
 $students_per_section = [];
-$sql = "SELECT sec.GradeLevel, sec.SectionName, COUNT(se.StudentID) as student_count 
-        FROM section sec 
-        LEFT JOIN section_enrollment se ON sec.SectionID = se.SectionID AND se.status = 'enrolled' 
-        GROUP BY sec.SectionID 
-        ORDER BY sec.GradeLevel, sec.SectionName";
+$sql = "SELECT s.SectionID, s.SectionName, s.GradeLevel, 
+               COUNT(CASE WHEN st.Sex = 'Male' THEN 1 END) as male_count,
+               COUNT(CASE WHEN st.Sex = 'Female' THEN 1 END) as female_count,
+               COUNT(se.StudentID) as total_count
+        FROM section s 
+        LEFT JOIN section_enrollment se ON s.SectionID = se.SectionID 
+            AND se.SchoolYear = '" . mysqli_real_escape_string($conn, $selected_sy) . "' 
+            AND se.status = 'active'
+        LEFT JOIN student st ON se.StudentID = st.StudentID
+        GROUP BY s.SectionID 
+        ORDER BY s.GradeLevel, s.SectionName";
 $result = mysqli_query($conn, $sql);
 if ($result) {
     while ($row = mysqli_fetch_assoc($result)) {
@@ -120,15 +115,18 @@ if ($result) {
     }
 }
 
-// Get top 5 students by average grade
+// Get top 5 students by average grade for selected school year
 $top_students = [];
-$sql = "SELECT s.FirstName, s.LastName, sec.SectionName, AVG(g.Final) as avg_grade 
-        FROM student s 
-        JOIN grades g ON s.StudentID = g.student_id 
-        JOIN section_enrollment se ON s.StudentID = se.StudentID 
+$sql = "SELECT st.StudentID, st.FirstName, st.LastName, sec.GradeLevel, sec.SectionName, 
+               AVG(g.Final) as avg_grade 
+        FROM student st 
+        JOIN grades g ON st.StudentID = g.student_id 
+        JOIN section_enrollment se ON st.StudentID = se.StudentID 
         JOIN section sec ON se.SectionID = sec.SectionID 
         WHERE g.Final IS NOT NULL 
-        GROUP BY s.StudentID 
+        AND g.school_year = '" . mysqli_real_escape_string($conn, $selected_sy) . "'
+        AND se.SchoolYear = '" . mysqli_real_escape_string($conn, $selected_sy) . "'
+        GROUP BY st.StudentID 
         ORDER BY avg_grade DESC 
         LIMIT 5";
 $result = mysqli_query($conn, $sql);
@@ -138,89 +136,120 @@ if ($result) {
     }
 }
 
-// Get students with average grade below 75
-$low_performing_students = [];
-$sql = "SELECT s.FirstName, s.LastName, sec.SectionName, AVG(g.Final) as avg_grade 
-        FROM student s 
-        JOIN grades g ON s.StudentID = g.student_id 
-        JOIN section_enrollment se ON s.StudentID = se.StudentID 
-        JOIN section sec ON se.SectionID = sec.SectionID 
-        WHERE g.Final IS NOT NULL 
-        GROUP BY s.StudentID 
-        HAVING avg_grade < 75
-        ORDER BY avg_grade ASC 
-        LIMIT 10";
+// Get today's activities from system logs (not tied to school year)
+$todays_activities = [];
+$sql = "SELECT sl.action, sl.created_at, sl.details,
+         COALESCE(CONCAT(t.fName, ' ', t.lName), a.FullName, CONCAT(s.FirstName, ' ', s.LastName), u.Email, sl.user_id) AS user_display
+  FROM system_logs sl
+  LEFT JOIN teacher t ON t.UserID = sl.user_id
+  LEFT JOIN admin a ON a.UserID = sl.user_id
+  LEFT JOIN student s ON s.userID = sl.user_id
+  LEFT JOIN user u ON u.UserID = sl.user_id
+  WHERE DATE(sl.created_at) = CURDATE()
+  ORDER BY sl.created_at DESC
+  LIMIT 5";
 $result = mysqli_query($conn, $sql);
 if ($result) {
     while ($row = mysqli_fetch_assoc($result)) {
-        $low_performing_students[] = $row;
+        $todays_activities[] = $row;
     }
 }
 
-// Get attendance statistics
-$attendance_stats = [];
-$sql = "SELECT 
-        COUNT(CASE WHEN Status = 'present' THEN 1 END) as present,
-        COUNT(CASE WHEN Status = 'absent' THEN 1 END) as absent,
-        COUNT(CASE WHEN Status = 'late' THEN 1 END) as late,
-        COUNT(*) as total
-        FROM attendance 
-        WHERE Date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)";
-$result = mysqli_query($conn, $sql);
-if ($result) {
-    $attendance_stats = mysqli_fetch_assoc($result);
-}
-
-// Get subjects taught by teachers
-$subjects_by_teacher = [];
-$sql = "SELECT t.fName, t.lName, GROUP_CONCAT(s.SubjectName SEPARATOR ', ') as subjects 
-        FROM teacher t 
-        LEFT JOIN subject s ON t.TeacherID = s.teacherID 
-        GROUP BY t.TeacherID 
-        ORDER BY t.lName, t.fName";
+// Get upcoming events (next 7 days) - not tied to school year
+$upcoming_events = [];
+$sql = "SELECT title, event_date, description, category 
+        FROM events 
+        WHERE event_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+        ORDER BY event_date ASC 
+        LIMIT 5";
 $result = mysqli_query($conn, $sql);
 if ($result) {
     while ($row = mysqli_fetch_assoc($result)) {
-        $subjects_by_teacher[] = $row;
+        $upcoming_events[] = $row;
     }
 }
 
-// Get performance by quarter
-$quarter_performance = [];
-$sql = "SELECT 
-        quarter,
-        AVG(quarterly_grade) as avg_grade,
-        MAX(quarterly_grade) as max_grade,
-        MIN(quarterly_grade) as min_grade
-        FROM grades_details 
-        WHERE quarterly_grade IS NOT NULL 
-        GROUP BY quarter 
-        ORDER BY quarter";
-$result = mysqli_query($conn, $sql);
-if ($result) {
-    while ($row = mysqli_fetch_assoc($result)) {
-        $quarter_performance[] = $row;
-    }
+// Get average grade per subject per quarter with filters
+$avg_grade_per_subject = [];
+$sql = "SELECT sub.SubjectName, 1 AS quarter, AVG(g.Q1) AS avg_grade
+    FROM grades g
+    JOIN subject sub ON g.subject = sub.SubjectID
+    JOIN section_enrollment se ON g.student_id = se.StudentID
+    JOIN section sec ON se.SectionID = sec.SectionID
+    WHERE g.Q1 IS NOT NULL
+    AND g.school_year = '" . mysqli_real_escape_string($conn, $selected_sy) . "'
+    AND se.SchoolYear = '" . mysqli_real_escape_string($conn, $selected_sy) . "'";
+
+// Add grade level filter if selected
+if (isset($_GET['grade_level']) && $_GET['grade_level'] != 'all') {
+    $sql .= " AND sec.GradeLevel = " . intval($_GET['grade_level']);
 }
 
-// Get grade distribution
-$grade_distribution = [];
-$sql = "SELECT 
-        CASE 
-            WHEN Final >= 90 THEN 'A (90-100)'
-            WHEN Final >= 80 THEN 'B (80-89)'
-            WHEN Final >= 75 THEN 'C (75-79)'
-            ELSE 'F (Below 75)'
-        END as grade_range,
-        COUNT(*) as count
-        FROM grades 
-        WHERE Final IS NOT NULL 
-        GROUP BY grade_range 
-        ORDER BY grade_range";
+$sql .= " GROUP BY sub.SubjectID, sub.SubjectName
+    UNION ALL
+    SELECT sub.SubjectName, 2 AS quarter, AVG(g.Q2) AS avg_grade
+    FROM grades g
+    JOIN subject sub ON g.subject = sub.SubjectID
+    JOIN section_enrollment se ON g.student_id = se.StudentID
+    JOIN section sec ON se.SectionID = sec.SectionID
+    WHERE g.Q2 IS NOT NULL
+    AND g.school_year = '" . mysqli_real_escape_string($conn, $selected_sy) . "'
+    AND se.SchoolYear = '" . mysqli_real_escape_string($conn, $selected_sy) . "'";
+
+// Add grade level filter if selected
+if (isset($_GET['grade_level']) && $_GET['grade_level'] != 'all') {
+    $sql .= " AND sec.GradeLevel = " . intval($_GET['grade_level']);
+}
+
+$sql .= " GROUP BY sub.SubjectID, sub.SubjectName
+    UNION ALL
+    SELECT sub.SubjectName, 3 AS quarter, AVG(g.Q3) AS avg_grade
+    FROM grades g
+    JOIN subject sub ON g.subject = sub.SubjectID
+    JOIN section_enrollment se ON g.student_id = se.StudentID
+    JOIN section sec ON se.SectionID = sec.SectionID
+    WHERE g.Q3 IS NOT NULL
+    AND g.school_year = '" . mysqli_real_escape_string($conn, $selected_sy) . "'
+    AND se.SchoolYear = '" . mysqli_real_escape_string($conn, $selected_sy) . "'";
+
+// Add grade level filter if selected
+if (isset($_GET['grade_level']) && $_GET['grade_level'] != 'all') {
+    $sql .= " AND sec.GradeLevel = " . intval($_GET['grade_level']);
+}
+
+$sql .= " GROUP BY sub.SubjectID, sub.SubjectName
+    UNION ALL
+    SELECT sub.SubjectName, 4 AS quarter, AVG(g.Q4) AS avg_grade
+    FROM grades g
+    JOIN subject sub ON g.subject = sub.SubjectID
+    JOIN section_enrollment se ON g.student_id = se.StudentID
+    JOIN section sec ON se.SectionID = sec.SectionID
+    WHERE g.Q4 IS NOT NULL
+    AND g.school_year = '" . mysqli_real_escape_string($conn, $selected_sy) . "'
+    AND se.SchoolYear = '" . mysqli_real_escape_string($conn, $selected_sy) . "'";
+
+// Add grade level filter if selected
+if (isset($_GET['grade_level']) && $_GET['grade_level'] != 'all') {
+    $sql .= " AND sec.GradeLevel = " . intval($_GET['grade_level']);
+}
+
+$sql .= " GROUP BY sub.SubjectID, sub.SubjectName
+    ORDER BY quarter, avg_grade DESC";
+
+$result = mysqli_query($conn, $sql);
+if ($result) {
+  while ($row = mysqli_fetch_assoc($result)) {
+    $avg_grade_per_subject[] = $row;
+  }
+}
+
+// Get unique grade levels for filter dropdown
+$grade_levels = [];
+$sql = "SELECT DISTINCT GradeLevel FROM section ORDER BY GradeLevel";
 $result = mysqli_query($conn, $sql);
 if ($result) {
     while ($row = mysqli_fetch_assoc($result)) {
-        $grade_distribution[] = $row;
+        $grade_levels[] = $row['GradeLevel'];
     }
 }
 ?>
@@ -232,440 +261,495 @@ if ($result) {
   <title>BAHAHIS | Dashboard</title>
   <link rel="icon" type="image/png" href="../img/logo.png" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
+    body {
+      background-color: #f8f9fa;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .dashboard-container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
     .stat-card {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      height: 100%;
       transition: transform 0.3s;
-      border-left: 4px solid #0d6efd;
+      border-left: 4px solid;
     }
     .stat-card:hover {
       transform: translateY(-5px);
-      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      box-shadow: 0 6px 12px rgba(0,0,0,0.15);
     }
-    .dashboard-section {
-      margin-bottom: 2rem;
-      padding: 1.5rem;
-      background-color: #f8f9fa;
-      border-radius: 0.5rem;
+    .students-card {
+      border-left-color: #4e73df;
     }
-    .gender-card-male {
-      border-left: 4px solid #0d6efd !important;
+    .teacher-card {
+      border-left-color: #1cc88a;
     }
-    .gender-card-female {
-      border-left: 4px solid #ff69b4 !important;
+    .section-card {
+      border-left-color: #36b9cc;
     }
-    .total-card {
-      border-left: 4px solid #28a745 !important;
+    .activities-card {
+      border-left-color: #f6c23e;
     }
-    .total-teacher{
-      border-left: 4px solid #28c8ceff !important;
+    .events-card {
+      border-left-color: #e74a3b;
     }
-    .section{
-      border-left: 4px solid #ffc107 !important;
+    .stat-number {
+      font-size: 2rem;
+      font-weight: bold;
+      margin-bottom: 0;
     }
-    .fail{
-      border-left: 4px solid #dc3545 !important;
+    .stat-label {
+      font-size: 0.9rem;
+      color: #5a5c69;
+      margin-bottom: 10px;
+    }
+    .gender-breakdown {
+      font-size: 0.8rem;
+      color: #858796;
+    }
+    .chart-container {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+      height: 100%;
+    }
+    .table-container {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+    .activities-list, .events-list {
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .activity-item, .event-item {
+      padding: 10px 0;
+      border-bottom: 1px solid #e3e6f0;
+    }
+    .activity-item:last-child, .event-item:last-child {
+      border-bottom: none;
+    }
+    .chart-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #5a5c69;
+      margin-bottom: 15px;
+    }
+    .chart-wrapper {
+      position: relative;
+      height: 250px;
+      width: 100%;
+    }
+    .badge-quarter {
+      font-size: 0.7em;
+    }
+    .filter-form {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 15px;
+    }
+    .school-year-badge {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 100;
+    }
+    .grade-filter-form {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 15px;
     }
   </style>
 </head>
 <body>
  <?php include '../navs/adminNav.php'; ?>
-<div class="container mt-4">
-  <h1 class="mb-4">Principal Dashboard</h1>
-  
-  <!-- Overall School Statistics -->
-  <div class="dashboard-section">
-    <h2 class="mb-4">Overall School Statistics</h2>
-    <div class="row">
-      <div class="col-md-4 mb-4">
-        <div class="card stat-card total-card">
-          <div class="card-body">
-            <h5 class="card-title">Total Students</h5>
-            <h2 class="card-text"><?php echo $students_count; ?></h2>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-4 mb-4">
-        <div class="card stat-card gender-card-male">
-          <div class="card-body">
-            <h5 class="card-title">Male Students</h5>
-            <h2 class="card-text"><?php echo $male_students; ?></h2>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-4 mb-4">
-        <div class="card stat-card gender-card-female">
-          <div class="card-body">
-            <h5 class="card-title">Female Students</h5>
-            <h2 class="card-text"><?php echo $female_students; ?></h2>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="row">
-      <div class="col-md-4 mb-4">
-        <div class="card stat-card total-teacher">
-          <div class="card-body">
-            <h5 class="card-title">Total Teachers</h5>
-            <h2 class="card-text"><?php echo $teachers_count; ?></h2>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-4 mb-4">
-        <div class="card stat-card section">
-          <div class="card-body">
-            <h5 class="card-title">Total Sections</h5>
-            <h2 class="card-text"><?php echo $sections_count; ?></h2>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-4 mb-4">
-        <div class="card stat-card fail">
-          <div class="card-body">
-            <h5 class="card-title">Failing Student</h5>
-            <h2 class="card-text"><?php echo $active_sections; ?></h2>
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="row mt-4">
-      <div class="col-md-6">
-        <div class="card">
-          <div class="card-header">
-            <h5>Upcoming Events</h5>
-          </div>
-          <div class="card-body">
-            <?php if (!empty($upcoming_events)): ?>
-              <ul class="list-group list-group-flush">
-                <?php foreach ($upcoming_events as $event): ?>
-                  <li class="list-group-item">
-                    <strong><?php echo $event['title']; ?></strong> (<?php echo $event['category']; ?>)<br>
-                    <small class="text-muted"><?php echo date('M j, Y', strtotime($event['event_date'])); ?></small>
-                  </li>
-                <?php endforeach; ?>
-              </ul>
-            <?php else: ?>
-              <p class="text-muted">No upcoming events</p>
-            <?php endif; ?>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-6">
-        <div class="card">
-          <div class="card-header">
-            <h5>Recent Announcements</h5>
-          </div>
-          <div class="card-body">
-            <?php if (!empty($recent_announcements)): ?>
-              <ul class="list-group list-group-flush">
-                <?php foreach ($recent_announcements as $announcement): ?>
-                  <li class="list-group-item">
-                    <strong><?php echo $announcement['title']; ?></strong><br>
-                    <small class="text-muted"><?php echo date('M j, Y', strtotime($announcement['date'])); ?></small>
-                  </li>
-                <?php endforeach; ?>
-              </ul>
-            <?php else: ?>
-              <p class="text-muted">No recent announcements</p>
-            <?php endif; ?>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-  
-  <!-- Student Statistics -->
-  <div class="dashboard-section">
-    <h2 class="mb-4">Student Statistics</h2>
-    <div class="row">
-      <div class="col-md-6">
-        <div class="card mb-4">
-          <div class="card-header">
-            <h5>Students per Section</h5>
-          </div>
-          <div class="card-body">
-            <canvas id="sectionChart" height="250"></canvas>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-6">
-        <div class="card mb-4">
-          <div class="card-header">
-            <h5>Grade Distribution</h5>
-          </div>
-          <div class="card-body">
-            <canvas id="gradeChart" height="250"></canvas>
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="row mt-4">
-      <div class="col-md-6">
-        <div class="card">
-          <div class="card-header">
-            <h5>Top 5 Students</h5>
-          </div>
-          <div class="card-body">
-            <div class="table-responsive">
-              <table class="table table-striped">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Section</th>
-                    <th>Average Grade</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <?php foreach ($top_students as $student): ?>
-                    <tr>
-                      <td><?php echo $student['FirstName'] . ' ' . $student['LastName']; ?></td>
-                      <td><?php echo $student['SectionName']; ?></td>
-                      <td><?php echo number_format($student['avg_grade'], 2); ?></td>
-                    </tr>
-                  <?php endforeach; ?>
-                </tbody>
-              </table>
+ 
+<div class="container-fluid dashboard-container mt-4">
+  <!-- Welcome Header with School Year Badge -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card border-0 bg-primary text-white shadow position-relative">
+        <div class="card-body">
+          <div class="row align-items-center">
+            <div class="col">
+              <h4 class="card-title mb-1">
+                <i class="bi bi-speedometer2 me-2"></i>Welcome to BAHAHIS Dashboard
+              </h4>
+              <p class="card-text mb-0">Overview of school statistics and performance metrics</p>
+            </div>
+            <div class="col-auto">
+              
+              <i class="bi bi-calendar-check me-1"></i>School Year: <?php echo $selected_sy; ?>
+              <span class="badge bg-light text-primary fs-6"><?php echo date('l, F j, Y'); ?></span>
+              
             </div>
           </div>
         </div>
       </div>
-      <div class="col-md-6">
-        <div class="card">
-          <div class="card-header">
-            <h5>Students Needing Attention (Below 75%)</h5>
+    </div>
+  </div>
+
+  <!-- Global Filters - School Year Only -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="filter-form">
+        <form method="GET" class="row g-3 align-items-end">
+          <div class="col-md-6">
+            <label for="school_year" class="form-label fw-bold">School Year</label>
+            <select class="form-select" id="school_year" name="school_year" onchange="this.form.submit()">
+              <?php foreach ($school_years as $year): ?>
+                <option value="<?php echo $year; ?>" <?php echo $selected_sy == $year ? 'selected' : ''; ?>>
+                  <?php echo $year; ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
           </div>
-          <div class="card-body">
-            <?php if (!empty($low_performing_students)): ?>
-              <div class="table-responsive">
-                <table class="table table-striped">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Section</th>
-                      <th>Average Grade</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <?php foreach ($low_performing_students as $student): ?>
-                      <tr>
-                        <td><?php echo $student['FirstName'] . ' ' . $student['LastName']; ?></td>
-                        <td><?php echo $student['SectionName']; ?></td>
-                        <td class="text-danger"><?php echo number_format($student['avg_grade'], 2); ?></td>
-                      </tr>
-                    <?php endforeach; ?>
-                  </tbody>
-                </table>
-              </div>
-            <?php else: ?>
-              <p class="text-muted">No students with grades below 75%</p>
-            <?php endif; ?>
+          <div class="col-md-6">
+            <div class="d-grid">
+              <a href="?school_year=<?php echo $selected_sy; ?>" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-clockwise"></i> Reset Filters
+              </a>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Statistics Cards -->
+  <div class="row mb-4">
+    <div class="col-xl-3 col-md-6 mb-4">
+      <div class="stat-card students-card">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">Total Students</div>
+            <div class="stat-number"><?php echo $students_count; ?></div>
+            <div class="gender-breakdown">
+              <span class="badge bg-primary me-1"><i class="bi bi-gender-male"></i> <?php echo $male_students; ?></span>
+              <span class="badge bg-danger"><i class="bi bi-gender-female"></i> <?php echo $female_students; ?></span>
+            </div>
+            <small class="text-muted">SY: <?php echo $selected_sy; ?></small>
+          </div>
+          <div class="bg-primary bg-opacity-10 p-3 rounded">
+            <i class="bi bi-people-fill text-primary fs-4"></i>
           </div>
         </div>
       </div>
     </div>
     
-    <div class="row mt-4">
-      <div class="col-md-12">
-        <div class="card">
-          <div class="card-header">
-            <h5>Attendance Overview (Last 30 Days)</h5>
+    <div class="col-xl-3 col-md-6 mb-4">
+      <div class="stat-card teacher-card">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">Teachers</div>
+            <div class="stat-number"><?php echo $teachers_count; ?></div>
+            <div class="gender-breakdown">Active faculty members</div>
           </div>
-          <div class="card-body">
-            <canvas id="attendanceChart" height="100"></canvas>
+          <div class="bg-success bg-opacity-10 p-3 rounded">
+            <i class="bi bi-person-badge-fill text-success fs-4"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-xl-3 col-md-6 mb-4">
+      <div class="stat-card section-card">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">Active Sections</div>
+            <div class="stat-number"><?php echo $sections_count; ?></div>
+            <div class="gender-breakdown">SY: <?php echo $selected_sy; ?></div>
+          </div>
+          <div class="bg-info bg-opacity-10 p-3 rounded">
+            <i class="bi bi-layers-fill text-info fs-4"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-xl-3 col-md-6 mb-4">
+      <div class="stat-card activities-card">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <div>
+            <div class="stat-label">Total Activities Today</div>
+            <div class="stat-number"><?php echo count($todays_activities); ?></div>
+          </div>
+          <div class="bg-warning bg-opacity-10 p-3 rounded">
+            <i class="bi bi-activity text-warning fs-4"></i>
           </div>
         </div>
       </div>
     </div>
   </div>
   
-  <!-- Teacher Statistics -->
-  <div class="dashboard-section">
-    <h2 class="mb-4">Teacher Statistics</h2>
-    <div class="card mb-4">
-      <div class="card-header">
-        <h5>Subjects Taught by Each Teacher</h5>
+  <!-- Charts and Events Row -->
+  <div class="row mb-4">
+    <!-- Students per Class Chart -->
+    <div class="col-xl-8 col-lg-7 mb-4">
+      <div class="chart-container h-100">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="chart-title">
+            <i class="bi bi-bar-chart-fill me-2 text-primary"></i>Students Distribution by Class
+            <small class="text-muted ms-2">(SY: <?php echo $selected_sy; ?>)</small>
+          </div>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="studentsPerClassChart"></canvas>
+        </div>
       </div>
-      <div class="card-body">
-        <div class="table-responsive">
-          <table class="table table-striped">
-            <thead>
-              <tr>
-                <th>Teacher Name</th>
-                <th>Subjects</th>
-              </tr>
-            </thead>
-            <tbody>
-              <?php foreach ($subjects_by_teacher as $teacher): ?>
-                <tr>
-                  <td><?php echo $teacher['fName'] . ' ' . $teacher['lName']; ?></td>
-                  <td><?php echo $teacher['subjects'] ? $teacher['subjects'] : 'No subjects assigned'; ?></td>
-                </tr>
-              <?php endforeach; ?>
-            </tbody>
-          </table>
+    </div>
+    
+    <!-- Upcoming Events -->
+    <div class="col-xl-4 col-lg-5 mb-4">
+      <div class="stat-card events-card h-100">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="stat-label">Upcoming Events</div>
+          <span class="badge bg-danger">Next 7 days</span>
+        </div>
+        <div class="events-list">
+          <?php if (!empty($upcoming_events)): ?>
+            <?php foreach ($upcoming_events as $event): ?>
+              <div class="event-item">
+                <div class="d-flex justify-content-between align-items-start">
+                  <div class="flex-grow-1">
+                    <div class="fw-bold"><?php echo $event['title']; ?></div>
+                    <small class="text-muted"><?php echo $event['category']; ?></small>
+                  </div>
+                  <div class="text-end">
+                    <div class="fw-semibold"><?php echo date('M j', strtotime($event['event_date'])); ?></div>
+                    <small class="text-muted"><?php echo date('D', strtotime($event['event_date'])); ?></small>
+                  </div>
+                </div>
+                <?php if (!empty($event['description'])): ?>
+                  <small class="text-muted d-block mt-1"><?php echo substr($event['description'], 0, 50); ?>...</small>
+                <?php endif; ?>
+              </div>
+            <?php endforeach; ?>
+          <?php else: ?>
+            <div class="text-muted text-center py-4">
+              <i class="bi bi-calendar-x fs-1 d-block mb-2"></i>
+              No upcoming events
+            </div>
+          <?php endif; ?>
+        </div>
+        <div class="text-center mt-3">
+          <a href="#" class="btn btn-sm btn-outline-danger">View All Events</a>
         </div>
       </div>
     </div>
   </div>
   
-  <!-- Quarter Performance -->
-  <div class="dashboard-section">
-    <h2 class="mb-4">Quarterly Performance</h2>
-    <div class="card">
-      <div class="card-header">
-        <h5>Performance by Quarter</h5>
-      </div>
-      <div class="card-body">
-        <canvas id="quarterChart" height="150"></canvas>
+  <!-- Average Grade and Top Students Row -->
+  <div class="row mb-4">
+    <!-- Average Grade per Subject per Quarter -->
+    <div class="col-xl-12 col-lg-5 mb-4">
+      <div class="chart-container h-100">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="chart-title">
+            <i class="bi bi-graph-up me-2 text-success"></i>Average Grade per Subject
+            <small class="text-muted ms-2">(SY: <?php echo $selected_sy; ?>)</small>
+          </div>
+        </div>
+
+        <!-- Grade Level Filter for Average Grade Section -->
+        <div class="grade-filter-form mb-3">
+          <form method="GET" class="row g-2 align-items-center">
+            <input type="hidden" name="school_year" value="<?php echo $selected_sy; ?>">
+            <div class="col-md-8">
+              <label for="grade_level" class="form-label fw-bold">Filter by Grade Level:</label>
+              <select class="form-select" id="grade_level" name="grade_level" onchange="this.form.submit()">
+                <option value="all" <?php echo $selected_grade == 'all' ? 'selected' : ''; ?>>All Grades</option>
+                <?php foreach ($grade_levels as $level): ?>
+                  <option value="<?php echo $level; ?>" <?php echo $selected_grade == $level ? 'selected' : ''; ?>>
+                    Grade <?php echo $level; ?>
+                  </option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <div class="d-grid">
+                <a href="?school_year=<?php echo $selected_sy; ?>&grade_level=all" class="btn btn-outline-secondary btn-sm mt-4">
+                  <i class="bi bi-arrow-clockwise"></i> Reset
+                </a>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <?php if (!empty($avg_grade_per_subject)): ?>
+          <div class="chart-wrapper">
+            <canvas id="avgGradePerSubjectChart"></canvas>
+          </div>
+        <?php else: ?>
+          <div class="text-center text-muted py-5">
+            <i class="bi bi-clipboard-x fs-1 d-block mb-2"></i>
+            No grade data available for selected filters
+          </div>
+        <?php endif; ?>
       </div>
     </div>
+    
   </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-  // Section Chart
-  const sectionCtx = document.getElementById('sectionChart').getContext('2d');
-  const sectionLabels = <?php echo json_encode(array_map(function($item) { return $item['GradeLevel'] . ' - ' . $item['SectionName']; }, $students_per_section)); ?>;
-  const sectionData = <?php echo json_encode(array_column($students_per_section, 'student_count')); ?>;
+  // Students Per Class Chart (Stacked Bar Chart)
+  const studentsPerClassCtx = document.getElementById('studentsPerClassChart').getContext('2d');
+  const sectionLabels = <?php echo json_encode(array_map(function($item) { 
+      return $item['SectionName'] . ' (G' . $item['GradeLevel'] . ')'; 
+  }, $students_per_section)); ?>;
   
-  new Chart(sectionCtx, {
+  const maleData = <?php echo json_encode(array_column($students_per_section, 'male_count')); ?>;
+  const femaleData = <?php echo json_encode(array_column($students_per_section, 'female_count')); ?>;
+  
+  new Chart(studentsPerClassCtx, {
     type: 'bar',
     data: {
       labels: sectionLabels,
-      datasets: [{
-        label: 'Number of Students',
-        data: sectionData,
-        backgroundColor: 'rgba(54, 162, 235, 0.5)',
-        borderColor: 'rgba(54, 162, 235, 1)',
-        borderWidth: 1
-      }]
-    },
-    options: {
-      responsive: true,
-      scales: {
-        y: {
-          beginAtZero: true
-        }
-      }
-    }
-  });
-  
-  // Grade Distribution Chart
-  const gradeCtx = document.getElementById('gradeChart').getContext('2d');
-  const gradeLabels = <?php echo json_encode(array_column($grade_distribution, 'grade_range')); ?>;
-  const gradeData = <?php echo json_encode(array_column($grade_distribution, 'count')); ?>;
-  
-  new Chart(gradeCtx, {
-    type: 'pie',
-    data: {
-      labels: gradeLabels,
-      datasets: [{
-        data: gradeData,
-        backgroundColor: [
-          'rgba(75, 192, 192, 0.5)',
-          'rgba(54, 162, 235, 0.5)',
-          'rgba(255, 206, 86, 0.5)',
-          'rgba(255, 99, 132, 0.5)'
-        ],
-        borderColor: [
-          'rgba(75, 192, 192, 1)',
-          'rgba(54, 162, 235, 1)',
-          'rgba(255, 206, 86, 1)',
-          'rgba(255, 99, 132, 1)'
-        ],
-        borderWidth: 1
-      }]
-    },
-    options: {
-      responsive: true
-    }
-  });
-  
-  // Attendance Chart
-  const attendanceCtx = document.getElementById('attendanceChart').getContext('2d');
-  new Chart(attendanceCtx, {
-    type: 'bar',
-    data: {
-      labels: ['Present', 'Absent', 'Late'],
-      datasets: [{
-        label: 'Count',
-        data: [
-          <?php echo $attendance_stats['present'] ?? 0; ?>,
-          <?php echo $attendance_stats['absent'] ?? 0; ?>,
-          <?php echo $attendance_stats['late'] ?? 0; ?>
-        ],
-        backgroundColor: [
-          'rgba(75, 192, 192, 0.5)',
-          'rgba(255, 99, 132, 0.5)',
-          'rgba(255, 206, 86, 0.5)'
-        ],
-        borderColor: [
-          'rgba(75, 192, 192, 1)',
-          'rgba(255, 99, 132, 1)',
-          'rgba(255, 206, 86, 1)'
-        ],
-        borderWidth: 1
-      }]
-    },
-    options: {
-      responsive: true,
-      scales: {
-        y: {
-          beginAtZero: true
-        }
-      }
-    }
-  });
-  
-  // Quarter Performance Chart
-  const quarterCtx = document.getElementById('quarterChart').getContext('2d');
-  const quarterLabels = <?php echo json_encode(array_column($quarter_performance, 'quarter')); ?>;
-  const quarterAvgData = <?php echo json_encode(array_column($quarter_performance, 'avg_grade')); ?>;
-  const quarterMaxData = <?php echo json_encode(array_column($quarter_performance, 'max_grade')); ?>;
-  const quarterMinData = <?php echo json_encode(array_column($quarter_performance, 'min_grade')); ?>;
-  
-  new Chart(quarterCtx, {
-    type: 'line',
-    data: {
-      labels: quarterLabels,
       datasets: [
         {
-          label: 'Average Grade',
-          data: quarterAvgData,
-          fill: false,
-          borderColor: 'rgb(75, 192, 192)',
-          tension: 0.1
+          label: 'Male Students',
+          data: maleData,
+          backgroundColor: 'rgba(54, 162, 235, 0.8)',
+          borderColor: 'rgba(54, 162, 235, 1)',
+          borderWidth: 1
         },
         {
-          label: 'Highest Grade',
-          data: quarterMaxData,
-          fill: false,
-          borderColor: 'rgb(54, 162, 235)',
-          tension: 0.1
-        },
-        {
-          label: 'Lowest Grade',
-          data: quarterMinData,
-          fill: false,
-          borderColor: 'rgb(255, 99, 132)',
-          tension: 0.1
+          label: 'Female Students',
+          data: femaleData,
+          backgroundColor: 'rgba(255, 182, 193, 0.8)',
+          borderColor: 'rgba(255, 182, 193, 1)',
+          borderWidth: 1
         }
       ]
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       scales: {
         y: {
-          beginAtZero: false,
-          suggestedMin: 70,
-          suggestedMax: 100
+          beginAtZero: true,
+          ticks: {
+            stepSize: 5
+          },
+          grid: {
+            drawBorder: false
+          },
+          title: {
+            display: true,
+            text: 'Number of Students'
+          }
+        },
+        x: {
+          grid: {
+            display: false
+          }
+        }
+      },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+        },
+        tooltip: {
+          callbacks: {
+            afterBody: function(context) {
+              const datasetIndex = context[0].datasetIndex;
+              const dataIndex = context[0].dataIndex;
+              const maleCount = maleData[dataIndex];
+              const femaleCount = femaleData[dataIndex];
+              const total = maleCount + femaleCount;
+              return `Total: ${total} students`;
+            }
+          }
         }
       }
     }
   });
+  
+  <?php if (!empty($avg_grade_per_subject)): ?>
+  // Average Grade Per Subject Chart (Grouped by Quarter)
+  const avgGradePerSubjectCtx = document.getElementById('avgGradePerSubjectChart').getContext('2d');
+  
+  // Group data by quarter
+  const quarters = [...new Set(<?php echo json_encode(array_column($avg_grade_per_subject, 'quarter')); ?>)].sort();
+  const subjects = [...new Set(<?php echo json_encode(array_column($avg_grade_per_subject, 'SubjectName')); ?>)];
+  
+  // Create dataset for each quarter
+  const quarterDatasets = quarters.map(quarter => {
+    const quarterData = subjects.map(subject => {
+      const record = <?php echo json_encode($avg_grade_per_subject); ?>.find(
+        item => item.quarter == quarter && item.SubjectName === subject
+      );
+      return record ? parseFloat(record.avg_grade).toFixed(2) : 0;
+    });
+    
+    const colors = [
+      'rgba(28, 200, 138, 0.8)',
+      'rgba(54, 185, 204, 0.8)',
+      'rgba(246, 194, 62, 0.8)',
+      'rgba(231, 74, 59, 0.8)'
+    ];
+    
+    return {
+      label: `Quarter ${quarter}`,
+      data: quarterData,
+      backgroundColor: colors[quarter - 1] || 'rgba(126, 87, 194, 0.8)',
+      borderColor: colors[quarter - 1]?.replace('0.8', '1') || 'rgba(126, 87, 194, 1)',
+      borderWidth: 1
+    };
+  });
+  
+  new Chart(avgGradePerSubjectCtx, {
+    type: 'bar',
+    data: {
+      labels: subjects,
+      datasets: quarterDatasets
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true,
+          max: 100,
+          grid: {
+            drawBorder: false
+          },
+          title: {
+            display: true,
+            text: 'Average Grade'
+          }
+        },
+        x: {
+          grid: {
+            display: false
+          }
+        }
+      },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+        }
+      }
+    }
+  });
+  <?php endif; ?>
 </script>
 </body>
 </html>

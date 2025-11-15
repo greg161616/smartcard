@@ -190,29 +190,25 @@
                 <i class="bi bi-caret-down-fill float-end" style="font-size:14px;"></i>
             </a>
             <div class="collapse ps-4" id="masterListCollapse">
-                <a class="nav-link" href="../head/studentlist.php" style="font-size:15px;">
+                <a class="nav-link" href="../administration/studentlist.php" style="font-size:15px;">
                     <i class="bi bi-person" style="font-size:16px;margin-right:8px;"></i> Student
                 </a>
-                <a class="nav-link" href="../head/teacher.php" style="font-size:15px;">
+                <a class="nav-link" href="../administration/teacher.php" style="font-size:15px;">
                     <i class="bi bi-person-badge" style="font-size:16px;margin-right:8px;"></i> Teacher
-                </a>
-                <a class="nav-link" href="../head/section.php" style="font-size:13px;">
-                    <i class="bi bi-diagram-3" style="font-size:16px;margin-right:8px;"></i> Grade & Section
-                </a>
-                <a class="nav-link" href="../head/subject.php" style="font-size:15px;">
-                    <i class="bi bi-journal-bookmark" style="font-size:16px;margin-right:8px;"></i> Subjects
-                </a>
+                </a>      
             </div>
-
-            <a class="nav-link mt-3" href="../head/files.php">
-                <i class="bi bi-folder2-open" style="font-size:20px;margin-right:12px;"></i> Files
+            <a class="nav-link mt-3" href="../administration/section.php">
+                <i class="bi bi-building" style="font-size:20px;margin-right:12px;"></i> Sections
             </a>
-            <a class="nav-link mt-3" href="../head/achievement.php">
-                <i class="bi bi-award" style="font-size:20px;margin-right:12px;"></i> Achievements
+            <a class="nav-link mt-3" href="../administration/subject.php">
+                <i class="bi bi-book" style="font-size:20px;margin-right:12px;"></i> Subjects
             </a>
-            <a href="../head/logs.php" class="nav-link mt-3">
+            <a href="../administration/view_logs.php" class="nav-link mt-3">
                 <i class="bi bi-journal-text" style="font-size:20px;margin-right:12px;"></i> Logs
-            </a>        
+            </a>
+            <a href="../administration/backup.php" class="nav-link mt-3">
+                <i class="bi bi-cloud-arrow-up" style="font-size:20px;margin-right:12px;"></i> Backup & Restore
+            </a>
         </nav>
     </div>
     

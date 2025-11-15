@@ -31,14 +31,14 @@ $date = $_GET['date'] ?? date('Y-m-d');
 
 // 4) Fetch distinct sections this teacher teaches
 $sql = "
-    SELECT DISTINCT
-        sec.SectionID,
-        sec.GradeLevel,
-        sec.SectionName
-      FROM sched sch
-      JOIN section sec ON sch.SectionID = sec.SectionID
-     WHERE sch.TeacherID = ?
-     ORDER BY sec.GradeLevel, sec.SectionName
+  SELECT DISTINCT
+    sec.SectionID,
+    sec.GradeLevel,
+    sec.SectionName
+FROM subject sub
+JOIN section sec ON sub.secID = sec.SectionID
+WHERE sub.TeacherID = ?
+ORDER BY sec.GradeLevel, sec.SectionName
 ";
 $stmt = $conn->prepare($sql);
 $stmt->bind_param('i', $teacherID);

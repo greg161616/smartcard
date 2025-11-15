@@ -12,7 +12,7 @@
   <style>
     .header {
         height: 70px;
-        background:rgb(143, 139, 139);
+        background: rgb(143, 139, 139);
         display: flex;
         align-items: center;
     }
@@ -29,7 +29,7 @@
     }
     .admin-sidebar {
         width: 180px;
-        min-height: 100vh;
+        height: 100vh;
         background: #b3e6f7;
         position: fixed;
         left: 0;
@@ -37,7 +37,6 @@
         z-index: 1000;
         display: flex;
         flex-direction: column;
-        justify-content: space-between;
     }
     .admin-sidebar .logo {
         width: 70px;
@@ -50,7 +49,7 @@
         font-weight: bold;
         font-size: 20px;
         margin-top: 8px;
-        color:rgb(0, 0, 0);
+        color: rgb(0, 0, 0);
         font-family: 'Merriweather', serif;
         text-align: center;
     }
@@ -60,6 +59,8 @@
         font-size: 17px;
         display: block;
         margin-bottom: 5px;
+        padding: 10px 15px;
+        transition: all 0.3s ease;
     }
     .admin-sidebar .nav-link:hover,
     .admin-sidebar .nav-link.active {
@@ -68,7 +69,7 @@
         border-radius: 8px;
     }
     body {
-        background:rgb(236, 240, 243);
+        background: rgb(236, 240, 243);
         margin-left: 180px !important;
     }
     a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active {
@@ -112,6 +113,75 @@
     .logo-dropdown-content hr {
         margin: 5px 0;
     }
+    
+    /* Sidebar layout */
+    .sidebar-header {
+        flex-shrink: 0;
+        padding: 10px 0;
+    }
+    
+    .sidebar-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px 0;
+    }
+    
+    .sidebar-footer {
+        flex-shrink: 0;
+        padding: 10px 0;
+        border-top: 1px solid #a0d8ef;
+        background: #b3e6f7;
+    }
+    
+    /* Custom scrollbar for sidebar */
+    .sidebar-content::-webkit-scrollbar {
+        width: 6px;
+    }
+    
+    .sidebar-content::-webkit-scrollbar-track {
+        background: #a0d8ef;
+        border-radius: 10px;
+    }
+    
+    .sidebar-content::-webkit-scrollbar-thumb {
+        background: #007b8a;
+        border-radius: 10px;
+    }
+    
+    .sidebar-content::-webkit-scrollbar-thumb:hover {
+        background: #005f6b;
+    }
+    
+    /* Firefox scrollbar */
+    .sidebar-content {
+        scrollbar-width: thin;
+        scrollbar-color: #007b8a #a0d8ef;
+    }
+    
+    /* Rotate caret icon when expanded */
+    .nav-link[aria-expanded="true"] .bi-caret-down-fill {
+        transform: rotate(180deg);
+    }
+    .bi-caret-down-fill {
+        transition: transform 0.3s ease;
+    }
+    
+    /* Ensure sidebar takes full height */
+    html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+    }
+    
+    /* Logout link styling */
+    .logout-link {
+        color: #dc3545 !important;
+        font-weight: 500;
+    }
+    .logout-link:hover {
+        background: #f8d7da !important;
+        color: #721c24 !important;
+    }
   </style>
 </head>
 <body>
@@ -123,34 +193,57 @@
 </nav>
 
 <div class="admin-sidebar">
-
-    <nav class="nav flex-column">
-      <div class="logo-dropdown">
-      <img src="../img/logo.png" alt="BANAHIS Logo" class="logo">
-      <div class="logo-dropdown-content">
-        <a href="../profile.php"><i class="bi bi-person" style="margin-right: 8px;"></i> Profile</a>
-        <a href="../settings.php"><i class="bi bi-gear" style="margin-right: 8px;"></i> Settings</a>
-        <hr>
-        <a href="../logout.php" class="text-danger"><i class="bi bi-box-arrow-right" style="margin-right: 8px;"></i> Logout</a>
-      </div>
+    <!-- Sidebar Header -->
+    <div class="sidebar-header">
+        <div class="logo-dropdown">
+            <img src="../img/logo.png" alt="BANAHIS Logo" class="logo">
+            <div class="logo-dropdown-content">
+                <a href="../profile.php"><i class="bi bi-person" style="margin-right: 8px;"></i> Profile</a>
+                <hr>
+                <a href="../logout.php" class="text-danger"><i class="bi bi-box-arrow-right" style="margin-right: 8px;"></i> Logout</a>
+            </div>
+        </div>
+        <div>
+            <div class="school-name">BANAHIS</div>
+            <div style="font-size:13px;color:#555;text-align:center;">Balaytigue National High School</div>
+        </div>
     </div>
-  <div>
-    <div class="school-name">BANAHIS</div>
-    <div style="font-size:13px;color:#555;text-align:center;">Balaytigue National High School</div>
-  </div>
-                   <a class="nav-link" href="../teacher/tdashboard.php" style="text-decoration:none;">
-        <i class="bi bi-speedometer2" style="font-size:20px;margin-right:12px;"></i> Dashboard
-      </a>
-            <a class="nav-link" href="../teacher/list.php"><i class="bi bi-clipboard" style="font-size:25px;"></i> Student list</a>
-            <a class="nav-link" href="../teacher/select_class.php"><i class="bi bi-person" style="font-size:25px;"></i> Attendance</a>
-            <a class="nav-link" href="../teacher/grading_sheet.php"><i class="bi bi-book" style="font-size:25px;"></i> Grades</a>
-            <a class="nav-link" href="../teacher/record.php"><i class="bi bi-folder" style="font-size:25px;"></i> Files</a>
+
+    <!-- Scrollable Sidebar Content -->
+    <div class="sidebar-content">
+        <nav class="nav flex-column">
+            <a class="nav-link" href="../teacher/tdashboard.php" style="text-decoration:none; font-size: 14px;">
+                <i class="bi bi-speedometer2" style="font-size:20px;margin-right:12px;"></i> Dashboard
+            </a>
+            <a class="nav-link" href="../teacher/list.php" style="font-size: 14px; text-decoration:none;">
+                <i class="bi bi-clipboard" style="font-size:20px;margin-right:12px;"></i> Student list
+            </a>
+            <a class="nav-link" href="../teacher/select_class.php" style="font-size: 14px; text-decoration:none;">
+                <i class="bi bi-calendar-check" style="font-size:20px;margin-right:12px;"></i> Attendance
+            </a>
+            <a class="nav-link" href="../teacher/grading_sheet.php" style="font-size: 14px; text-decoration:none;">
+                <i class="bi bi-book" style="font-size:20px;margin-right:12px;"></i> Grades
+            </a>
+            <a class="nav-link" href="../teacher/achievement.php" style="font-size: 14px; text-decoration:none;">
+                <i class="bi bi-award" style="font-size:20px;margin-right:12px;"></i> Achievements
+            </a>
+            <a class="nav-link" href="../teacher/record.php" style="font-size: 14px; text-decoration:none;">
+                <i class="bi bi-folder" style="font-size:20px;margin-right:12px;"></i> Card
+            </a>
+            <a class="nav-link" href="../teacher/announcement.php" style="font-size: 14px; text-decoration:none;">
+                <i class="bi bi-bell" style="font-size:20px;margin-right:12px;"></i> Announcements
+            </a>
         </nav>
-              <div class="text-center">
-    <a class="nav-link logout-link py-1 mb-3" href="../logout.php">
-      <i class="bi bi-box-arrow-right" style="font-size:20px;margin-right:12px;"></i> Logout
-    </a>
-  </div>
+    </div>
+
+    <!-- Sidebar Footer with Logout -->
+    <div class="sidebar-footer">
+        <div class="text-center">
+            <a class="nav-link logout-link py-2" href="../logout.php">
+                <i class="bi bi-box-arrow-right" style="font-size:20px;margin-right:12px;"></i> Logout
+            </a>
+        </div>
+    </div>
 </div>
 
 <script>

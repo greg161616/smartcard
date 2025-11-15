@@ -50,7 +50,7 @@ $q = "
   FROM (
     SELECT DISTINCT se.StudentID, se.SchoolYear
     FROM section_enrollment se
-    JOIN sched sc ON sc.SectionID = se.SectionID
+    JOIN subject sc ON sc.secID = se.SectionID
     WHERE se.SectionID = ?
     AND sc.SubjectID = ?
   ) AS se
@@ -134,9 +134,9 @@ while ($row = $res2->fetch_assoc()) {
     <div class="d-flex justify-content-between align-items-center mb-4">
       <h2>Student Grades</h2>
 <div>
-                          <a href="view_subjects_grades.php?section_id=<?= $sectionId ?>" class="btn btn-secondary">
-                    <i class="fas fa-book-open me-1"></i> View Subjects & Grades
-                  </a>
+<a href="view_subjects_grades.php?section_id=<?= $sectionId ?>&school_year=<?= $schoolYear ?>" class="btn btn-secondary">
+<i class="fas fa-book-open me-1"></i> View Subjects & Grades
+</a>
 </div>
     </div>
 

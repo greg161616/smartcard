@@ -94,14 +94,13 @@ $teacher_stmt->bind_param("i", $teacherId);
 $teacher_stmt->execute();
 $teacher_result = $teacher_stmt->get_result();
 $teacher = $teacher_result->fetch_assoc();
-$teacher_name = $teacher['fName'] . ' ' . $teacher['mName'] . ' ' . $teacher['lName'];
+$teacher_name = trim($teacher['fName'] . ' ' . ($teacher['mName'] ? $teacher['mName'] . ' ' : '') . $teacher['lName']);
+$teacher_stmt->close();
 
-// Get list of classes/sections that this teacher teaches
 $sectionSql = "
     SELECT DISTINCT sec.SectionID, CONCAT(sec.GradeLevel, ' - ', sec.SectionName) as SectionDisplay 
     FROM section sec 
-    LEFT JOIN sched sch ON sec.SectionID = sch.SectionID 
-    LEFT JOIN subject sub ON sch.SubjectID = sub.SubjectID 
+    INNER JOIN subject sub ON sec.SectionID = sub.secID
     WHERE sub.TeacherID = ?
     ORDER BY sec.GradeLevel, sec.SectionName
 ";
@@ -119,18 +118,12 @@ if ($sectionResult && $sectionResult->num_rows > 0) {
 }
 $sectionStmt->close();
 
-// Get available school years from section_enrollment
 $schoolYearSql = "
     SELECT DISTINCT se.SchoolYear 
     FROM section_enrollment se
-    JOIN section sec ON sec.SectionID = se.SectionID
-    WHERE sec.SectionID IN (
-        SELECT DISTINCT sec2.SectionID 
-        FROM section sec2 
-        LEFT JOIN sched sch ON sec2.SectionID = sch.SectionID 
-        LEFT JOIN subject sub ON sch.SubjectID = sub.SubjectID 
-        WHERE sub.TeacherID = ?
-    )
+    INNER JOIN section sec ON sec.SectionID = se.SectionID
+    INNER JOIN subject sub ON sec.SectionID = sub.secID
+    WHERE sub.TeacherID = ?
     ORDER BY se.SchoolYear DESC
 ";
 
@@ -150,21 +143,21 @@ $schoolYearStmt->close();
 // If no school years found, use current academic year as default
 if (empty($schoolYears)) {
     $currentYear = date('Y');
-    $nextYear = date('Y') + 1;
+    $nextYear = $currentYear + 1;
     $defaultSchoolYear = $currentYear . '-' . $nextYear;
     $schoolYears[] = $defaultSchoolYear;
 }
 
 // Get selected filters from form submission or set defaults
-$selectedSection = isset($_POST['section_filter']) ? $_POST['section_filter'] : (isset($sections[0]) ? $sections[0]['SectionID'] : '');
-$selectedSchoolYear = isset($_POST['school_year_filter']) ? $_POST['school_year_filter'] : $schoolYears[0];
+$selectedSection = isset($_POST['section_filter']) ? $_POST['section_filter'] : (isset($sections[0]['SectionID']) ? $sections[0]['SectionID'] : '');
+$selectedSchoolYear = isset($_POST['school_year_filter']) ? $_POST['school_year_filter'] : (isset($schoolYears[0]) ? $schoolYears[0] : '');
 
-// Build the student query with section and school year filters
+// FIXED: Build the student query with section and school year filters (without sched table)
 $studentSql = "
     SELECT DISTINCT
         s.StudentID,
         s.LRN,
-        CONCAT(s.LastName, ', ', s.FirstName, ' ', s.Middlename) AS FullName,
+        CONCAT(s.LastName, ', ', s.FirstName, ' ', COALESCE(s.Middlename, '')) AS FullName,
         s.Sex,
         u.Email,
         sec.GradeLevel,
@@ -175,11 +168,9 @@ $studentSql = "
     JOIN section_enrollment AS se ON se.StudentID = s.StudentID AND se.status = 'active'
     JOIN section AS sec ON sec.SectionID = se.SectionID
     WHERE sec.SectionID IN (
-        SELECT DISTINCT sec2.SectionID 
-        FROM section sec2 
-        LEFT JOIN sched sch ON sec2.SectionID = sch.SectionID 
-        LEFT JOIN subject sub ON sch.SubjectID = sub.SubjectID 
-        WHERE sec2.AdviserID = ? OR sub.TeacherID = ?
+        SELECT DISTINCT sub.secID 
+        FROM subject sub 
+        WHERE sub.TeacherID = ?
     )
     AND se.SchoolYear = ?
 ";
@@ -194,9 +185,9 @@ $studentSql .= " ORDER BY s.Sex DESC, s.LastName ASC, s.FirstName ASC";
 // Prepare and execute the student query
 $stmt = $conn->prepare($studentSql);
 if (!empty($selectedSection)) {
-    $stmt->bind_param("iisi", $teacherId, $teacherId, $selectedSchoolYear, $selectedSection);
+    $stmt->bind_param("isi", $teacherId, $selectedSchoolYear, $selectedSection);
 } else {
-    $stmt->bind_param("iis", $teacherId, $teacherId, $selectedSchoolYear);
+    $stmt->bind_param("is", $teacherId, $selectedSchoolYear);
 }
 $stmt->execute();
 $res = $stmt->get_result();
@@ -223,6 +214,7 @@ error_log("Selected School Year: " . $selectedSchoolYear);
 error_log("Male students: " . count($maleStudents));
 error_log("Female students: " . count($femaleStudents));
 
+$stmt->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -263,13 +255,13 @@ error_log("Female students: " . count($femaleStudents));
       margin-bottom: 20px;
     }
     .gender-section {
-      margin-bottom: 30px;
+      margin-bottom: 10px;
     }
     .gender-header {
-      background-color: #e9ecef;
-      padding: 10px 15px;
-      border-radius: 5px;
-      margin-bottom: 15px;
+      background-color: #d9e9f5ff;
+      padding: 10px;
+      border-radius: 10px;
+      margin: 15px;
     }
     .table th {
       white-space: nowrap;
@@ -294,13 +286,12 @@ error_log("Female students: " . count($femaleStudents));
 <body>
   <?php include __DIR__ . '/../navs/teacherNav.php'; ?>
 
-  <div class="container mt-5">
+  <div class="">
     <div class="dashboard-header">
         <div class="container">
             <div class="row align-items-center">
                 <div class="col-md-8">
-                    <h1 class="fw-bold">Welcome, Mr./Ms./Mrs.</h1>
-                    <h3 class="display-5 fw-bold"><?php echo htmlspecialchars($teacher_name); ?>!</h3>
+                    <h1 class="display-5 fw-bold">Welcome, <?php echo htmlspecialchars($teacher_name); ?>!</h1>
                     
                     <p class="lead mb-0">Teacher Dashboard - <?php echo date('F j, Y'); ?></p>
                 </div>
@@ -388,12 +379,12 @@ error_log("Female students: " . count($femaleStudents));
       <!-- Male Students Table -->
       <div class="gender-section">
         <div class="gender-header">
-          <h3 class="mb-0">Male Students (<?= count($maleStudents) ?>)</h3>
+          <h3 class="mb-0 ms-3">Males(<?= count($maleStudents) ?>)</h3>
         </div>
         <?php if (!empty($maleStudents)): ?>
           <div class="table-responsive">
             <table class="table table-bordered table-hover align-middle">
-              <thead class="table-primary">
+              <thead>
                 <tr>
                   <th>LRN</th>
                   <th>Full Name</th>
@@ -427,12 +418,12 @@ error_log("Female students: " . count($femaleStudents));
       <!-- Female Students Table -->
       <div class="gender-section">
         <div class="gender-header">
-          <h3 class="mb-0">Female Students (<?= count($femaleStudents) ?>)</h3>
+          <h3 class="mb-0 ms-3">Females(<?= count($femaleStudents) ?>)</h3>
         </div>
         <?php if (!empty($femaleStudents)): ?>
           <div class="table-responsive">
             <table class="table table-bordered table-hover align-middle">
-              <thead class="table-info" style="background-color: #f8d7da;">
+              <thead>
                 <tr>
                   <th>LRN</th>
                   <th>Full Name</th>

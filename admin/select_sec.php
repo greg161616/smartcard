@@ -9,7 +9,19 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'principal') {
     exit;
 }
 
-// Fetch all sections with their details including adviser information
+// Get available school years from section_enrollment
+$school_years_query = "SELECT DISTINCT SchoolYear FROM section_enrollment ORDER BY SchoolYear DESC";
+$school_years_result = $conn->query($school_years_query);
+$available_school_years = [];
+while ($row = $school_years_result->fetch_assoc()) {
+    $available_school_years[] = $row['SchoolYear'];
+}
+
+// Set default school year (current or most recent)
+$selected_school_year = isset($_GET['school_year']) ? $_GET['school_year'] : 
+    (!empty($available_school_years) ? $available_school_years[0] : date('Y') . '-' . (date('Y') + 1));
+
+// Fetch all sections with their details including adviser information for selected school year
 $query = "
     SELECT 
         s.SectionID,
@@ -21,7 +33,7 @@ $query = "
         t.lName as TeacherLastName,
         t.mName as TeacherMiddleName
     FROM section s
-    LEFT JOIN section_enrollment se ON s.SectionID = se.SectionID AND se.status = 'active'
+    LEFT JOIN section_enrollment se ON s.SectionID = se.SectionID AND se.status = 'active' AND se.SchoolYear = ?
     LEFT JOIN teacher te ON s.AdviserID = te.TeacherID
     LEFT JOIN user u ON te.UserID = u.UserID
     LEFT JOIN (
@@ -35,7 +47,11 @@ $query = "
     GROUP BY s.SectionID
     ORDER BY s.GradeLevel, s.SectionName
 ";
-$result = $conn->query($query);
+
+$stmt = $conn->prepare($query);
+$stmt->bind_param("s", $selected_school_year);
+$stmt->execute();
+$result = $stmt->get_result();
 ?>
 
 <!DOCTYPE html>
@@ -95,30 +111,63 @@ $result = $conn->query($query);
       border-radius: 12px;
       margin-bottom: 30px;
     }
-
+    .school-year-selector {
+      padding: 20px;
+      margin-bottom: 30px;
+    }
+    .school-year-badge {
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
   <?php include '../navs/adminNav.php'; ?>
 
-  <div class="container mt-5">
-    <div class="page-header mb-4">
+  <div class="container">
+    <!-- School Year Selector -->
+    <div class="school-year-selector">
       <div class="row align-items-center">
-        <div class="col">
-          <h1 class="h3 mb-0"><i class="fas fa-graduation-cap me-2"></i>View Grades by Section</h1>
-          <p class="mb-0">Select a section to view student grades</p>
+        <div class="col-md-8">
+          <h4 class="mb-1"><i class="fas fa-graduation-cap me-2"></i>View Grades by Section</h4>
+          <p class="mb-0">Select school year to view sections and grades</p>
         </div>
-        <div class="col-auto">
-          <a href="../admin/files.php" class="btn btn-light">
-            <i class="fas fa-arrow-right me-1"></i> Go To Report Card Generation
-          </a>
+        <div class="col-md-4">
+          <form method="GET" action="" class="d-flex">
+            <select name="school_year" class="form-select me-2" onchange="this.form.submit()">
+              <?php if (empty($available_school_years)): ?>
+                <option value="<?php echo date('Y') . '-' . (date('Y') + 1); ?>">
+                  <?php echo date('Y') . '-' . (date('Y') + 1); ?>
+                </option>
+              <?php else: ?>
+                <?php foreach ($available_school_years as $school_year): ?>
+                  <option value="<?php echo htmlspecialchars($school_year); ?>" 
+                    <?php echo ($school_year == $selected_school_year) ? 'selected' : ''; ?>>
+                    <?php echo htmlspecialchars($school_year); ?>
+                  </option>
+                <?php endforeach; ?>
+              <?php endif; ?>
+            </select>
+          </form>
         </div>
       </div>
     </div>
 
+    <!-- Current School Year Badge -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h5 class="mb-0">Showing data for school year:</h5>
+      <span class="school-year-badge bg-primary">
+        <i class="fas fa-calendar me-1"></i>
+        <?php echo htmlspecialchars($selected_school_year); ?>
+      </span>
+    </div>
+
     <?php if ($result->num_rows === 0): ?>
       <div class="alert alert-info">
-        <i class="fas fa-info-circle me-2"></i> No sections found in the system.
+        <i class="fas fa-info-circle me-2"></i> No sections found for the selected school year.
       </div>
     <?php else: ?>
       <div class="row">
@@ -134,8 +183,8 @@ $result = $conn->query($query);
         ?>
           <div class="col-md-6 col-lg-4 mb-4">
             <div class="card section-card">
-              <div class="card-header d-flex justify-content-between align-items-center bg-info">
-                <span>Grade <?= htmlspecialchars($section['GradeLevel']) ?></span>
+              <div class="card-header d-flex justify-content-between align-items-center bg-info text-white">
+                <span><h4 class="mb-0">Grade</h4></span>
                 <span class="grade-badge"><?= htmlspecialchars($section['GradeLevel']) ?></span>
               </div>
               <div class="card-body">
@@ -154,7 +203,8 @@ $result = $conn->query($query);
                 </div>
                 
                 <div class="d-grid">
-                  <a href="view_subjects_grades.php?section_id=<?= $section['SectionID'] ?>" class="btn btn-success">
+                  <a href="view_subjects_grades.php?section_id=<?= $section['SectionID'] ?>&school_year=<?= urlencode($selected_school_year) ?>" 
+                     class="btn btn-success">
                     <i class="fas fa-book-open me-1"></i> View Subjects & Grades
                   </a>
                 </div>

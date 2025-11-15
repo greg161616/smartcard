@@ -27,7 +27,7 @@
 
 <nav class="navbar fixed-top navbar-expand-lg navbar-light bg-white shadow-sm header">
     <div class="container-fluid">
-        <a class="navbar-brand" href="../student/studentPort.php">
+        <a class="navbar-brand" href="../student/studentPort">
             <img src="../img/logo.png" alt="Logo"> Balaytigue National High School
         </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
@@ -68,7 +68,7 @@
         
         navLinks.forEach(link => {
             if (link.getAttribute('href') === currentLocation || 
-                (currentLocation.includes('studentPort.php') && link.getAttribute('href').includes('studentPort.php'))) {
+                (currentLocation.includes('studentPort') && link.getAttribute('href').includes('studentPort'))) {
                 link.classList.add('active');
             }
             

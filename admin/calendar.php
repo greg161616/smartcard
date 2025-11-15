@@ -469,6 +469,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 <h2 class="calendar-title"><i class="far fa-calendar-alt me-2"></i> Admin Calendar</h2>
                 <div class="d-flex justify-content-between align-items-center flex-wrap">
                     <div class="calendar-nav">
+                        <button> <a class="text-white text-decoration-none" href="announcement.php"> Announcement</a></button>
                         <button id="prev-month"><i class="fas fa-chevron-left"></i></button>
                         <button id="current-month">Today</button>
                         <button id="next-month"><i class="fas fa-chevron-right"></i></button>

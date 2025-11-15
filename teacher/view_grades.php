@@ -29,8 +29,8 @@ $sectionId = isset($_GET['section_id']) ? (int)$_GET['section_id'] : 0;
 // 4) Validate that the teacher is assigned to this subject and section
 $validateStmt = $conn->prepare("
     SELECT COUNT(*) as count 
-    FROM sched 
-    WHERE TeacherID = ? AND SubjectID = ? AND SectionID = ?
+    FROM subject 
+    WHERE TeacherID = ? AND SubjectID = ? AND secID = ?
 ");
 $validateStmt->bind_param('iii', $teacherId, $subjectId, $sectionId);
 $validateStmt->execute();
@@ -64,7 +64,7 @@ $sb->close();
 
 // 7) Query enrolled students + their grades, separated by gender and ordered by name
 $q = "
-  SELECT 
+SELECT 
     st.LRN,
     st.FirstName,
     st.MiddleName,
@@ -72,22 +72,20 @@ $q = "
     st.Sex,
     se.SchoolYear,
     g.Q1, g.Q2, g.Q3, g.Q4, g.Final
-  FROM (
-    SELECT DISTINCT se.StudentID, se.SchoolYear
-    FROM section_enrollment se
-    JOIN sched sc ON sc.SectionID = se.SectionID
-    WHERE se.SectionID = ?
-    AND sc.SubjectID = ?
-    AND sc.TeacherID = ?
-  ) AS se
-  JOIN student st ON se.StudentID = st.StudentID
-  LEFT JOIN grades g 
+FROM section_enrollment se
+JOIN student st ON se.StudentID = st.StudentID
+JOIN subject sub ON se.SectionID = sub.secID
+LEFT JOIN grades g 
     ON g.student_id = st.StudentID 
    AND g.subject = ?
-  ORDER BY st.Sex, st.LastName, st.FirstName
+WHERE se.SectionID = ?
+  AND sub.SubjectID = ?
+  AND sub.TeacherID = ?
+  AND se.status = 'active'
+ORDER BY st.Sex, st.LastName, st.FirstName
 ";
 $stmt = $conn->prepare($q);
-$stmt->bind_param('iiii', $sectionId, $subjectId, $teacherId, $subjectId);
+$stmt->bind_param('iiii', $subjectId, $sectionId, $subjectId, $teacherId);
 $stmt->execute();
 $res2 = $stmt->get_result();
 
@@ -119,6 +117,7 @@ while ($row = $res2->fetch_assoc()) {
   <title>View Grades</title>
   <link rel="icon" type="image/png" href="../img/logo.png" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     .grade-link {
       cursor: pointer;
@@ -159,11 +158,13 @@ while ($row = $res2->fetch_assoc()) {
   <div class="container mt-5">
     <div class="d-flex justify-content-between align-items-center mb-4">
       <h2>Student Grades</h2>
-      <a href="grading_sheet.php" class="btn btn-secondary">Back to Classes</a>
     </div>
 
     <div class="card mb-4">
       <div class="card-body">
+              <div class="justify-content-end d-flex">
+             <a href="grading_sheet.php" class="text-secondary"> <i class="fas fa-times" style="font-size: 28px;"></i></a>
+      </div>
         <h5 class="card-title">Class Information</h5>
         <p class="card-text">
           <strong>Subject:</strong> <?= htmlspecialchars($subjectName) ?><br>
@@ -173,6 +174,7 @@ while ($row = $res2->fetch_assoc()) {
           <?php endif; ?>
         </p>
       </div>
+
     </div>
 
     <?php if (count($maleStudents) === 0 && count($femaleStudents) === 0): ?>

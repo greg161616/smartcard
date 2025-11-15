@@ -9,13 +9,19 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'principal') {
     exit;
 }
 
-// Get section ID from URL
+// Get section ID and school year from URL
 $sectionId = isset($_GET['section_id']) ? (int)$_GET['section_id'] : 0;
+$school_year = isset($_GET['school_year']) ? $_GET['school_year'] : '';
+
+if (!$sectionId || !$school_year) {
+    echo "<div class='alert alert-danger'>Missing section ID or school year.</div>";
+    exit;
+}
 
 // Fetch section details including adviser
 $sectionQuery = $conn->prepare("
     SELECT s.SectionName, s.GradeLevel, 
-           t.fName, t.lName, t.mName 
+           t.fName, t.lName, t.mName, t.TeacherID
     FROM section s 
     LEFT JOIN teacher t ON s.AdviserID = t.TeacherID 
     WHERE s.SectionID = ?
@@ -33,7 +39,7 @@ $section = $sectionResult->fetch_assoc();
 $sectionQuery->close();
 
 // Build adviser name
-$adviserName = '';
+$adviserName = 'Not assigned';
 if ($section['fName']) {
     $adviserName = $section['lName'] . ', ' . $section['fName'];
     if ($section['mName']) {
@@ -43,21 +49,19 @@ if ($section['fName']) {
 
 // Fetch all subjects taught in this section with teacher information
 $subjectsQuery = "
-    SELECT DISTINCT 
-        sub.SubjectID,
-        sub.SubjectName,
-        s.TeacherID,
-        sub.GradeLevel,
-        COUNT(DISTINCT g.student_id) as GradedStudents,
-        COUNT(DISTINCT se.StudentID) as TotalStudents
-    FROM sched s
-    JOIN subject sub ON s.SubjectID = sub.SubjectID
-    LEFT JOIN grades g ON sub.SubjectID = g.subject AND g.uploaded = 1
-    LEFT JOIN section_enrollment se ON s.SectionID = se.SectionID AND se.status = 'active'
-    WHERE s.SectionID = ?
-    GROUP BY sub.SubjectID, s.TeacherID
-    ORDER BY sub.SubjectName
+  SELECT 
+    sub.SubjectID,
+    sub.SubjectName,
+    sub.TeacherID,
+    t.fName as TeacherFirstName,
+    t.lName as TeacherLastName,
+    t.mName as TeacherMiddleName
+  FROM subject sub
+  LEFT JOIN teacher t ON sub.TeacherID = t.TeacherID
+  WHERE sub.secID = ?
+  ORDER BY sub.SubjectName
 ";
+
 $stmt = $conn->prepare($subjectsQuery);
 $stmt->bind_param('i', $sectionId);
 $stmt->execute();
@@ -78,6 +82,7 @@ $subjectsResult = $stmt->get_result();
       margin-bottom: 20px;
       border-radius: 12px;
       overflow: hidden;
+      border: 1px solid #e3e6f0;
     }
     .subject-card:hover {
       transform: translateY(-3px);
@@ -91,6 +96,74 @@ $subjectsResult = $stmt->get_result();
       padding: 20px;
       border-radius: 12px;
       margin-bottom: 30px;
+      background: #f8f9fc;
+      border-left: 4px solid #4e73df;
+    }
+    .teacher-info {
+      background-color: #f8f9fa;
+      padding: 10px;
+      border-radius: 6px;
+      margin-bottom: 10px;
+      font-size: 0.9rem;
+    }
+    .stats-badge {
+      background: #e3f2fd;
+      color: #1976d2;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+    }
+    .school-year-badge {
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+    .quarter-indicators {
+      display: flex;
+      justify-content: space-between;
+      margin: 15px 0;
+    }
+    .quarter-indicator {
+      flex: 1;
+      text-align: center;
+      padding: 8px 5px;
+      margin: 0 2px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.8rem;
+      transition: all 0.3s ease;
+    }
+    .quarter-active {
+      background-color: #28a745;
+      color: white;
+      box-shadow: 0 2px 4px rgba(40, 167, 69, 0.3);
+    }
+    .quarter-inactive {
+      background-color: #6c757d;
+      color: white;
+      opacity: 0.6;
+    }
+    .quarter-label {
+      font-size: 0.7rem;
+      opacity: 0.9;
+    }
+    .indicator-tooltip {
+      position: relative;
+      cursor: pointer;
+    }
+    .indicator-tooltip:hover::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #333;
+      color: white;
+      padding: 5px 10px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      white-space: nowrap;
+      z-index: 1000;
     }
   </style>
 </head>
@@ -101,49 +174,87 @@ $subjectsResult = $stmt->get_result();
     <div class="page-header">
       <div class="row align-items-center">
         <div class="col">
-          <h1 class="h3 mb-0">
+          <h1 class="h3 mb-2">
             <i class="fas fa-book me-2"></i>
             Subjects for Grade <?= htmlspecialchars($section['GradeLevel']) ?> - <?= htmlspecialchars($section['SectionName']) ?>
           </h1>
           <?php if ($adviserName): ?>
-            <p class="mb-0">Adviser: <?= htmlspecialchars($adviserName) ?></p>
+            <p class="mb-1 text-muted">Adviser: <?= htmlspecialchars($adviserName) ?></p>
           <?php endif; ?>
         </div>
         <div class="col-auto">
-          <a href="select_sec.php" class="btn btn-light">
-            <i class="fas fa-arrow-left me-1"></i> Back to Sections
-          </a>
+          <span class="school-year-badge border border-2">
+            <i class="fas fa-calendar me-1"></i>
+            School Year: <?= htmlspecialchars($school_year) ?>
+          </span>
         </div>
       </div>
     </div>
 
     <?php if ($subjectsResult->num_rows === 0): ?>
       <div class="alert alert-info">
-        <i class="fas fa-info-circle me-2"></i> No subjects found for this section.
+        <i class="fas fa-info-circle me-2"></i> No subjects found for this section in the selected school year.
       </div>
     <?php else: ?>
       <div class="row">
         <?php while ($subject = $subjectsResult->fetch_assoc()): 
-          // Calculate grading progress
-          $progress = 0;
-          if ($subject['TotalStudents'] > 0) {
-            $progress = round(($subject['GradedStudents'] / $subject['TotalStudents']) * 100);
+          // Build teacher name for subject
+          $subjectTeacherName = 'Not assigned';
+          if ($subject['TeacherFirstName']) {
+            $subjectTeacherName = $subject['TeacherLastName'] . ', ' . $subject['TeacherFirstName'];
+            if ($subject['TeacherMiddleName']) {
+              $subjectTeacherName .= ' ' . substr($subject['TeacherMiddleName'], 0, 1) . '.';
+            }
+          }
+
+          // Check for grades in each quarter for this subject and school year
+          $quarters = [];
+          for ($quarter = 1; $quarter <= 4; $quarter++) {
+            $gradeCheckQuery = $conn->prepare("
+              SELECT COUNT(*) as grade_count 
+              FROM grades_details 
+              WHERE subjectID = ? 
+              AND school_year = ? 
+              AND quarter = ?
+            ");
+            $gradeCheckQuery->bind_param('isi', $subject['SubjectID'], $school_year, $quarter);
+            $gradeCheckQuery->execute();
+            $gradeCheckResult = $gradeCheckQuery->get_result();
+            $gradeData = $gradeCheckResult->fetch_assoc();
+            $quarters[$quarter] = $gradeData['grade_count'] > 0;
+            $gradeCheckQuery->close();
           }
         ?>
-          <div class="col-md-4 mb-4">
+          <div class="col-md-6 col-lg-4 mb-4">
             <div class="card subject-card">
-              <div class="card-header">
+              <div class="card-header bg-info text-white">
                 <h5 class="card-title mb-0"><?= htmlspecialchars($subject['SubjectName']) ?></h5>
               </div>
               <div class="card-body">
                 
-                <div class="mb-3">
-                  <div class="d-flex justify-content-between">
-                  </div>
+                <div class="teacher-info">
+                  <strong><i class="fas fa-chalkboard-teacher me-1"></i>Teacher:</strong><br>
+                  <?= htmlspecialchars($subjectTeacherName) ?>
+                </div>
+
+                <!-- Quarter Indicators -->
+                <div class="quarter-indicators">
+                  <?php for ($quarter = 1; $quarter <= 4; $quarter++): 
+                    $hasGrades = $quarters[$quarter];
+                    $tooltip = $hasGrades ? 
+                      "Q$quarter: Grades uploaded" : 
+                      "Q$quarter: No grades yet";
+                  ?>
+                    <div class="quarter-indicator indicator-tooltip <?= $hasGrades ? 'quarter-active' : 'quarter-inactive' ?>" 
+                         data-tooltip="<?= $tooltip ?>">
+                      <div class="quarter-label">Q<?= $quarter ?></div>
+                      <i class="fas <?= $hasGrades ? 'fa-check' : 'fa-times' ?>"></i>
+                    </div>
+                  <?php endfor; ?>
                 </div>
                 
                 <div class="d-grid">
-                  <a href="view_grades.php?subject_id=<?= $subject['SubjectID'] ?>&section_id=<?= $sectionId ?>&teacher_id=<?= $subject['TeacherID'] ?>" 
+                  <a href="view_grades.php?subject_id=<?= $subject['SubjectID'] ?>&section_id=<?= $sectionId ?>&teacher_id=<?= $subject['TeacherID'] ?>&school_year=<?= urlencode($school_year) ?>" 
                      class="btn btn-primary">
                     <i class="fas fa-table me-1"></i> View Grade Sheet
                   </a>

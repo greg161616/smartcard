@@ -31,15 +31,15 @@ $date      = $_REQUEST['date']      ?? date('Y-m-d');
 $sectionID = isset($_REQUEST['sectionID']) ? intval($_REQUEST['sectionID']) : null;
 $viewMode  = isset($_REQUEST['view']) && $_REQUEST['view'] === 'true';
 
-// 4) Fetch all sections this teacher teaches
+// 4) FIXED: Fetch all sections this teacher teaches 
 $stmt = $conn->prepare("
     SELECT DISTINCT
         sec.SectionID,
         sec.GradeLevel,
         sec.SectionName
-      FROM sched sch
-      JOIN section sec ON sch.SectionID = sec.SectionID
-     WHERE sch.TeacherID = ?
+      FROM subject sub
+      JOIN section sec ON sub.secID = sec.SectionID
+     WHERE sub.TeacherID = ?
      ORDER BY sec.GradeLevel, sec.SectionName
 ");
 $stmt->bind_param("i", $teacherID);
@@ -55,7 +55,7 @@ $stmt->close();
 $selected = null;
 if ($sectionID) {
     foreach ($sections as $sec) {
-        if ($sec['SectionID'] === $sectionID) {
+        if ($sec['SectionID'] == $sectionID) { // Changed === to == for type comparison
             $selected = $sec;
             break;
         }
@@ -69,6 +69,24 @@ if ($sectionID) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['attendance'])) {
     $saveDate   = $_POST['date'];
     $saveSectID = intval($_POST['sectionID']);
+    
+    // Validate that the section belongs to this teacher
+    $validSection = false;
+    foreach ($sections as $sec) {
+        if ($sec['SectionID'] == $saveSectID) {
+            $validSection = true;
+            break;
+        }
+    }
+    
+    if (!$validSection) {
+        echo json_encode([
+            'status'  => 'error',
+            'message' => "Invalid section selected."
+        ]);
+        exit;
+    }
+    
     foreach ($_POST['attendance'] as $lrn => $status) {
         // lookup StudentID
         $p1 = $conn->prepare("SELECT StudentID FROM student WHERE LRN = ?");
@@ -79,23 +97,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['attendance'])) {
         $p1->close();
 
         if ($studentID) {
-            // now include sectionID
-            $p2 = $conn->prepare("
-                REPLACE INTO attendance
-                  (StudentID, Date, Status, TeacherID, SectionID)
-                VALUES 
-                  (?,       ?,    ?,      ?,         ?)
+            // Check if student is enrolled in the selected section
+            $pCheck = $conn->prepare("
+                SELECT COUNT(*) 
+                FROM section_enrollment 
+                WHERE StudentID = ? AND SectionID = ? AND status = 'active'
             ");
-            $p2->bind_param(
-              "issii",
-              $studentID,
-              $saveDate,
-              $status,
-              $teacherID,
-              $saveSectID
-            );
-            $p2->execute();
-            $p2->close();
+            $pCheck->bind_param("ii", $studentID, $saveSectID);
+            $pCheck->execute();
+            $pCheck->bind_result($enrolled);
+            $pCheck->fetch();
+            $pCheck->close();
+            
+            if ($enrolled) {
+                // now include sectionID
+                $p2 = $conn->prepare("
+                    REPLACE INTO attendance
+                      (StudentID, Date, Status, TeacherID, SectionID)
+                    VALUES 
+                      (?,       ?,    ?,      ?,         ?)
+                ");
+                $p2->bind_param(
+                  "issii",
+                  $studentID,
+                  $saveDate,
+                  $status,
+                  $teacherID,
+                  $saveSectID
+                );
+                $p2->execute();
+                $p2->close();
+            }
         }
     }
     echo json_encode([
@@ -104,6 +136,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['attendance'])) {
     ]);
     exit;
 }
+
+// 7) If viewing attendance for a specific section, get the students
+$students = [];
+if ($selected && $viewMode) {
+    $stmt = $conn->prepare("
+        SELECT 
+            s.StudentID,
+            s.LRN,
+            CONCAT(s.FirstName, ' ', COALESCE(s.MiddleName, ''), ' ', s.LastName) as StudentName,
+            s.Sex,
+            a.Status
+        FROM student s
+        JOIN section_enrollment se ON s.StudentID = se.StudentID AND se.status = 'active'
+        LEFT JOIN attendance a ON s.StudentID = a.StudentID AND a.Date = ? AND a.SectionID = ?
+        WHERE se.SectionID = ?
+        ORDER BY s.Sex DESC, s.LastName, s.FirstName
+    ");
+    $stmt->bind_param("sii", $date, $sectionID, $sectionID);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    while ($r = $result->fetch_assoc()) {
+        $students[] = $r;
+    }
+    $stmt->close();
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -111,6 +168,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['attendance'])) {
   <meta charset="UTF-8">
   <title>Attendance Tracker</title>
   <link rel="icon" href="../img/logo.png" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <style>
@@ -137,7 +195,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['attendance'])) {
 </head>
 <body>
   <?php include '../navs/teacherNav.php'; ?>
-  <div class="container mt-4">
+  <div class="container-fluid mt-4">
 
     <?php if (!$sectionID): ?>
       <!-- == STEP 1: Section Selection == -->
@@ -159,7 +217,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['attendance'])) {
         <div class="card-body">
           <?php if (empty($sections)): ?>
             <div class="alert alert-warning mb-0">
-              You don't have any scheduled classes.
+              You don't have any classes.
             </div>
           <?php else: ?>
             <div class="row g-4">
@@ -197,9 +255,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['attendance'])) {
 
     <?php else: ?>
       <!-- Back Button -->
-      <div class="mb-3">
-        <a href="?date=<?= urlencode($date) ?>" class="btn btn-secondary back-button">
-          <i class="bi bi-arrow-left"></i> Back to Class Selection
+      <div class="mb-3 justify-content-end d-flex me-4">
+        <a href="?date=<?= urlencode($date) ?>" class="text-secondary">
+          <i class="fas fa-times" style="font-size: 26px;"></i>
         </a>
       </div>
 
