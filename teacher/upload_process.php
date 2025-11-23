@@ -585,26 +585,118 @@ try {
         ];
     }
     
+    // NEW: Cross-verify Excel students vs DB enrolled students for the subject/section/school year
+    $excel_ids = array_map(function($s){ return $s['student_id']; }, $students_to_process);
+    $db_enrolled_ids = [];
+    if (!empty($subInfo) && !empty($subInfo['secID'])) {
+        $secIdForQuery = $subInfo['secID'];
+        $enrolled_q = $conn->prepare("SELECT StudentID FROM section_enrollment WHERE SectionID = ? AND SchoolYear = ? AND status = 'active'");
+        $enrolled_q->bind_param('is', $secIdForQuery, $school_year);
+        $enrolled_q->execute();
+        $enrolled_res = $enrolled_q->get_result();
+        while ($er = $enrolled_res->fetch_assoc()) {
+            $db_enrolled_ids[] = (int)$er['StudentID'];
+        }
+        $enrolled_q->close();
+    } elseif (!empty($subInfo) && isset($subInfo['GradeLevel']) && $subInfo['GradeLevel'] !== '') {
+        // Fallback: gather all students in the same grade level for the school year
+        $gradeLevelForQuery = $subInfo['GradeLevel'];
+        $enrolled_q = $conn->prepare("SELECT se.StudentID FROM section_enrollment se JOIN section s ON se.SectionID = s.SectionID WHERE s.GradeLevel = ? AND se.SchoolYear = ? AND se.status = 'active'");
+        $enrolled_q->bind_param('ss', $gradeLevelForQuery, $school_year);
+        $enrolled_q->execute();
+        $enrolled_res = $enrolled_q->get_result();
+        while ($er = $enrolled_res->fetch_assoc()) {
+            $db_enrolled_ids[] = (int)$er['StudentID'];
+        }
+        $enrolled_q->close();
+    }
+
+    // Compute differences
+    $missing_in_excel = [];
+    $missing_in_db = [];
+    if (!empty($db_enrolled_ids)) {
+        $missing_in_excel = array_values(array_diff($db_enrolled_ids, $excel_ids));
+        $missing_in_db = array_values(array_diff($excel_ids, $db_enrolled_ids));
+    }
+
+    // Map IDs to human-readable names for reporting
+    $missing_in_excel_names = [];
+    if (!empty($missing_in_excel)) {
+        $placeholders = implode(',', array_fill(0, count($missing_in_excel), '?'));
+        $types = str_repeat('i', count($missing_in_excel));
+        $stmt = $conn->prepare("SELECT StudentID, FirstName, Middlename, LastName FROM student WHERE StudentID IN ($placeholders)");
+        // bind dynamically
+        $stmtParams = array_merge([$types], $missing_in_excel);
+        $bindNames = [];
+        // Use call_user_func_array for dynamic bind
+        $refs = [];
+        $refs[] = &$types;
+        for ($i = 0; $i < count($missing_in_excel); $i++) {
+            $refs[] = &$missing_in_excel[$i];
+        }
+        call_user_func_array(array($stmt, 'bind_param'), $refs);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        while ($r = $res->fetch_assoc()) {
+            $missing_in_excel_names[] = trim($r['LastName'] . ', ' . $r['FirstName'] . ' ' . $r['Middlename']);
+        }
+        $stmt->close();
+    }
+
+    $missing_in_db_names = [];
+    if (!empty($missing_in_db)) {
+        // For students present in Excel but not in DB enrollment, try to find their parsed names from the upload
+        foreach ($students_to_process as $s) {
+            if (in_array($s['student_id'], $missing_in_db, true)) {
+                $sid = $s['student_id'];
+                // Fetch name
+                $qnm = $conn->prepare('SELECT FirstName, Middlename, LastName FROM student WHERE StudentID = ? LIMIT 1');
+                $qnm->bind_param('i', $sid);
+                $qnm->execute();
+                $rnm = $qnm->get_result();
+                if ($rnm && $rnm->num_rows > 0) {
+                    $row = $rnm->fetch_assoc();
+                    $missing_in_db_names[] = trim($row['LastName'] . ', ' . $row['FirstName'] . ' ' . $row['Middlename']);
+                } else {
+                    $missing_in_db_names[] = "StudentID $sid";
+                }
+                $qnm->close();
+            }
+        }
+    }
+
     // If there are any missing students or students not enrolled, don't insert any data
-    if (!empty($students_not_found) || !empty($students_not_enrolled)) {
+    if (!empty($students_not_found) || !empty($students_not_enrolled) || !empty($missing_in_excel) || !empty($missing_in_db)) {
         $response['students_not_found'] = $students_not_found;
         $response['students_not_enrolled'] = $students_not_enrolled;
         
-        $message = "Upload failed due to the following issues: ";
+        $messageParts = [];
         if (!empty($students_not_found)) {
-            $message .= count($students_not_found) . " students not found. ";
+            $messageParts[] = count($students_not_found) . " students not found";
         }
         if (!empty($students_not_enrolled)) {
-            $message .= count($students_not_enrolled) . " students not enrolled in this subject.";
+            $messageParts[] = count($students_not_enrolled) . " students not enrolled in this subject";
         }
-        
-        echo json_encode([
+        if (!empty($missing_in_excel)) {
+            $messageParts[] = count($missing_in_excel) . " students present in list but missing from Excel";
+        }
+        if (!empty($missing_in_db)) {
+            $messageParts[] = count($missing_in_db) . " students present in Excel but not enrolled in list";
+        }
+
+        $detailed = [];
+        if (!empty($missing_in_excel_names)) $detailed['missing_in_excel'] = $missing_in_excel_names;
+        if (!empty($missing_in_db_names)) $detailed['missing_in_db'] = $missing_in_db_names;
+
+        $message = "Upload failed due to the following issues: " . implode('; ', $messageParts) . '.';
+
+        echo json_encode(array_merge([
             'message' => $message,
             'message_type' => 'danger',
             'students_not_found' => $students_not_found,
             'students_not_enrolled' => $students_not_enrolled,
             'students_processed' => 0
-        ]);
+        ], $detailed));
         exit;
     }
     

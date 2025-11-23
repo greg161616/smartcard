@@ -14,6 +14,12 @@ if (!$res->num_rows) {
 $teacherId = $res->fetch_assoc()['TeacherID'];
 $stmt->close();
 
+$schoolyear_query = "SELECT * FROM school_year WHERE status = 'active' LIMIT 1";
+$schoolyear_result = mysqli_query($conn, $schoolyear_query);
+$schoolyear = mysqli_fetch_assoc($schoolyear_result);
+$current_year = $schoolyear['school_year'];
+$school_year = $current_year;
+
 // Fetch students from database - separate male and female
 $maleStudents = [];
 $femaleStudents = [];
@@ -26,7 +32,7 @@ FROM student s
 JOIN section_enrollment se ON s.StudentID = se.StudentID
 JOIN section sec ON se.SectionID = sec.SectionID
 JOIN subject sub ON sec.SectionID = sub.secID
-WHERE se.SchoolYear = '2025-2026' 
+WHERE se.SchoolYear = '$school_year' 
   AND se.status = 'active' 
   AND sub.TeacherID = ?
   AND sec.SectionID = ? 
@@ -68,9 +74,9 @@ $stmt = $conn->prepare("
     SELECT quarter, ww1, ww2, ww3, ww4, ww5, ww6, ww7, ww8, ww9, ww10, 
            pt1, pt2, pt3, pt4, pt5, pt6, pt7, pt8, pt9, pt10, qa1
     FROM highest_possible_score 
-    WHERE teacherID = ? AND subjectID = ? AND school_year = '2025-2026'
+    WHERE teacherID = ? AND subjectID = ? AND school_year = ?
 ");
-$stmt->bind_param('ii', $teacherId, $subjectId);
+$stmt->bind_param('iis', $teacherId, $subjectId, $school_year);
 $stmt->execute();
 $result = $stmt->get_result();
 while ($row = $result->fetch_assoc()) {
@@ -84,9 +90,9 @@ $stmt = $conn->prepare("
     SELECT studentID, quarter, ww1, ww2, ww3, ww4, ww5, ww6, ww7, ww8, ww9, ww10,
            pt1, pt2, pt3, pt4, pt5, pt6, pt7, pt8, pt9, pt10, qa1, quarterly_grade
     FROM grades_details 
-    WHERE teacherID = ? AND subjectID = ? AND school_year = '2025-2026'
+    WHERE teacherID = ? AND subjectID = ? AND school_year = ?
 ");
-$stmt->bind_param('ii', $teacherId, $subjectId);
+$stmt->bind_param('iis', $teacherId, $subjectId, $school_year);
 $stmt->execute();
 $result = $stmt->get_result();
 while ($row = $result->fetch_assoc()) {
@@ -99,9 +105,9 @@ $summaryGrades = [];
 $stmt = $conn->prepare("
     SELECT student_id, Q1, Q2, Q3, Q4, Final
     FROM grades 
-    WHERE subject = ? AND school_year = '2025-2026'
+    WHERE subject = ? AND school_year = ?
 ");
-$stmt->bind_param('i', $subjectId);
+$stmt->bind_param('is', $subjectId, $school_year);
 $stmt->execute();
 $result = $stmt->get_result();
 while ($row = $result->fetch_assoc()) {
@@ -575,6 +581,7 @@ const maleStudents = <?= json_encode($maleStudents) ?>;
 const femaleStudents = <?= json_encode($femaleStudents) ?>;
 const subjectId = <?= $subjectId ?>;
 const teacherId = <?= $teacherId ?>;
+const schoolYear = "<?= $school_year ?>";
 
 let currentQuarter = 1;
 let hasUnsavedChanges = false;
@@ -851,7 +858,7 @@ function saveGrades() {
     const data = {
         teacherID: teacherId,
         subjectID: subjectId,
-        school_year: '2025-2026',
+        school_year: schoolYear,
         quarter: currentQuarter,
         highest_scores: {},
         grades: []

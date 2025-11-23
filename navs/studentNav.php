@@ -41,6 +41,11 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link" href="../student/attendance.php">
+                        <i class="fas fa-calendar-check"></i> Attendance
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link" href="../student/grades.php">
                         <i class="fas fa-graduation-cap"></i> Grades
                     </a>

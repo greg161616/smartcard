@@ -167,8 +167,6 @@ $students_result = $students_stmt->get_result();
             margin-bottom: 20px;
         }
         .card-header {
-            background-color: #4e73df;
-            color: white;
             border-radius: 10px 10px 0 0 !important;
         }
         .btn-primary {
@@ -208,8 +206,7 @@ $students_result = $students_stmt->get_result();
         .stats-card.academic { background-color: #fff3e0; }
         .stats-card.arts { background-color: #bff8ffff; }
         .advisory-header {
-            background: linear-gradient(135deg, #4e73df 0%, #224abe 100%);
-            color: white;
+            background-color: #ffffff;
             padding: 20px;
             border-radius: 10px;
             margin-bottom: 20px;

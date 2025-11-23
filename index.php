@@ -404,8 +404,8 @@
   <nav class="navbar navbar-expand-lg navbar-light">
     <div class="container">
       <a class="navbar-brand" href="#">
-        <img src="img/logo.png" alt="BNHS Logo" width="40" class="me-2">
-        BANAHIS
+        <img src="img/logo.png" alt="SmartCard Logo" width="40" class="me-2">
+        SmartCard
       </a>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
         <span class="navbar-toggler-icon"></span>
@@ -434,14 +434,11 @@
 
   <!-- Hero Section -->
   <header id="home" class="hero">
-    <div class="hero-content">
-      <div class="logo-container">
-        <img src="img/logo.png" alt="BNHS Logo" width="80"/>
-      </div>
-      <h1 class="display-4 fw-bold">BALAYTIGUE NATIONAL HIGH SCHOOL</h1>
-      <p class="lead fs-4">SmartCard: A Student Academic Performance Management System with  Report Card Generation</p>
-      <a href="login.php" class="btn btn-light btn-lg mt-3 px-4 py-2">
-        <i class="fas fa-sign-in-alt me-2"></i>Login to Portal
+    <div class="hero-content mt-5">
+      <h1 class="display-4 fw-bold">SmartCard</h1>
+      <p class="lead fs-4"> A Student Academic Performance Management System with  Report Card Generation</p>
+      <a href="login.php" class="btn btn-primary btn-lg mt-3">
+        <i class="fas fa-sign-in-alt me-2"></i> Login to Portal
       </a>
     </div>
   </header>
@@ -451,16 +448,17 @@
     <section class="container my-5 py-5">
       <div class="row align-items-center fade-in">
         <div class="col-lg-6">
-          <h2 class="section-title">Welcome to the BANAHIS</h2>
+          <h2 class="section-title">Welcome to SmartCard</h2>
           <p class="fs-5">Empowering educators, students, and administrators through streamlined digital recordkeeping and grading automation.</p>
           <p>Our web-based grading system transforms traditional academic management into a seamless digital experience, saving time and improving accuracy across all educational processes.</p>
           <div class="mt-4">
             <a href="#features" class="btn btn-outline-primary me-2">Explore Features</a>
             <a href="#benefits" class="btn btn-outline-secondary">Learn More</a>
+            <a href="login.php" class="btn btn-outline-dark ms-2">Login to Portal</a>
           </div>
         </div>
         <div class="col-lg-6 text-center">
-          <img src="img/flag.jpg" alt="BNHS Campus" class="img-fluid rounded shadow" style="max-height: 400px;">
+          <img src="img/logo.png" alt="SmartCard" class="img-fluid rounded shadow" style="max-height: 400px;">
         </div>
       </div>
       

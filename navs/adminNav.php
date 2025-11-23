@@ -89,6 +89,9 @@
         border-radius: 8px;
     }
     /* Logo dropdown styles */
+        .logo{
+        border-radius: 50%;
+    }
     .logo-dropdown {
         position: relative;
         display: inline-block;
@@ -142,15 +145,14 @@
     <div class="logo-dropdown">
       <img src="../img/logo.png" alt="BANAHIS Logo" class="logo">
       <div class="logo-dropdown-content">
-        <a href="../profile.php"><i class="bi bi-person" style="margin-right: 8px;"></i> Profile</a>
-        <a href="../settings.php"><i class="bi bi-gear" style="margin-right: 8px;"></i> Settings</a>
+        <a href="profile.php"><i class="bi bi-person" style="margin-right: 8px;"></i> Profile</a>
         <hr>
         <a href="../logout.php" class="text-danger"><i class="bi bi-box-arrow-right" style="margin-right: 8px;"></i> Logout</a>
       </div>
     </div>
     
-    <div class="school-name">BANAHIS</div>
-    <div style="font-size:13px;color:#555;text-align:center;">Balaytigue National High School</div>
+    <div class="school-name">SMARTCARD</div>
+    <div style="font-size:13px;color:#555;text-align:center; padding: 0 10px;">Student Academic Performance Management System</div>
     
     <nav class="nav flex-column mt-3">
       <a class="nav-link" href="../admin/principalDash.php">

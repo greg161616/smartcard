@@ -93,7 +93,6 @@ function sendStudentCredentials(string $email, string $defaultPassword): bool {
         return false;
     }
 }
-// Add this function to function.php
 function getCurrentSchoolYear() {
     $currentYear = date('Y');
     $currentMonth = date('n');

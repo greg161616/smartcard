@@ -77,6 +77,10 @@
         color: #007b8a !important;
         border-radius: 8px;
     }
+    .logo{
+        border-radius: 50%;
+        width: 70px;
+    }
     .logo-dropdown {
         position: relative;
         display: inline-block;
@@ -187,9 +191,6 @@
 <body>
 
 <nav class="header navbar navbar-expand navbar-light bg-light px-4">
-  <div class="ms-auto">
-    <img src="../img/default.jpg" alt="Profile Picture" class="profile-circle border border-secondary">
-  </div>
 </nav>
 
 <div class="admin-sidebar">
@@ -198,14 +199,14 @@
         <div class="logo-dropdown">
             <img src="../img/logo.png" alt="BANAHIS Logo" class="logo">
             <div class="logo-dropdown-content">
-                <a href="../profile.php"><i class="bi bi-person" style="margin-right: 8px;"></i> Profile</a>
+                <a href="profile.php"><i class="bi bi-person" style="margin-right: 8px;"></i> Profile</a>
                 <hr>
                 <a href="../logout.php" class="text-danger"><i class="bi bi-box-arrow-right" style="margin-right: 8px;"></i> Logout</a>
             </div>
         </div>
         <div>
-            <div class="school-name">BANAHIS</div>
-            <div style="font-size:13px;color:#555;text-align:center;">Balaytigue National High School</div>
+            <div class="school-name">SMARTCARD</div>
+            <div style="font-size:13px;color:#555;text-align:center; padding: 0 10px;">Student Academic Performance Management System</div>
         </div>
     </div>
 

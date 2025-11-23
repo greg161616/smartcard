@@ -118,8 +118,10 @@ if (isset($_POST['import_file'])) {
                             $sectionId = $section['SectionID'];
                             
                             // Insert into section_enrollment
-                            $currentYear = date('Y');
-                            $schoolYear = $currentYear . '-' . ($currentYear + 1);
+                            $schoolyear_query = "SELECT * FROM school_year WHERE status = 'active' LIMIT 1";
+                            $schoolyear_result = mysqli_query($conn, $schoolyear_query);
+                            $schoolyear = mysqli_fetch_assoc($schoolyear_result);
+                            $schoolYear = $schoolyear['school_year'];
                             
                             $stmt3 = $conn->prepare("
                                 INSERT INTO `section_enrollment` (SectionID, StudentID, SchoolYear, status)

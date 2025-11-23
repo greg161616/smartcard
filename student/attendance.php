@@ -1,0 +1,320 @@
+<?php
+session_start();
+require_once '../config.php';
+
+// Check if user is logged in and is a student
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
+    header('Location: ../login.php');
+    exit();
+}
+
+// Get student information
+$studentUserId = $_SESSION['user_id'];
+$student_query = "SELECT s.* FROM student s WHERE s.userID = ? LIMIT 1";
+$stmt = $conn->prepare($student_query);
+$stmt->bind_param('i', $studentUserId);
+$stmt->execute();
+$student_result = $stmt->get_result();
+$student = $student_result->fetch_assoc();
+
+// If student record not found, clear session and redirect to login
+if (!$student) {
+    session_unset();
+    session_destroy();
+    header('Location: ../login.php');
+    exit();
+}
+
+// Get student attendance records
+$studentId = $student['StudentID'];
+// Get active school year
+$school_year_query = "SELECT school_year FROM school_year WHERE status = 'active' LIMIT 1";
+$school_year_result = $conn->query($school_year_query);
+$active_school_year = ($school_year_result && $school_year_result->num_rows > 0) ? $school_year_result->fetch_assoc()['school_year'] : date('Y') . '-' . (date('Y')+1);
+
+// Get student attendance records for active school year
+$attendance_query = "
+    SELECT a.*, t.fName as TeacherFirstName, t.lName as TeacherLastName, 
+           s.SectionName, sec.GradeLevel
+    FROM attendance a
+    LEFT JOIN teacher t ON a.TeacherID = t.TeacherID
+    LEFT JOIN section s ON a.SectionID = s.SectionID
+    LEFT JOIN section_enrollment se ON a.StudentID = se.StudentID AND se.SchoolYear = ?
+    LEFT JOIN section sec ON se.SectionID = sec.SectionID
+    WHERE a.StudentID = ?
+    ORDER BY a.Date DESC
+";
+$stmt = $conn->prepare($attendance_query);
+$stmt->bind_param('si', $active_school_year, $studentId);
+$stmt->execute();
+$attendance_result = $stmt->get_result();
+$attendance_records = $attendance_result->fetch_all(MYSQLI_ASSOC);
+
+// Get attendance summary
+$summary_query = "
+    SELECT 
+        COUNT(*) as total_days,
+        SUM(CASE WHEN Status = 'present' THEN 1 ELSE 0 END) as present_days,
+        SUM(CASE WHEN Status = 'absent' THEN 1 ELSE 0 END) as absent_days,
+        SUM(CASE WHEN Status = 'excused' THEN 1 ELSE 0 END) as excused_days
+    FROM attendance 
+    WHERE StudentID = ?
+";
+$stmt = $conn->prepare($summary_query);
+$stmt->bind_param('i', $studentId);
+$stmt->execute();
+$summary_result = $stmt->get_result();
+$attendance_summary = $summary_result->fetch_assoc();
+
+// Calculate attendance percentage
+$attendance_percentage = $attendance_summary['total_days'] > 0 
+    ? round(($attendance_summary['present_days'] / $attendance_summary['total_days']) * 100, 2) 
+    : 0;
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Attendance - Balaytigue National High School</title>
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .navbar {
+            background-color: #2c3e50;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .sidebar {
+            background-color: #34495e;
+            min-height: calc(100vh - 56px);
+            color: white;
+        }
+        .sidebar .nav-link {
+            color: #ecf0f1;
+            padding: 12px 20px;
+            border-radius: 5px;
+            margin-bottom: 5px;
+        }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active {
+            background-color: #3498db;
+            color: white;
+        }
+        .sidebar .nav-link i {
+            margin-right: 10px;
+        }
+        .main-content {
+            padding: 20px;
+        }
+        .card {
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            border: none;
+        }
+        .card-header {
+            background-color: white;
+            border-bottom: 1px solid #eaeaea;
+            font-weight: 600;
+            padding: 15px 20px;
+            border-radius: 10px 10px 0 0 !important;
+        }
+        .attendance-badge {
+            font-size: 0.8rem;
+            padding: 5px 10px;
+            border-radius: 20px;
+        }
+        .attendance-present {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .attendance-absent {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .attendance-excused {
+            background-color: #e2e3e5;
+            color: #383d41;
+        }
+        .stats-card {
+            text-align: center;
+            padding: 20px;
+        }
+        .stats-number {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .stats-label {
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+        .percentage-circle {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: conic-gradient(#28a745 <?php echo $attendance_percentage * 3.6; ?>deg, #e9ecef 0deg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 15px;
+            position: relative;
+        }
+        .percentage-circle::before {
+            content: '';
+            width: 80px;
+            height: 80px;
+            background-color: white;
+            border-radius: 50%;
+            position: absolute;
+        }
+        .percentage-text {
+            position: relative;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+        .table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        .table-responsive {
+            border-radius: 10px;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+<?php include '../navs/studentNav.php'; ?>
+
+    <div class="container">
+        <div class="row">
+            <div class="main-content">
+
+                <!-- Attendance Summary Cards -->
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="card stats-card">
+                            <div class="stats-number text-primary"><?php echo $attendance_summary['total_days']; ?></div>
+                            <div class="stats-label">Total Days</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card stats-card">
+                            <div class="stats-number text-success"><?php echo $attendance_summary['present_days']; ?></div>
+                            <div class="stats-label">Present</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card stats-card">
+                            <div class="stats-number text-danger"><?php echo $attendance_summary['absent_days']; ?></div>
+                            <div class="stats-label">Absent</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card stats-card">
+                            <div class="percentage-circle">
+                                <div class="percentage-text"><?php echo $attendance_percentage; ?>%</div>
+                            </div>
+                            <div class="stats-label">Attendance Rate</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Attendance Records Table -->
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>Attendance History</span>
+                        <span class="badge bg-primary"><?php echo count($attendance_records); ?> records</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Status</th>
+                                        <th>Teacher</th>
+                                        <th>Section</th>
+                                        <th>Grade Level</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (count($attendance_records) > 0): ?>
+                                        <?php foreach ($attendance_records as $record): ?>
+                                            <tr>
+                                                <td><?php echo date('M j, Y', strtotime($record['Date'])); ?></td>
+                                                <td>
+                                                    <?php 
+                                                    $status_class = '';
+                                                    if ($record['Status'] == 'present') {
+                                                        $status_class = 'attendance-present';
+                                                    } elseif ($record['Status'] == 'absent') {
+                                                        $status_class = 'attendance-absent';
+                                                    } elseif ($record['Status'] == 'excused') {
+                                                        $status_class = 'attendance-excused';
+                                                    }
+                                                    ?>
+                                                    <span class="badge attendance-badge <?php echo $status_class; ?>">
+                                                        <?php echo ucfirst($record['Status']); ?>
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <?php 
+                                                    if ($record['TeacherFirstName'] && $record['TeacherLastName']) {
+                                                        echo htmlspecialchars($record['TeacherFirstName'] . ' ' . $record['TeacherLastName']);
+                                                    } else {
+                                                        echo 'N/A';
+                                                    }
+                                                    ?>
+                                                </td>
+                                                <td><?php echo htmlspecialchars($record['SectionName'] ?? 'N/A'); ?></td>
+                                                <td>Grade <?php echo htmlspecialchars($record['GradeLevel'] ?? 'N/A'); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <tr>
+                                            <td colspan="5" class="text-center py-4">No attendance records found.</td>
+                                        </tr>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Legend -->
+                <div class="card">
+                    <div class="card-header">
+                        <span>Attendance Status Legend</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <span class="badge attendance-badge attendance-present me-2">Present</span>
+                                <small>Student was present in class</small>
+                            </div>
+                            <div class="col-md-4">
+                                <span class="badge attendance-badge attendance-absent me-2">Absent</span>
+                                <small>Student was absent from class</small>
+                            </div>
+                            <div class="col-md-4">
+                                <span class="badge attendance-badge attendance-excused me-2">Excused</span>
+                                <small>Student had an excused absence</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

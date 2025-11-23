@@ -179,8 +179,8 @@
         </div>
     </div>
     
-    <div class="school-name">BANAHIS</div>
-    <div style="font-size:13px;color:#555;text-align:center;">Balaytigue National High School</div>
+    <div class="school-name">SMARTCARD</div>
+    <div style="font-size:13px;color:#555;text-align:center;">Student Academic Performance Management System</div>
     
     <!-- Scrollable content section -->
     <div class="sidebar-content">
