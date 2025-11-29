@@ -49,19 +49,21 @@ $current_enrollment_result = $stmt->get_result();
 $current_enrollment = $current_enrollment_result->fetch_assoc();
 
 // Check if a specific enrollment is selected via POST
+$selected_section_id = $current_enrollment['SectionID'] ?? null;
 $selected_grade_level = $current_enrollment['GradeLevel'] ?? null;
 $selected_school_year = $current_enrollment['SchoolYear'] ?? null;
 
 if (isset($_POST['enrollment_filter'])) {
     $selected = explode('|', $_POST['enrollment_filter']);
-    if (count($selected) === 2) {
+    if (count($selected) === 3) {
         // sanitize values
-        $selected_grade_level = preg_replace('/[^0-9]/', '', $selected[0]);
-        $selected_school_year = preg_replace('/[^0-9\-]/', '', $selected[1]);
+        $selected_section_id = (int)$selected[0];
+        $selected_grade_level = preg_replace('/[^0-9]/', '', $selected[1]);
+        $selected_school_year = preg_replace('/[^0-9\-]/', '', $selected[2]);
     }
 }
 
-// Get grades for the student based on selection
+// Get grades for the student based on selection - FIXED QUERY
 $grades_query = "SELECT 
                     sub.SubjectID,
                     sub.SubjectName,
@@ -69,11 +71,15 @@ $grades_query = "SELECT
                     g.Q1, g.Q2, g.Q3, g.Q4, g.Final
                 FROM grades g
                 JOIN subject sub ON g.subject = sub.SubjectID
-                JOIN teacher t ON sub.teacherID = t.TeacherID
-                WHERE g.student_id = ? AND sub.GradeLevel = ? AND g.school_year = ?
+                JOIN assigned_subject a ON a.subject_id = sub.SubjectID
+                JOIN teacher t ON a.teacher_id = t.TeacherID
+                WHERE g.student_id = ? 
+                AND g.school_year = ?
+                AND a.section_id = ?
+                AND a.school_year = ?
                 ORDER BY sub.SubjectName";
 $stmt = $conn->prepare($grades_query);
-$stmt->bind_param('iis', $student['StudentID'], $selected_grade_level, $selected_school_year);
+$stmt->bind_param('isis', $student['StudentID'], $selected_school_year, $selected_section_id, $selected_school_year);
 $stmt->execute();
 $grades_result = $stmt->get_result();
 $grades = $grades_result->fetch_all(MYSQLI_ASSOC);
@@ -83,6 +89,17 @@ $detailed_scores = [];
 if (count($grades) > 0) {
     foreach ($grades as $grade) {
         $subject_id = $grade['SubjectID'];
+        
+        // Get teacher ID for this subject and section
+        $teacher_query = "SELECT teacher_id FROM assigned_subject 
+                         WHERE subject_id = ? AND section_id = ? AND school_year = ? LIMIT 1";
+        $teacher_stmt = $conn->prepare($teacher_query);
+        $teacher_stmt->bind_param('iis', $subject_id, $selected_section_id, $selected_school_year);
+        $teacher_stmt->execute();
+        $teacher_result = $teacher_stmt->get_result();
+        $teacher_row = $teacher_result->fetch_assoc();
+        $teacher_id = $teacher_row ? $teacher_row['teacher_id'] : null;
+        $teacher_stmt->close();
         
         // Get details for all quarters
         for ($quarter = 1; $quarter <= 4; $quarter++) {
@@ -96,20 +113,8 @@ if (count($grades) > 0) {
             $details = $details_result->fetch_assoc();
 
             // Get highest possible scores for this subject and quarter
-            $hps_query = "SELECT * FROM highest_possible_score WHERE subjectID = ? AND teacherID = ? AND school_year = ? AND quarter = ? LIMIT 1";
-            $teacher_id = $grades[0]['TeacherName'] ? null : null; // fallback if not available
-            if (!empty($details) && isset($details['teacherID'])) {
-                $teacher_id = $details['teacherID'];
-            } else {
-                // fallback: get teacherID from subject table
-                $teacher_stmt = $conn->prepare("SELECT teacherID FROM subject WHERE SubjectID = ? LIMIT 1");
-                $teacher_stmt->bind_param('i', $subject_id);
-                $teacher_stmt->execute();
-                $teacher_result = $teacher_stmt->get_result();
-                $teacher_row = $teacher_result->fetch_assoc();
-                $teacher_id = $teacher_row ? $teacher_row['teacherID'] : null;
-                $teacher_stmt->close();
-            }
+            $hps_query = "SELECT * FROM highest_possible_score 
+                         WHERE subjectID = ? AND teacherID = ? AND school_year = ? AND quarter = ? LIMIT 1";
             $hps_stmt = $conn->prepare($hps_query);
             $hps_stmt->bind_param('iisi', $subject_id, $teacher_id, $selected_school_year, $quarter);
             $hps_stmt->execute();
@@ -329,8 +334,8 @@ if (count($grades) > 0) {
                             <label for="enrollment_filter" class="form-label">View Grades For:</label>
                             <select class="form-select" id="enrollment_filter" name="enrollment_filter" onchange="this.form.submit()">
                                 <?php foreach ($all_enrollments as $enrollment): ?>
-                                    <option value="<?php echo $enrollment['GradeLevel'] . '|' . $enrollment['SchoolYear']; ?>"
-                                        <?php if ($enrollment['GradeLevel'] == $selected_grade_level && $enrollment['SchoolYear'] == $selected_school_year) echo 'selected'; ?>>
+                                    <option value="<?php echo $enrollment['SectionID'] . '|' . $enrollment['GradeLevel'] . '|' . $enrollment['SchoolYear']; ?>"
+                                        <?php if ($enrollment['SectionID'] == $selected_section_id && $enrollment['GradeLevel'] == $selected_grade_level && $enrollment['SchoolYear'] == $selected_school_year) echo 'selected'; ?>>
                                         Grade <?php echo $enrollment['GradeLevel']; ?> - <?php echo $enrollment['SectionName']; ?> (SY: <?php echo $enrollment['SchoolYear']; ?>)
                                     </option>
                                 <?php endforeach; ?>
@@ -498,13 +503,13 @@ if (count($grades) > 0) {
                             <table class="score-table">
                                 <thead>
                                     <tr>
-                                        ${Array.from({length: 10}, (_, i) => `<th>WW${i+1}</th>`).join('')}
+                                        ${Array.from({length: 10}, (_, i) => `<th>${i+1}</th>`).join('')}
                                         <th>Total</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <tr style="background:#e9ecef; font-weight:600;">
-                                        <td colspan="11" class="text-primary text-center">Highest Possible Score (HPS)</td>
+                                        <td colspan="11" class="text-primary text-center">Highest Possible Score</td>
                                     </tr>
                                     <tr style="background:#f8f9fa;">
                                         ${Array.from({length: 10}, (_, i) => `<td class='text-muted'>${hps['ww' + (i+1)] || '-'}</td>`).join('')}
@@ -529,7 +534,6 @@ if (count($grades) > 0) {
                                     </tr>
                                 </tfoot>
                             </table>
-                            <div class="text-muted mt-1">Highest Possible Score (HPS) is shown in the second row.</div>
                         </div>
                     </div>
                 </div>`;
@@ -545,7 +549,7 @@ if (count($grades) > 0) {
                             <table class="score-table">
                                 <thead>
                                     <tr>
-                                        ${Array.from({length: 10}, (_, i) => `<th>PT${i+1}</th>`).join('')}
+                                        ${Array.from({length: 10}, (_, i) => `<th>${i+1}</th>`).join('')}
                                         <th>Total</th>
                                     </tr>
                                 </thead>
@@ -576,7 +580,6 @@ if (count($grades) > 0) {
                                     </tr>
                                 </tfoot>
                             </table>
-                            <div class="text-muted mt-1">Highest Possible Score (HPS) is shown in the second row.</div>
                         </div>
                     </div>
                 </div>`;
@@ -614,7 +617,6 @@ if (count($grades) > 0) {
                                 </tr>
                             </tfoot>
                         </table>
-                        <div class="text-muted mt-1">Highest Possible Score (HPS) is shown in the last column.</div>
                     </div>
                 </div>`;
             }

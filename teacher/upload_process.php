@@ -4,12 +4,11 @@ require_once '../config.php';
 // Logging helper
 require_once __DIR__ . '/../api/log_helper.php';
 
-
 function getTeacherDisplayName($conn, $teacher_id) {
     if (empty($teacher_id)) return 'Unknown Teacher';
     try {
-        // Try UserID in teacher table first
-        $q = $conn->prepare("SELECT COALESCE(fName, '') AS fname, COALESCE(lName, '') AS lname FROM teacher WHERE UserID = ? LIMIT 1");
+        // Query teacher table using TeacherID
+        $q = $conn->prepare("SELECT COALESCE(fName, '') AS fname, COALESCE(lName, '') AS lname FROM teacher WHERE TeacherID = ? LIMIT 1");
         if ($q) {
             $q->bind_param('i', $teacher_id);
             $q->execute();
@@ -23,8 +22,10 @@ function getTeacherDisplayName($conn, $teacher_id) {
             $q->close();
         }
 
-        // Try teacherID column
-        $q2 = $conn->prepare("SELECT COALESCE(fName, '') AS fname, COALESCE(lName, '') AS lname FROM teacher WHERE teacherID = ? LIMIT 1");
+        // If not found by TeacherID, try user table via UserID
+        $q2 = $conn->prepare("SELECT t.TeacherID, COALESCE(t.fName, '') AS fname, COALESCE(t.lName, '') AS lname 
+                             FROM teacher t 
+                             WHERE t.UserID = ? LIMIT 1");
         if ($q2) {
             $q2->bind_param('i', $teacher_id);
             $q2->execute();
@@ -33,13 +34,13 @@ function getTeacherDisplayName($conn, $teacher_id) {
                 $row2 = $r2->fetch_assoc();
                 $q2->close();
                 $name2 = trim($row2['fname'] . ' ' . $row2['lname']);
-                if ($name2 !== '') return $name2 . " (ID: $teacher_id)";
+                if ($name2 !== '') return $name2 . " (ID: {$row2['TeacherID']})";
             }
             $q2->close();
         }
 
         // Try user table as last resort
-        $q3 = $conn->prepare("SELECT COALESCE(FirstName, '') AS fname, COALESCE(LastName, '') AS lname, COALESCE(Email, '') AS email FROM user WHERE UserID = ? LIMIT 1");
+        $q3 = $conn->prepare("SELECT COALESCE(Email, '') AS email FROM user WHERE UserID = ? LIMIT 1");
         if ($q3) {
             $q3->bind_param('i', $teacher_id);
             $q3->execute();
@@ -47,8 +48,6 @@ function getTeacherDisplayName($conn, $teacher_id) {
             if ($r3 && $r3->num_rows > 0) {
                 $row3 = $r3->fetch_assoc();
                 $q3->close();
-                $name3 = trim($row3['fname'] . ' ' . $row3['lname']);
-                if ($name3 !== '') return $name3 . " (ID: $teacher_id)";
                 if (!empty($row3['email'])) return $row3['email'] . " (ID: $teacher_id)";
             }
             $q3->close();
@@ -65,7 +64,7 @@ function getTeacherDisplayName($conn, $teacher_id) {
 function getTeacherName($conn, $teacher_id) {
     if (empty($teacher_id)) return 'Unknown Teacher';
     try {
-        $q = $conn->prepare("SELECT COALESCE(fName, '') AS fname, COALESCE(lName, '') AS lname FROM teacher WHERE UserID = ? LIMIT 1");
+        $q = $conn->prepare("SELECT COALESCE(fName, '') AS fname, COALESCE(lName, '') AS lname FROM teacher WHERE TeacherID = ? LIMIT 1");
         if ($q) {
             $q->bind_param('i', $teacher_id);
             $q->execute();
@@ -79,7 +78,9 @@ function getTeacherName($conn, $teacher_id) {
             $q->close();
         }
 
-        $q2 = $conn->prepare("SELECT COALESCE(fName, '') AS fname, COALESCE(lName, '') AS lname FROM teacher WHERE teacherID = ? LIMIT 1");
+        $q2 = $conn->prepare("SELECT COALESCE(t.fName, '') AS fname, COALESCE(t.lName, '') AS lname 
+                             FROM teacher t 
+                             WHERE t.UserID = ? LIMIT 1");
         if ($q2) {
             $q2->bind_param('i', $teacher_id);
             $q2->execute();
@@ -93,7 +94,7 @@ function getTeacherName($conn, $teacher_id) {
             $q2->close();
         }
 
-        $q3 = $conn->prepare("SELECT COALESCE(FirstName, '') AS fname, COALESCE(LastName, '') AS lname, COALESCE(Email, '') AS email FROM user WHERE UserID = ? LIMIT 1");
+        $q3 = $conn->prepare("SELECT COALESCE(Email, '') AS email FROM user WHERE UserID = ? LIMIT 1");
         if ($q3) {
             $q3->bind_param('i', $teacher_id);
             $q3->execute();
@@ -101,8 +102,6 @@ function getTeacherName($conn, $teacher_id) {
             if ($r3 && $r3->num_rows > 0) {
                 $row3 = $r3->fetch_assoc();
                 $q3->close();
-                $name3 = trim($row3['fname'] . ' ' . $row3['lname']);
-                if ($name3 !== '') return $name3;
                 if (!empty($row3['email'])) return $row3['email'];
             }
             $q3->close();
@@ -312,7 +311,6 @@ try {
         throw new Exception("Could not access the quarter sheet.");
     }
 
-    // FIX: Use getCalculatedValue() instead of getValue() for formula cells
     // Extract subject and school year from the quarter sheet
     $subject_name = trim($quarter_sheet->getCell('AG7')->getCalculatedValue());
     if (empty($subject_name) || strtoupper($subject_name) === '#REF!') {
@@ -324,21 +322,34 @@ try {
         throw new Exception('Could not read school year or school year not assigned from cell');
     }
     
-    // Get subject ID
-    $subject_stmt = $conn->prepare("SELECT SubjectID FROM subject WHERE SubjectName = ? AND teacherID = ?");
+    // Get subject ID - FIXED: Check assigned_subject table instead of teacherID in subject table
+    $subject_stmt = $conn->prepare("SELECT s.SubjectID 
+                                   FROM subject s 
+                                   INNER JOIN assigned_subject a ON s.SubjectID = a.subject_id 
+                                   WHERE s.SubjectName = ? AND a.teacher_id = ?");
     $subject_stmt->bind_param("si", $subject_name, $teacher_id);
     $subject_stmt->execute();
     $subject_result = $subject_stmt->get_result();
     $subject = $subject_result->fetch_assoc();
     
     if (!$subject) {
-        throw new Exception("Subject '$subject_name' not found for the logged-in teacher.");
+        throw new Exception("Subject '$subject_name' not found or not assigned to the logged-in teacher.");
     }
     
     $subject_id = $subject['SubjectID'];
+    
+    // Get section information for validation
+    $section_info_stmt = $conn->prepare("SELECT s.SectionID, s.GradeLevel, s.SectionName 
+                                        FROM assigned_subject a 
+                                        INNER JOIN section s ON a.section_id = s.SectionID 
+                                        WHERE a.subject_id = ? AND a.teacher_id = ? AND a.school_year = ?");
+    $section_info_stmt->bind_param("iis", $subject_id, $teacher_id, $school_year);
+    $section_info_stmt->execute();
+    $section_info_result = $section_info_stmt->get_result();
+    $section_info = $section_info_result->fetch_assoc();
+    $section_info_stmt->close();
+
     // --- Validate Excel metadata against database (grade level / section / teacher) ---
-    // We'll attempt to find Grade Level, Section and Teacher name in the top header rows (1-11).
-    // Assumption: the workbook includes human-readable metadata in header rows (e.g. "Grade 7 - Section A", "Teacher: Juan D. Reyes").
     $headerText = '';
     $headerCols = array_merge(range('A','Z'), ['AA','AB','AC','AD','AE','AF','AG']);
     for ($r = 1; $r <= 11; $r++) {
@@ -373,15 +384,7 @@ try {
         $excelTeacherName = trim($m[1]);
     }
 
-    // Get subject's assigned section and grade level from DB
-    $subInfoStmt = $conn->prepare("SELECT sub.SubjectID, sub.secID, COALESCE(sub.GradeLevel, '') AS GradeLevel, COALESCE(sec.SectionName, '') AS SectionName FROM subject sub LEFT JOIN section sec ON sub.secID = sec.SectionID WHERE sub.SubjectID = ? LIMIT 1");
-    $subInfoStmt->bind_param('i', $subject_id);
-    $subInfoStmt->execute();
-    $subInfoRes = $subInfoStmt->get_result();
-    $subInfo = $subInfoRes->fetch_assoc();
-    $subInfoStmt->close();
-
-    // Compare teacher (must match logged-in teacher) - already validated by query, but also check excel teacher name if present
+    // Compare teacher (must match logged-in teacher)
     if ($excelTeacherName) {
         $dbTeacherName = getTeacherName($conn, $teacher_id);
         // Normalize names: lowercase, remove dots
@@ -393,37 +396,43 @@ try {
     }
 
     // Compare grade level if available in Excel
-    if ($excelGrade !== null && $subInfo && $subInfo['GradeLevel'] !== '') {
-        $dbGrade = (int)$subInfo['GradeLevel'];
+    if ($excelGrade !== null && $section_info && $section_info['GradeLevel'] !== '') {
+        $dbGrade = (int)$section_info['GradeLevel'];
         if ($dbGrade !== $excelGrade) {
             throw new Exception("Grade level on your spreadsheet Grade {$excelGrade} does not match the subject's assigned grade level (Grade {$dbGrade}).");
         }
     }
 
-    // Compare section if available in Excel
-    if ($excelSection !== null && $subInfo && $subInfo['SectionName'] !== '') {
-        // normalize whitespace and case
-            // Normalize excel section: remove leading grade numbers (e.g. "7-" or "Grade 7"), remove words like 'teacher'/'adviser',
-            // strip punctuation, and collapse whitespace. Example: "7-Amihan TEACHER" -> "amihan"
-            $excelSecClean = preg_replace('/grade\s*\d+/i', '', $excelSection); // remove 'Grade 7'
-            $excelSecClean = preg_replace('/^\s*\d+[-\s]*/', '', $excelSecClean); // remove leading digits like '7-' or '7 '
-            $excelSecClean = preg_replace('/\b(section|teacher|adviser|teacher:|adviser:)\b/i', '', $excelSecClean);
-            $excelSecClean = preg_replace('/[^a-zA-Z0-9\s\-]/', ' ', $excelSecClean);
-            $excelSecClean = strtolower(trim(preg_replace('/\s+/', ' ', $excelSecClean)));
+// Compare section if available in Excel
+if ($excelSection !== null && $section_info && $section_info['SectionName'] !== '') {
+    // More flexible normalization for Excel section
+    $excelSecClean = preg_replace('/grade\s*\d+/i', '', $excelSection); // remove 'Grade 7'
+    $excelSecClean = preg_replace('/^\s*\d+[-\s]*/', '', $excelSecClean); // remove leading digits like '7-' or '7 '
+    $excelSecClean = preg_replace('/\b(section|teacher|adviser|teacher:|adviser:)\b/i', '', $excelSecClean);
+    $excelSecClean = preg_replace('/[^a-zA-Z0-9\s\-]/', ' ', $excelSecClean);
+    $excelSecClean = strtolower(trim(preg_replace('/\s+/', ' ', $excelSecClean)));
+    
+    // Remove any remaining leading/trailing hyphens and spaces
+    $excelSecClean = trim($excelSecClean, " -");
 
-            // Normalize DB section name similarly for robust comparison
-            $dbSectionRaw = $subInfo['SectionName'];
-            $dbSecClean = preg_replace('/grade\s*\d+/i', '', $dbSectionRaw);
-            $dbSecClean = preg_replace('/^\s*\d+[-\s]*/', '', $dbSecClean);
-            $dbSecClean = preg_replace('/[^a-zA-Z0-9\s\-]/', ' ', $dbSecClean);
-            $dbSecClean = strtolower(trim(preg_replace('/\s+/', ' ', $dbSecClean)));
+    // Normalize DB section name
+    $dbSectionRaw = $section_info['SectionName'];
+    $dbSecClean = preg_replace('/grade\s*\d+/i', '', $dbSectionRaw);
+    $dbSecClean = preg_replace('/^\s*\d+[-\s]*/', '', $dbSecClean);
+    $dbSecClean = preg_replace('/[^a-zA-Z0-9\s\-]/', ' ', $dbSecClean);
+    $dbSecClean = strtolower(trim(preg_replace('/\s+/', ' ', $dbSecClean)));
+    $dbSecClean = trim($dbSecClean, " -");
 
-            if ($excelSecClean !== '' && $dbSecClean !== '' && $excelSecClean !== $dbSecClean) {
-                // Use cleaned names in message to avoid exposing raw IDs
-                throw new Exception("Section in Excel ('{$excelSection}') does not match the subject's assigned section ('{$subInfo['SectionName']}').");
-        }
+    // Debug logging (you can remove this after testing)
+    error_log("Excel Section: '$excelSection' -> '$excelSecClean'");
+    error_log("DB Section: '$dbSectionRaw' -> '$dbSecClean'");
+
+    if ($excelSecClean !== '' && $dbSecClean !== '' && $excelSecClean !== $dbSecClean) {
+        throw new Exception("Section in Excel ('{$excelSection}') does not match the subject's assigned section ('{$section_info['SectionName']}').");
     }
-    // Log start of grade upload (teacher-friendly)
+}
+
+    // Log start of grade upload
     try {
         $teacher_display = getTeacherDisplayName($conn, $teacher_id);
         $startMessage = "Started uploading grades for {$subject_name} — Q{$quarter} ({$school_year}).";
@@ -433,12 +442,10 @@ try {
             'file_name' => $file['name']
         ], 'info');
     } catch (Exception $logEx) {
-        // Non-fatal: continue even if logging fails
         error_log('Logging failed (start): ' . $logEx->getMessage());
     }
     
     // Extract highest possible scores (row 10)
-    // FIX: Use getCalculatedValue() for formula-based cells
     $highest_scores = [
         'ww1' => $quarter_sheet->getCell('F10')->getValue(),
         'ww2' => $quarter_sheet->getCell('G10')->getValue(),
@@ -450,7 +457,7 @@ try {
         'ww8' => $quarter_sheet->getCell('M10')->getValue(),
         'ww9' => $quarter_sheet->getCell('N10')->getValue(),
         'ww10' => $quarter_sheet->getCell('O10')->getValue(),
-        'ww_total' => $quarter_sheet->getCell('P10')->getCalculatedValue(), // Formula cell
+        'ww_total' => $quarter_sheet->getCell('P10')->getCalculatedValue(),
         'ww_ps' => $quarter_sheet->getCell('Q10')->getValue(),
         'ww_ws' => $quarter_sheet->getCell('R10')->getValue(),
         'pt1' => $quarter_sheet->getCell('S10')->getValue(),
@@ -463,7 +470,7 @@ try {
         'pt8' => $quarter_sheet->getCell('Z10')->getValue(),
         'pt9' => $quarter_sheet->getCell('AA10')->getValue(),
         'pt10' => $quarter_sheet->getCell('AB10')->getValue(),
-        'pt_total' => $quarter_sheet->getCell('AC10')->getCalculatedValue(), // Formula cell
+        'pt_total' => $quarter_sheet->getCell('AC10')->getCalculatedValue(),
         'pt_ps' => $quarter_sheet->getCell('AD10')->getValue(),
         'pt_ws' => $quarter_sheet->getCell('AE10')->getValue(),
         'qa1' => $quarter_sheet->getCell('AF10')->getValue(),
@@ -475,9 +482,11 @@ try {
     $student_stmt = $conn->prepare("SELECT StudentID FROM student 
         WHERE LOWER(TRIM(LastName)) = LOWER(?) AND LOWER(TRIM(FirstName)) = LOWER(?)");
     
-    // NEW: Check if student is enrolled in this subject
-    $enrollment_stmt = $conn->prepare("SELECT StudentID FROM section_enrollment 
-        WHERE StudentID = ? AND SchoolYear = ?");
+    // Check if student is enrolled in this subject's section
+    $enrollment_stmt = $conn->prepare("SELECT se.StudentID 
+                                      FROM section_enrollment se
+                                      INNER JOIN assigned_subject a ON se.SectionID = a.section_id
+                                      WHERE se.StudentID = ? AND se.SchoolYear = ? AND a.subject_id = ?");
     
     // FIRST PASS: Validate all students before inserting any data
     $students_to_process = [];
@@ -491,34 +500,28 @@ try {
         $student_name = trim($quarter_sheet->getCell('B' . $row)->getCalculatedValue());
         if (empty($student_name)) continue;
         
-        // Parse student name - improved logic
+        // Parse student name
         $last_name = '';
         $first_name = '';
         
-        // Handle different name formats
         if (str_contains($student_name, ',')) {
-            // Format: "Lastname, Firstname"
             $name_parts = array_map('trim', explode(',', $student_name, 2));
             $last_name = $name_parts[0];
             $first_name = $name_parts[1];
             
-            // Extract just the first name if there are multiple names after the comma
             if (str_contains($first_name, ' ')) {
                 $first_name_parts = explode(' ', $first_name);
                 $first_name = $first_name_parts[0];
             }
         } else {
-            // Format: "Firstname Lastname" or "Firstname Middlename Lastname"
             $name_parts = explode(' ', $student_name);
             $first_name = array_shift($name_parts);
             $last_name = implode(' ', $name_parts);
         }
         
-        // Clean up names
         $last_name = preg_replace('/\s+/', ' ', trim($last_name));
         $first_name = preg_replace('/\s+/', ' ', trim($first_name));
         
-        // Skip if names are empty after cleaning
         if (empty($last_name) || empty($first_name)) {
             $students_not_found[] = $student_name . " (Invalid name format)";
             continue;
@@ -538,8 +541,8 @@ try {
             continue;
         }
         
-        // Check if student is enrolled in this subject for the current school year
-        $enrollment_stmt->bind_param("is", $student_id, $school_year);
+        // Check if student is enrolled in this subject's section for the current school year
+        $enrollment_stmt->bind_param("isi", $student_id, $school_year, $subject_id);
         $enrollment_stmt->execute();
         $enrollment_result = $enrollment_stmt->get_result();
         
@@ -561,16 +564,13 @@ try {
             'initial_grade' => 'AI', 'quarterly_grade' => 'AJ'
         ];
         
-        // NEW: Validate that no required scores are null
         foreach ($score_cells as $key => $cell) {
             $value = $quarter_sheet->getCell($cell . $row)->getCalculatedValue();
             
-            // Check for null/empty values in required fields
             if (($value === null || $value === '') && !in_array($key, ['ww_total', 'pt_total'])) {
                 throw new Exception("Please try again. A column in your Excel sheet cannot be null or have no score. Please make sure to fill all the student scores before uploading.");
             }
             
-            // Validate numeric values
             if (in_array($key, ['ww_total', 'ww_ps', 'ww_ws', 'pt_total', 'pt_ps', 'pt_ws', 'qa_ps', 'qa_ws', 'initial_grade', 'quarterly_grade'])) {
                 $student_scores[$key] = is_numeric($value) ? $value : 0;
             } else {
@@ -578,31 +578,20 @@ try {
             }
         }
         
-        // Store student data for processing
         $students_to_process[] = [
             'student_id' => $student_id,
             'scores' => $student_scores
         ];
     }
     
-    // NEW: Cross-verify Excel students vs DB enrolled students for the subject/section/school year
+    // Cross-verify Excel students vs DB enrolled students
     $excel_ids = array_map(function($s){ return $s['student_id']; }, $students_to_process);
     $db_enrolled_ids = [];
-    if (!empty($subInfo) && !empty($subInfo['secID'])) {
-        $secIdForQuery = $subInfo['secID'];
+    
+    if ($section_info && $section_info['SectionID']) {
+        $secIdForQuery = $section_info['SectionID'];
         $enrolled_q = $conn->prepare("SELECT StudentID FROM section_enrollment WHERE SectionID = ? AND SchoolYear = ? AND status = 'active'");
         $enrolled_q->bind_param('is', $secIdForQuery, $school_year);
-        $enrolled_q->execute();
-        $enrolled_res = $enrolled_q->get_result();
-        while ($er = $enrolled_res->fetch_assoc()) {
-            $db_enrolled_ids[] = (int)$er['StudentID'];
-        }
-        $enrolled_q->close();
-    } elseif (!empty($subInfo) && isset($subInfo['GradeLevel']) && $subInfo['GradeLevel'] !== '') {
-        // Fallback: gather all students in the same grade level for the school year
-        $gradeLevelForQuery = $subInfo['GradeLevel'];
-        $enrolled_q = $conn->prepare("SELECT se.StudentID FROM section_enrollment se JOIN section s ON se.SectionID = s.SectionID WHERE s.GradeLevel = ? AND se.SchoolYear = ? AND se.status = 'active'");
-        $enrolled_q->bind_param('ss', $gradeLevelForQuery, $school_year);
         $enrolled_q->execute();
         $enrolled_res = $enrolled_q->get_result();
         while ($er = $enrolled_res->fetch_assoc()) {
@@ -625,10 +614,6 @@ try {
         $placeholders = implode(',', array_fill(0, count($missing_in_excel), '?'));
         $types = str_repeat('i', count($missing_in_excel));
         $stmt = $conn->prepare("SELECT StudentID, FirstName, Middlename, LastName FROM student WHERE StudentID IN ($placeholders)");
-        // bind dynamically
-        $stmtParams = array_merge([$types], $missing_in_excel);
-        $bindNames = [];
-        // Use call_user_func_array for dynamic bind
         $refs = [];
         $refs[] = &$types;
         for ($i = 0; $i < count($missing_in_excel); $i++) {
@@ -645,11 +630,9 @@ try {
 
     $missing_in_db_names = [];
     if (!empty($missing_in_db)) {
-        // For students present in Excel but not in DB enrollment, try to find their parsed names from the upload
         foreach ($students_to_process as $s) {
             if (in_array($s['student_id'], $missing_in_db, true)) {
                 $sid = $s['student_id'];
-                // Fetch name
                 $qnm = $conn->prepare('SELECT FirstName, Middlename, LastName FROM student WHERE StudentID = ? LIMIT 1');
                 $qnm->bind_param('i', $sid);
                 $qnm->execute();
@@ -785,7 +768,6 @@ try {
         ];
 
         if (!$insert_grades_details->bind_param($types, ...$params) || !$insert_grades_details->execute()) {
-            // Check if it's a null constraint error and provide friendly message
             if (strpos($insert_grades_details->error, 'cannot be null') !== false) {
                 throw new Exception("Please try again. A column in your Excel sheet cannot be null or have no score. Please make sure to fill all the student scores before uploading.");
             }
@@ -810,7 +792,6 @@ try {
         }
 
         if ($summaryInfo) {
-            // Limit reading to only the summary sheet and relevant cells
             $readerSummary->setLoadSheetsOnly(['SUMMARY OF QUARTERLY GRADES'])
                           ->setReadFilter(new SummaryReadFilter(12, $summaryInfo['totalRows']));
             $wbSummary = $readerSummary->load($file['tmp_name']);
@@ -826,7 +807,6 @@ try {
                 }
 
                 $fullName = getSummaryName($shSummary->getCell('B' . $sr));
-                // Skip blank rows and headers
                 if (
                     $fullName === '' ||
                     strcasecmp($fullName, 'MALE') === 0 ||
@@ -836,7 +816,7 @@ try {
                     continue;
                 }
 
-                // Parse the name into last and first components
+                // Parse the name
                 if (str_contains($fullName, ',')) {
                     [$lastNamePart, $firstMiddle] = array_map('trim', explode(',', $fullName, 2));
                     $firstNamePart = explode(' ', $firstMiddle)[0];
@@ -846,7 +826,7 @@ try {
                     $lastNamePart = array_pop($partsName) ?: '';
                 }
 
-                // Attempt to find the student in the database
+                // Find student in database
                 $studentStmt = $conn->prepare(
                     "SELECT StudentID FROM student WHERE LOWER(TRIM(LastName)) = LOWER(TRIM(?)) AND LOWER(TRIM(FirstName)) = LOWER(TRIM(?))"
                 );
@@ -856,17 +836,18 @@ try {
                 if ($studentRes->num_rows > 0) {
                     $sidRow = $studentRes->fetch_assoc()['StudentID'];
                 } else {
-                    // Collect missing students separately; don't treat as fatal
                     $summary_errors[] = "Student not found in summary: $fullName (Section $currentSection)";
                     $studentStmt->close();
                     continue;
                 }
                 $studentStmt->close();
 
-                // Check if student is enrolled in this subject for summary grades too
-                $enrollment_stmt_summary = $conn->prepare("SELECT StudentID FROM section_enrollment 
-                    WHERE StudentID = ?  AND SchoolYear = ?");
-                $enrollment_stmt_summary->bind_param("is", $sidRow, $school_year);
+                // Check enrollment for summary grades
+                $enrollment_stmt_summary = $conn->prepare("SELECT se.StudentID 
+                                                          FROM section_enrollment se
+                                                          INNER JOIN assigned_subject a ON se.SectionID = a.section_id
+                                                          WHERE se.StudentID = ? AND se.SchoolYear = ? AND a.subject_id = ?");
+                $enrollment_stmt_summary->bind_param("isi", $sidRow, $school_year, $subject_id);
                 $enrollment_stmt_summary->execute();
                 $enrollment_result_summary = $enrollment_stmt_summary->get_result();
                 
@@ -888,7 +869,7 @@ try {
                 $quarterColumn = $quarterColumnMap[$quarter];
                 $quarterGrade = getSummaryGrade($shSummary->getCell($quarterColumn . $sr));
                 
-                // NEW: Only get final grade if we're processing 4th quarter
+                // Get final grade if we're processing 4th quarter
                 $finalGrade = null;
                 if ($quarter == 4) {
                     $finalGrade = getSummaryGrade($shSummary->getCell('V' . $sr));
@@ -950,7 +931,6 @@ try {
                             uploaded = NOW()"
                     );
                     
-                    // Set parameters - only update the specific quarter, keep others as they are
                     $q1 = ($quarter == 1) ? $quarterGrade : null;
                     $q2 = ($quarter == 2) ? $quarterGrade : null;
                     $q3 = ($quarter == 3) ? $quarterGrade : null;
@@ -972,7 +952,6 @@ try {
                 }
                 
                 if (!$gradeStmt->execute()) {
-                    // Check for null constraint errors and provide friendly message
                     if (strpos($gradeStmt->error, 'cannot be null') !== false) {
                         throw new Exception("Please try again. A column in your Excel sheet cannot be null or have no score. Please make sure to fill all the student scores before uploading.");
                     }
@@ -984,7 +963,6 @@ try {
             unset($wbSummary);
         }
     } catch (Exception $summaryException) {
-        // Check if it's a null constraint error and provide friendly message
         if (strpos($summaryException->getMessage(), 'cannot be null') !== false) {
             throw new Exception("Please try again. A column in your Excel sheet cannot be null or have no score. Please make sure to fill all the student scores before uploading.");
         }
@@ -998,6 +976,7 @@ try {
     // Build response message
     $response['message'] = "Grades successfully uploaded! Processed {$response['students_processed']} students for {$subject_name} - Q{$quarter} ({$school_year}).";
     $response['message_type'] = 'success';
+    
     // Log successful upload
     try {
         $teacher_display = getTeacherDisplayName($conn, $teacher_id);
@@ -1013,13 +992,13 @@ try {
     }
 
 } catch (Exception $e) {
-    // Check if it's a null constraint error and provide friendly message
     if (strpos($e->getMessage(), 'cannot be null') !== false) {
         $response['message'] = "Please try again. A column in your Excel sheet cannot be null or have no score. Please make sure to fill all the student scores before uploading.";
     } else {
         $response['message'] = "Error processing file: " . $e->getMessage();
     }
     $response['message_type'] = 'danger';
+    
     // Log failure
     try {
         $tid = $teacher_id ?? null;
@@ -1041,3 +1020,4 @@ try {
 }
 
 echo json_encode($response);
+?>

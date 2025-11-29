@@ -193,16 +193,83 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
     exit;
 }
-?>
 
+// Handle announcement form submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_announcement'])) {
+    $title = mysqli_real_escape_string($conn, $_POST['title']);
+    $content = mysqli_real_escape_string($conn, $_POST['content']);
+    $target_audience = mysqli_real_escape_string($conn, $_POST['target_audience']);
+    
+    // Insert announcement into database
+    $query = "INSERT INTO announcements (title, content, date, target_audience, author_id) 
+              VALUES ('$title', '$content', NOW(), '$target_audience', '{$_SESSION['user_id']}')";
+    
+    if (mysqli_query($conn, $query)) {
+        $_SESSION['success'] = "Announcement sent successfully!";
+    } else {
+        $_SESSION['error'] = "Error: " . mysqli_error($conn);
+    }
+    header("Location: ".$_SERVER['PHP_SELF']);
+    exit;
+}
+
+// Handle announcement deletion
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_announcement'])) {
+    $announcement_id = mysqli_real_escape_string($conn, $_POST['announcement_id']);
+    $delete_query = "DELETE FROM announcements WHERE id = '$announcement_id'";
+    if (mysqli_query($conn, $delete_query)) {
+        $_SESSION['success'] = "Announcement deleted successfully!";
+    } else {
+        $_SESSION['error'] = "Error deleting announcement: " . mysqli_error($conn);
+    }
+    header("Location: ".$_SERVER['PHP_SELF']);
+    exit;
+}
+
+// Handle search and filter for announcements
+$search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
+$audience_filter = isset($_GET['audience_filter']) ? mysqli_real_escape_string($conn, $_GET['audience_filter']) : '';
+
+// Build query with filters
+$announcements_query = "SELECT a.*, u.Email as author_email 
+                        FROM announcements a 
+                        LEFT JOIN user u ON a.author_id = u.UserID 
+                        WHERE 1=1";
+
+if (!empty($search)) {
+    $announcements_query .= " AND (a.title LIKE '%$search%' OR a.content LIKE '%$search%')";
+}
+
+if (!empty($audience_filter)) {
+    $announcements_query .= " AND a.target_audience = '$audience_filter'";
+}
+
+$announcements_query .= " ORDER BY a.date DESC LIMIT 10"; // Show only recent 10 announcements
+
+$announcements_result = mysqli_query($conn, $announcements_query);
+$total_announcements = mysqli_num_rows($announcements_result);
+
+// Get counts for stats
+$today = date('Y-m-d');
+$today_query = "SELECT COUNT(*) as count FROM announcements WHERE DATE(date) = '$today'";
+$today_result = mysqli_query($conn, $today_query);
+$today_count = mysqli_fetch_assoc($today_result)['count'];
+
+// Get total announcements count
+$total_query = "SELECT COUNT(*) as count FROM announcements";
+$total_result = mysqli_query($conn, $total_query);
+$total_count = mysqli_fetch_assoc($total_result)['count'];
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BANAHIS | Calendar</title>
+    <title>BANAHIS | Calendar & Announcements</title>
     <link rel="icon" type="image/png" href="../img/logo.png" />
+    <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
@@ -225,10 +292,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             border-radius: 10px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
             padding: 15px;
-            margin-top: 20px;
-            max-width: 800px;
-            margin-left: auto;
-            margin-right: auto;
+            margin-bottom: 20px;
+            height: 100%;
         }
         
         .calendar-header {
@@ -335,6 +400,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         
         .event-indicator:hover {
             opacity: 0.9;
+        }
+        
+        .announcement-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .announcement-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1) !important;
+        }
+        
+        .bg-gradient-primary {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
         }
         
         .modal-content {
@@ -456,53 +534,165 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
     </style>
 </head>
-<body>
-    <?php 
-    if (file_exists('../navs/adminNav.php')) {
-        include '../navs/adminNav.php'; 
-    }
-    ?>
-    
-    <div class="container mt-4">
-        <div class="calendar-container">
-            <div class="calendar-header">
-                <h2 class="calendar-title"><i class="far fa-calendar-alt me-2"></i> Admin Calendar</h2>
-                <div class="d-flex justify-content-between align-items-center flex-wrap">
-                    <div class="calendar-nav">
-                        <button> <a class="text-white text-decoration-none" href="announcement.php"> Announcement</a></button>
-                        <button id="prev-month"><i class="fas fa-chevron-left"></i></button>
-                        <button id="current-month">Today</button>
-                        <button id="next-month"><i class="fas fa-chevron-right"></i></button>
+<body class="bg-light">
+    <?php include '../navs/adminNav.php'; ?>
+
+    <div class="container-fluid py-4">
+        <!-- Alerts -->
+        <?php if (isset($_SESSION['success'])): ?>
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <i class="fas fa-check-circle me-2"></i><?php echo $_SESSION['success']; ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            <?php unset($_SESSION['success']); ?>
+        <?php endif; ?>
+
+        <?php if (isset($_SESSION['error'])): ?>
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="fas fa-exclamation-triangle me-2"></i><?php echo $_SESSION['error']; ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            <?php unset($_SESSION['error']); ?>
+        <?php endif; ?>
+
+        <div class="row">
+            <!-- Calendar Section (Left Side) -->
+            <div class="col-lg-6 mb-4">
+                <div class="calendar-container">
+                    <div class="calendar-header">
+                        <h2 class="calendar-title"><i class="far fa-calendar-alt me-2"></i> School Calendar</h2>
+                        <div class="d-flex justify-content-between align-items-center flex-wrap">
+                            <div class="calendar-nav">
+                                <button id="prev-month"><i class="fas fa-chevron-left"></i></button>
+                                <button id="current-month">Today</button>
+                                <button id="next-month"><i class="fas fa-chevron-right"></i></button>
+                            </div>
+                            <div class="d-flex align-items-center">
+                                <select class="form-select form-select-sm country-selector" id="countrySelector">
+                                    <option value="PH">Philippines</option>
+                                    <option value="US">United States</option>
+                                    <option value="GB">United Kingdom</option>
+                                    <option value="CA">Canada</option>
+                                    <option value="AU">Australia</option>
+                                    <option value="JP">Japan</option>
+                                    <option value="SG">Singapore</option>
+                                </select>
+                                <button class="btn btn-primary ms-2 rounded-circle" data-bs-toggle="modal" data-bs-target="#addEventModal">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                    <div class="d-flex align-items-center">
-                        <select class="form-select form-select-sm country-selector" id="countrySelector">
-                            <option value="PH">Philippines</option>
-                            <option value="US">United States</option>
-                            <option value="GB">United Kingdom</option>
-                            <option value="CA">Canada</option>
-                            <option value="AU">Australia</option>
-                            <option value="JP">Japan</option>
-                            <option value="SG">Singapore</option>
-                        </select>
-                        <button class="btn btn-primary ms-2 rounded-circle" data-bs-toggle="modal" data-bs-target="#addEventModal">
-                            <i class="fas fa-plus"></i>
-                        </button>
+                    
+                    <div class="calendar-weekdays">
+                        <div>Sun</div>
+                        <div>Mon</div>
+                        <div>Tue</div>
+                        <div>Wed</div>
+                        <div>Thu</div>
+                        <div>Fri</div>
+                        <div>Sat</div>
+                    </div>
+                    
+                    <div class="calendar-days" id="calendar-days">
+                        <!-- Calendar days will be generated by JavaScript -->
                     </div>
                 </div>
             </div>
-            
-            <div class="calendar-weekdays">
-                <div>Sun</div>
-                <div>Mon</div>
-                <div>Tue</div>
-                <div>Wed</div>
-                <div>Thu</div>
-                <div>Fri</div>
-                <div>Sat</div>
-            </div>
-            
-            <div class="calendar-days" id="calendar-days">
-                <!-- Calendar days will be generated by JavaScript -->
+
+            <!-- Announcements Section (Right Side) -->
+            <div class="col-lg-6">
+                <div class="card shadow">
+                    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-bullhorn me-2"></i>Recent Announcements
+                        </h5>
+                        <div>
+                            <span class="badge bg-primary me-2"><?php echo $total_announcements; ?> recent</span>
+                            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addAnnouncementModal">
+                                <i class="fas fa-plus me-1"></i> New Announcement
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Search and Filter -->
+                        <form method="GET" class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <label for="search" class="form-label">Search</label>
+                                <input type="text" class="form-control" id="search" name="search" 
+                                       placeholder="Search announcements..." value="<?php echo htmlspecialchars($search); ?>">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="audience_filter" class="form-label">Audience</label>
+                                <select class="form-select" id="audience_filter" name="audience_filter">
+                                    <option value="">All</option>
+                                    <option value="teachers" <?php echo $audience_filter === 'teacher' ? 'selected' : ''; ?>>Teachers</option>
+                                    <option value="student" <?php echo $audience_filter === 'student' ? 'selected' : ''; ?>>Students</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2 d-flex align-items-end">
+                                <div class="d-grid gap-2 w-100">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-filter me-1"></i>Filter
+                                    </button>
+                                    <a href="<?php echo $_SERVER['PHP_SELF']; ?>" class="btn btn-outline-secondary">
+                                        <i class="fas fa-times me-1"></i>Clear
+                                    </a>
+                                </div>
+                            </div>
+                        </form>
+
+                        <!-- Announcements List -->
+                        <?php if (mysqli_num_rows($announcements_result) > 0): ?>
+                            <div class="row">
+                                <?php while ($announcement = mysqli_fetch_assoc($announcements_result)): ?>
+                                    <div class="col-12 mb-3">
+                                        <div class="card announcement-card">
+                                            <div class="card-body">
+                                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                                    <h6 class="card-title text-primary mb-0">
+                                                        <?php echo htmlspecialchars($announcement['title']); ?>
+                                                    </h6>
+                                                    <div class="d-flex gap-2">
+                                                        <span class="badge bg-info">
+                                                            <?php echo ucfirst(str_replace('_', ' ', $announcement['target_audience'])); ?>
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                
+                                                <p class="card-text text-muted small mb-2">
+                                                    <i class="fas fa-user me-1"></i>By: <?php echo htmlspecialchars($announcement['author_email']); ?>
+                                                    <i class="fas fa-clock ms-3 me-1"></i><?php echo date('M j, Y g:i A', strtotime($announcement['date'])); ?>
+                                                </p>
+                                                
+                                                <p class="card-text">
+                                                    <?php echo nl2br(htmlspecialchars($announcement['content'])); ?>
+                                                </p>
+                                                
+                                                <div class="d-flex justify-content-end">
+                                                    <form method="POST" action="" 
+                                                          onsubmit="return confirm('Are you sure you want to delete this announcement?');">
+                                                        <input type="hidden" name="announcement_id" value="<?php echo $announcement['id']; ?>">
+                                                        <button type="submit" name="delete_announcement" 
+                                                                class="btn btn-danger btn-sm">
+                                                            <i class="fas fa-trash me-1"></i>Delete
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                <?php endwhile; ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="text-center py-5">
+                                <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                                <h5 class="text-muted">No Announcements Found</h5>
+                                <p class="text-muted">There are no announcements matching your criteria.</p>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -569,10 +759,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         </div>
     </div>
 
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <!-- Add Announcement Modal -->
+    <div class="modal fade" id="addAnnouncementModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create New Announcement</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form method="POST" action="" id="announcementForm">
+                        <div class="mb-3">
+                            <label for="announcementTitle" class="form-label">Announcement Title</label>
+                            <input type="text" class="form-control" id="announcementTitle" name="title" required 
+                                   placeholder="Enter announcement title">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="announcementContent" class="form-label">Announcement Content</label>
+                            <textarea class="form-control" id="announcementContent" name="content" rows="5" required 
+                                      placeholder="Enter your announcement details..."></textarea>
+                            <div class="form-text">
+                                <span id="charCount">0</span> characters
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="modalTargetAudience" class="form-label">Target Audience</label>
+                            <select class="form-select" id="modalTargetAudience" name="target_audience" required>
+                                <option value="all">All Users</option>
+                                <option value="teachers">Teachers Only</option>
+                                <option value="students">Students Only</option>
+                                <option value="head_teachers">Head Teachers</option>
+                            </select>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" name="create_announcement" form="announcementForm" class="btn btn-primary">
+                        <i class="fas fa-paper-plane me-2"></i>Send Announcement
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5 JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     
     <script>
+        // Calendar functionality
         $(document).ready(function() {
             let currentDate = new Date();
             let currentMonth = currentDate.getMonth();
@@ -1006,6 +1244,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             
             // Initialize calendar
             generateCalendar(currentMonth, currentYear);
+            
+            // Character counter for announcement content
+            const contentTextarea = document.getElementById('announcementContent');
+            const charCount = document.getElementById('charCount');
+            
+            function updateCharCounter() {
+                const length = contentTextarea.value.length;
+                charCount.textContent = length;
+                
+                if (length > 500) {
+                    charCount.className = 'text-danger';
+                } else if (length > 300) {
+                    charCount.className = 'text-warning';
+                } else {
+                    charCount.className = 'text-muted';
+                }
+            }
+            
+            if (contentTextarea) {
+                contentTextarea.addEventListener('input', updateCharCounter);
+                updateCharCounter(); // Initialize counter
+            }
         });
     </script>
 </body>

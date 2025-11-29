@@ -1,7 +1,7 @@
 <?php
 session_start();
 include __DIR__ . '/../config.php';
-
+date_default_timezone_set('Asia/Manila');
 // Check if teacher is logged in    
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'teacher') {
     header("Location: ../login.php");
@@ -39,39 +39,91 @@ $teacher = $teacher_result->fetch_assoc();
 $teacher_name = trim($teacher['fName'] . ' ' . ($teacher['mName'] ? $teacher['mName'] . ' ' : '') . $teacher['lName']);
 $teacher_stmt->close();
 
-// Get available school years from teacher's sections
-$school_years_sql = "
-    SELECT DISTINCT se.SchoolYear 
-    FROM section_enrollment se
-    INNER JOIN section sec ON se.SectionID = sec.SectionID
-    INNER JOIN subject sub ON sec.SectionID = sub.secID
-    WHERE sub.TeacherID = ?
-    ORDER BY se.SchoolYear DESC
-";
-$school_years_stmt = $conn->prepare($school_years_sql);
-if (!$school_years_stmt) {
-    die("Database error: " . $conn->error);
-}
-$school_years_stmt->bind_param("i", $teacher_id);
-$school_years_stmt->execute();
-$school_years_result = $school_years_stmt->get_result();
+// Fetch all school years from school_year table for dropdown
+$all_years_sql = "SELECT school_year FROM school_year ORDER BY school_year DESC";
+$all_years_result = $conn->query($all_years_sql);
 
 $available_school_years = [];
-while ($row = $school_years_result->fetch_assoc()) {
-    $available_school_years[] = $row['SchoolYear'];
+while ($row = $all_years_result->fetch_assoc()) {
+    $available_school_years[] = $row['school_year'];
 }
-$school_years_stmt->close();
 
-// Set current school year
+// Fetch active school year from school_year table
+$active_school_year = '';
+$active_year_sql = "SELECT school_year FROM school_year WHERE status = 'active' LIMIT 1";
+$active_year_result = $conn->query($active_year_sql);
+if ($active_year_result && $active_year_result->num_rows > 0) {
+    $active_school_year = $active_year_result->fetch_assoc()['school_year'];
+}
+
+// Set current school year - prefer active school year, fall back to GET parameter or first available
 $current_school_year = isset($_GET['school_year']) ? $_GET['school_year'] : '';
-if (empty($current_school_year) && !empty($available_school_years)) {
-    $current_school_year = $available_school_years[0];
-} elseif (empty($current_school_year)) {
-    $current_year = date('Y');
-    $current_school_year = $current_year . '-' . ($current_year + 1);
+if (empty($current_school_year)) {
+    if (!empty($active_school_year)) {
+        $current_school_year = $active_school_year;
+    } elseif (!empty($available_school_years)) {
+        $current_school_year = $available_school_years[0];
+    } else {
+        $current_year = date('Y');
+        $current_school_year = $current_year . '-' . ($current_year + 1);
+    }
 }
 
-// Get total students count by gender for selected school year
+// Get teacher's assigned sections and subjects for the current school year
+$assigned_sections_sql = "
+    SELECT 
+        sec.SectionID,
+        sec.GradeLevel,
+        sec.SectionName,
+        sub.SubjectID,
+        sub.SubjectName,
+        CONCAT(sec.GradeLevel, '-', sec.SectionName) as section_full_name
+    FROM assigned_subject a
+    INNER JOIN section sec ON a.section_id = sec.SectionID
+    INNER JOIN subject sub ON a.subject_id = sub.SubjectID
+    WHERE a.teacher_id = ? AND a.school_year = ?
+    ORDER BY sec.GradeLevel, sec.SectionName, sub.SubjectName
+";
+
+$assigned_sections_stmt = $conn->prepare($assigned_sections_sql);
+if (!$assigned_sections_stmt) {
+    die("Database error: " . $conn->error);
+}
+$assigned_sections_stmt->bind_param("is", $teacher_id, $current_school_year);
+$assigned_sections_stmt->execute();
+$assigned_sections_result = $assigned_sections_stmt->get_result();
+
+$assigned_sections = [];
+$assigned_subjects = [];
+$section_ids = [];
+
+while ($row = $assigned_sections_result->fetch_assoc()) {
+    $section_id = $row['SectionID'];
+    $section_full_name = $row['section_full_name'];
+    
+    if (!in_array($section_id, $section_ids)) {
+        $section_ids[] = $section_id;
+    }
+    
+    if (!isset($assigned_sections[$section_full_name])) {
+        $assigned_sections[$section_full_name] = [
+            'section_id' => $section_id,
+            'grade_level' => $row['GradeLevel'],
+            'section_name' => $row['SectionName'],
+            'subjects' => []
+        ];
+    }
+    
+    $assigned_sections[$section_full_name]['subjects'][] = [
+        'subject_id' => $row['SubjectID'],
+        'subject_name' => $row['SubjectName']
+    ];
+    
+    $assigned_subjects[] = $row['SubjectID'];
+}
+$assigned_sections_stmt->close();
+
+// Get total students count by gender for assigned sections in selected school year
 $students_sql = "
     SELECT 
         s.Sex,
@@ -81,11 +133,7 @@ $students_sql = "
     FROM student s
     INNER JOIN section_enrollment se ON s.StudentID = se.StudentID AND se.status = 'active'
     INNER JOIN section sec ON se.SectionID = sec.SectionID
-    WHERE sec.SectionID IN (
-        SELECT DISTINCT sub.secID 
-        FROM subject sub 
-        WHERE sub.TeacherID = ? 
-    )
+    WHERE sec.SectionID IN (" . (count($section_ids) > 0 ? implode(',', array_fill(0, count($section_ids), '?')) : '0') . ")
     AND se.SchoolYear = ?
     GROUP BY s.Sex, sec.SectionID, sec.GradeLevel, sec.SectionName
 ";
@@ -94,7 +142,16 @@ $students_stmt = $conn->prepare($students_sql);
 if (!$students_stmt) {
     die("Database error: " . $conn->error);
 }
-$students_stmt->bind_param("is", $teacher_id, $current_school_year);
+
+if (count($section_ids) > 0) {
+    $types = str_repeat('i', count($section_ids)) . 's';
+    $params = $section_ids;
+    $params[] = $current_school_year;
+    $students_stmt->bind_param($types, ...$params);
+} else {
+    $students_stmt->bind_param("s", $current_school_year);
+}
+
 $students_stmt->execute();
 $students_result = $students_stmt->get_result();
 
@@ -125,17 +182,16 @@ while ($row = $students_result->fetch_assoc()) {
 }
 $students_stmt->close();
 
-// Fixed attendance query with proper table joins
+// Fixed attendance query with proper table joins using assigned sections
 $today = date('Y-m-d');
 $attendance_sql = "
     SELECT 
         a.Status,
         COUNT(*) as count
     FROM attendance a
-    INNER JOIN section_enrollment se ON a.StudentID = se.StudentID AND se.status = 'active'
     WHERE a.TeacherID = ? 
     AND a.Date = ?
-    AND se.SchoolYear = ?
+    AND a.SectionID IN (" . (count($section_ids) > 0 ? implode(',', array_fill(0, count($section_ids), '?')) : '0') . ")
     GROUP BY a.Status
 ";
 
@@ -143,7 +199,15 @@ $attendance_stmt = $conn->prepare($attendance_sql);
 if (!$attendance_stmt) {
     die("Database error: " . $conn->error);
 }
-$attendance_stmt->bind_param("iss", $teacher_id, $today, $current_school_year);
+
+if (count($section_ids) > 0) {
+    $types = 'is' . str_repeat('i', count($section_ids));
+    $params = array_merge([$teacher_id, $today], $section_ids);
+    $attendance_stmt->bind_param($types, ...$params);
+} else {
+    $attendance_stmt->bind_param("is", $teacher_id, $today);
+}
+
 $attendance_stmt->execute();
 $attendance_result = $attendance_stmt->get_result();
 
@@ -172,7 +236,7 @@ if ($attendance_result->num_rows > 0) {
 }
 $attendance_stmt->close();
 
-// Get grade overview for current school year
+// Get grade overview for current school year using assigned subjects
 $grades_sql = "
     SELECT 
         sub.SubjectName,
@@ -185,6 +249,7 @@ $grades_sql = "
     INNER JOIN section_enrollment se ON gd.studentID = se.StudentID AND se.status = 'active'
     INNER JOIN section sec ON se.SectionID = sec.SectionID
     WHERE gd.teacherID = ? AND gd.school_year = ?
+    AND gd.subjectID IN (" . (count($assigned_subjects) > 0 ? implode(',', array_fill(0, count($assigned_subjects), '?')) : '0') . ")
     GROUP BY sec.SectionID, sec.GradeLevel, sec.SectionName, sub.SubjectID, sub.SubjectName, gd.quarter
     ORDER BY sec.SectionID, sub.SubjectName ASC, gd.quarter ASC
 ";
@@ -193,7 +258,15 @@ $grades_stmt = $conn->prepare($grades_sql);
 if (!$grades_stmt) {
     die("Database error: " . $conn->error);
 }
-$grades_stmt->bind_param("is", $teacher_id, $current_school_year);
+
+if (count($assigned_subjects) > 0) {
+    $types = 'is' . str_repeat('i', count($assigned_subjects));
+    $params = array_merge([$teacher_id, $current_school_year], $assigned_subjects);
+    $grades_stmt->bind_param($types, ...$params);
+} else {
+    $grades_stmt->bind_param("is", $teacher_id, $current_school_year);
+}
+
 $grades_stmt->execute();
 $grades_result = $grades_stmt->get_result();
 
@@ -232,7 +305,7 @@ while ($row = $grades_result->fetch_assoc()) {
 }
 $grades_stmt->close();
 
-// FIXED: Get students with honors for current school year
+// Get students with honors for current school year using assigned sections
 $honors_sql = "
     SELECT 
         s.StudentID,
@@ -250,11 +323,8 @@ $honors_sql = "
     INNER JOIN section sec ON se.SectionID = sec.SectionID
     INNER JOIN grades_details gd ON s.StudentID = gd.studentID AND gd.school_year = se.SchoolYear
     WHERE se.SchoolYear = ? 
-    AND sec.SectionID IN (
-        SELECT DISTINCT sub.secID 
-        FROM subject sub 
-        WHERE sub.TeacherID = ? 
-    )
+    AND sec.SectionID IN (" . (count($section_ids) > 0 ? implode(',', array_fill(0, count($section_ids), '?')) : '0') . ")
+    AND gd.subjectID IN (" . (count($assigned_subjects) > 0 ? implode(',', array_fill(0, count($assigned_subjects), '?')) : '0') . ")
     GROUP BY s.StudentID, s.FirstName, s.MiddleName, s.LastName, sec.GradeLevel, sec.SectionName
     HAVING AVG(gd.quarterly_grade) >= 90
     ORDER BY 
@@ -272,7 +342,15 @@ $honors_stmt = $conn->prepare($honors_sql);
 if (!$honors_stmt) {
     die("Database error: " . $conn->error);
 }
-$honors_stmt->bind_param("si", $current_school_year, $teacher_id);
+
+if (count($section_ids) > 0 && count($assigned_subjects) > 0) {
+    $types = 's' . str_repeat('i', count($section_ids) + count($assigned_subjects));
+    $params = array_merge([$current_school_year], $section_ids, $assigned_subjects);
+    $honors_stmt->bind_param($types, ...$params);
+} else {
+    $honors_stmt->bind_param("s", $current_school_year);
+}
+
 $honors_stmt->execute();
 $honors_result = $honors_stmt->get_result();
 
@@ -363,11 +441,6 @@ while ($row = $announcements_result->fetch_assoc()) {
         .card-header {
             font-weight: 600;
         }
-        .school-year-filter {
-            background: rgba(255,255,255,0.1);
-            border-radius: 20px;
-            padding: 0.5rem 1rem;
-        }
         .no-record {
             color: #6c757d;
             font-style: italic;
@@ -403,14 +476,13 @@ while ($row = $announcements_result->fetch_assoc()) {
     <?php include __DIR__ . '/../navs/teacherNav.php'; ?>
     
     <div class="dashboard-header">
-        <div class="container">
+        <div class="container-fluid">
             <div class="row align-items-center">
                 <div class="col-md-8">
                     <h1 class="display-5 fw-bold">Welcome, <?php echo htmlspecialchars($teacher_name); ?>!</h1>
                     <p class="lead mb-0">Teacher Dashboard - <?php echo date('F j, Y'); ?></p>
                 </div>
                 <div class="col-md-4 text-end">
-                    <div class="school-year-filter">
                         <form method="GET" class="d-flex align-items-center justify-content-end gap-2">
                             <label for="school_year" class="fw-bold mb-0">School Year:</label>
                             <select name="school_year" id="school_year" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
@@ -431,9 +503,8 @@ while ($row = $announcements_result->fetch_assoc()) {
                 </div>
             </div>
         </div>
-    </div>
 
-    <div class="container">
+    <div class="container-fluid">
         <!-- Quick Stats Row -->
         <div class="row mb-4">
             <div class="col-xl-4 col-md-6 mb-4">
@@ -482,11 +553,11 @@ while ($row = $announcements_result->fetch_assoc()) {
                         <div class="d-flex justify-content-between">
                             <div>
                                 <h6 class="card-title text-muted">MY CLASSES</h6>
-                                <h3 class="fw-bold"><?php echo count($section_counts); ?></h3>
+                                <h3 class="fw-bold"><?php echo count($assigned_sections); ?></h3>
                             </div>
                         </div>
                         <div class="mt-2">
-                            <small class="text-muted">Active sections</small>
+                            <small class="text-muted">Assigned sections</small>
                         </div>
                     </div>
                 </div>

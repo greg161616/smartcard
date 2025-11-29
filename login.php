@@ -74,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header('Location: student/studentPort.php');
                 exit();
             } elseif ($row['Role'] === 'head') {
-                header('Location: administration/studentlist.php');
+                header('Location: administration/dashboard.php');
                 exit();
             } else {
                 $error = 'Unknown role for this account.';
@@ -331,8 +331,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
 
   <!-- Header -->
-  <nav class="navbar navbar-light bg-white shadow-sm fixed-top ">
-    <div class="container-fluid px-4 justify-content-center">
+  <nav class="navbar navbar-light bg-white shadow-sm fixed-top w-100">
+    <div class="container-fluid px-2 px-md-4 justify-content-center">
       <ul class="nav">
         <li class="nav-item">
           <a class="nav-link text-dark" href="index.php">Home</a>
@@ -340,22 +340,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <li class="nav-item">
           <a class="nav-link text-dark" href="about.php">About</a>
         </li>
-        <li class="nav-item">
-          <a class="nav-link text-dark" href="contact.php">Contact</a>
-        </li>
       </ul>
     </div>
   </nav>
 
   <!-- Main Content -->
-  <main class="container-fluid">
+  <main class="container-fluid p-0">
     <div class="floating-elements">
       <div class="floating-element"></div>
       <div class="floating-element"></div>
       <div class="floating-element"></div>
     </div>
     
-    <div class="row vh-100">
+    <div class="row vh-100 g-0">
       <!-- Left Side -->
       <div class="col-lg-7 d-none d-lg-flex align-items-center left-panel">
         <div class="left-panel-content w-100 text-start">
@@ -366,8 +363,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </div>
       
       <!-- Right Side -->
-      <div class="col-lg-5 d-flex align-items-center justify-content-center bg-white">
-        <div class="w-100 p-4 login-form-container" style="max-width: 400px;">
+      <div class="col-lg-5 col-12 d-flex align-items-center justify-content-center bg-white">
+        <div class="w-100 p-3 p-md-4 login-form-container" style="max-width: 400px;">
           <div class="text-center mb-4">
             <img src="img/logo.png" alt="Logo" class="logo-animation" style="width:100px;">
             <h3 class="text-muted mt-2"><strong>Sign in</strong></h3>

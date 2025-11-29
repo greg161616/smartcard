@@ -21,11 +21,11 @@ $grade_levels = [];
 $gl_q = mysqli_query($conn, "SELECT DISTINCT GradeLevel FROM section ORDER BY GradeLevel");
 while ($r = mysqli_fetch_assoc($gl_q)) $grade_levels[] = $r['GradeLevel'];
 
-    $subjects = [];
-    // Fetch unique subject names to avoid repeating identical subject names in the dropdown.
-    // Use MIN(SubjectID) as a representative id for each subject name.
-    $sub_q = mysqli_query($conn, "SELECT SubjectName, MIN(SubjectID) AS SubjectID FROM subject GROUP BY SubjectName ORDER BY SubjectName");
-    while ($r = mysqli_fetch_assoc($sub_q)) $subjects[$r['SubjectID']] = $r['SubjectName'];
+$subjects = [];
+// Fetch unique subject names to avoid repeating identical subject names in the dropdown.
+// Use MIN(SubjectID) as a representative id for each subject name.
+$sub_q = mysqli_query($conn, "SELECT SubjectName, MIN(SubjectID) AS SubjectID FROM subject GROUP BY SubjectName ORDER BY SubjectName");
+while ($r = mysqli_fetch_assoc($sub_q)) $subjects[$r['SubjectID']] = $r['SubjectName'];
 
 // Read selectors
 $selected_sy = $_GET['school_year'] ?? ($school_years[0] ?? '');
@@ -63,7 +63,6 @@ if ($selected_sy && $selected_grade) {
                     JOIN grades_details gd ON gd.studentID = st.StudentID
                     JOIN subject s ON s.SubjectID = gd.subjectID
                     WHERE se.SchoolYear = ? 
-                    AND s.GradeLevel = ?
                     AND gd.quarter = ?
                     AND gd.school_year = ?
                     AND gd.subjectID = ?
@@ -71,7 +70,7 @@ if ($selected_sy && $selected_grade) {
                     ORDER BY gd.quarterly_grade DESC";
 
             $stmt = $conn->prepare($sql);
-            $stmt->bind_param('sssisi', $selected_sy, $selected_sy, $selected_grade, $selected_quarter, $selected_sy, $selected_subject);
+            $stmt->bind_param('ssisi', $selected_sy, $selected_sy, $selected_quarter, $selected_sy, $selected_subject);
         } else {
             // All subjects - get average per student
             $sql = "SELECT 
@@ -84,8 +83,9 @@ if ($selected_sy && $selected_grade) {
                     JOIN section_enrollment se ON se.StudentID = st.StudentID AND se.SchoolYear = ?
                     JOIN grades_details gd ON gd.studentID = st.StudentID
                     JOIN subject s ON s.SubjectID = gd.subjectID
+                    JOIN section sec ON sec.SectionID = se.SectionID
                     WHERE se.SchoolYear = ? 
-                    AND s.GradeLevel = ?
+                    AND sec.GradeLevel = ?
                     AND gd.quarter = ?
                     AND gd.school_year = ?
                     GROUP BY st.StudentID, gd.quarter
@@ -148,16 +148,16 @@ if ($selected_sy && $selected_grade) {
                     JOIN section_enrollment se ON se.StudentID = st.StudentID AND se.SchoolYear = ?
                     JOIN grades g ON g.student_id = st.StudentID
                     JOIN subject s ON s.SubjectID = g.subject
+                    JOIN section sec ON sec.SectionID = se.SectionID
                     WHERE se.SchoolYear = ? 
-                    AND s.GradeLevel = ?
-                    AND g.school_year = ?
+                    AND sec.GradeLevel = ?
                     AND g.subject = ?
                     AND g.uploaded = 1
                     AND g.Final >= 90
                     ORDER BY g.Final DESC";
 
             $stmt = $conn->prepare($sql);
-            $stmt->bind_param('sssii', $selected_sy, $selected_sy, $selected_grade, $selected_sy, $selected_subject);
+            $stmt->bind_param('sssi', $selected_sy, $selected_sy, $selected_grade, $selected_subject);
         } else {
             // All subjects - get average per student
             $sql = "SELECT 
@@ -170,14 +170,15 @@ if ($selected_sy && $selected_grade) {
                     JOIN section_enrollment se ON se.StudentID = st.StudentID AND se.SchoolYear = ?
                     JOIN grades g ON g.student_id = st.StudentID
                     JOIN subject s ON s.SubjectID = g.subject
+                    JOIN section sec ON sec.SectionID = se.SectionID
                     WHERE se.SchoolYear = ? 
-                    AND s.GradeLevel = ?
-                    AND g.school_year = ?
+                    AND sec.GradeLevel = ?
+                    AND g.uploaded = 1
                     GROUP BY st.StudentID
                     HAVING min_final >= 90";
 
             $stmt = $conn->prepare($sql);
-            $stmt->bind_param('ssss', $selected_sy, $selected_sy, $selected_grade, $selected_sy);
+            $stmt->bind_param('sss', $selected_sy, $selected_sy, $selected_grade);
         }
         
         $stmt->execute();

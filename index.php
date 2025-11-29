@@ -422,9 +422,6 @@
             <a class="nav-link" href="#benefits">Benefits</a>
           </li>
           <li class="nav-item">
-            <a class="nav-link" href="#testimonials">Testimonials</a>
-          </li>
-          <li class="nav-item">
             <a class="nav-link" href="login.php" style="color: var(--primary) !important;">Login</a>
           </li>
         </ul>
@@ -573,13 +570,6 @@
       </div>
     </section>
 
-
-    <!-- Testimonials Section -->
-    <section id="testimonials" class="container my-5 py-5">
-      <h2 class="section-title text-center">What Our Users Say</h2>
-      <p class="text-center mb-5 fs-5">Hear from educators and students who use our system</p>
-    </section>
-
     <!-- CTA Section -->
     <section class="cta-section">
       <div class="container">
@@ -594,45 +584,8 @@
 
   <!-- Footer -->
   <footer>
-    <div class="container">
-      <div class="row">
-        <div class="col-lg-4 mb-4">
-          <h5>BNHS Grading System</h5>
-          <p>Empowering education through technology at Balaytigue National High School.</p>
-          <div class="social-icons mt-3">
-            <a href="#"><i class="fab fa-facebook-f"></i></a>
-            <a href="#"><i class="fab fa-twitter"></i></a>
-            <a href="#"><i class="fab fa-instagram"></i></a>
-            <a href="#"><i class="fab fa-linkedin-in"></i></a>
-          </div>
-        </div>
-        <div class="col-lg-2 col-md-6 mb-4">
-          <h5>Quick Links</h5>
-          <div class="footer-links d-flex flex-column">
-            <a href="#home">Home</a>
-            <a href="#features">Features</a>
-            <a href="#benefits">Benefits</a>
-            <a href="login.php">Login</a>
-          </div>
-        </div>
-        <div class="col-lg-3 col-md-6 mb-4">
-          <h5>Resources</h5>
-          <div class="footer-links d-flex flex-column">
-            <a href="#">User Guide</a>
-            <a href="#">FAQ</a>
-            <a href="#">Support</a>
-            <a href="#">Privacy Policy</a>
-          </div>
-        </div>
-        <div class="col-lg-3 mb-4">
-          <h5>Contact Us</h5>
-          <p><i class="fas fa-map-marker-alt me-2"></i> Balaytigue National High School</p>
-          <p><i class="fas fa-phone me-2"></i> (123) 456-7890</p>
-          <p><i class="fas fa-envelope me-2"></i> info@bnhs.edu.ph</p>
-        </div>
-      </div>
-      <hr class="mt-4">
-      <div class="text-center py-3">
+    <div class="container-fluid">
+      <div class="text-center">
         <small>&copy; 2025 Balaytigue National High School. All rights reserved.</small>
       </div>
     </div>

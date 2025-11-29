@@ -83,7 +83,7 @@ function sendStudentCredentials(string $email, string $defaultPassword): bool {
               <li><strong>Email:</strong> {$email}</li>
               <li><strong>Password:</strong> {$defaultPassword}</li>
             </ul>
-            <p>Please log in at <a href=\"https://yourdomain.com/login\">Portal Login</a> and change your password immediately.</p>
+            <p>Please log in at <a href=\"https://thesmartcard.xyz/login\">Portal Login</a> and change your password immediately.</p>
         ";
 
         $mail->send();

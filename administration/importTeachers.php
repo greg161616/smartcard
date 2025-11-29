@@ -76,8 +76,8 @@ if (isset($_POST['import_file'])) {
 
                     // 2) insert into teacher
                     $stmt2 = $conn->prepare("
-                        INSERT INTO teacher (UserID, fName, mName, lName)
-                        VALUES (?, ?, ?, ?)
+                        INSERT INTO teacher (UserID, fName, mName, lName,status)
+                        VALUES (?, ?, ?, ?, 'Active')
                     ");
                     $stmt2->bind_param("isss", $newUserId, $firstName, $middleName, $lastName);
                     $stmt2->execute();

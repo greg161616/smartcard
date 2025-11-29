@@ -3,6 +3,7 @@
 
 session_start();
 require '../config.php';
+date_default_timezone_set('Asia/Manila');
 
 // 1) Ensure teacher is logged in
 if (!isset($_SESSION['user_id'])) {
@@ -10,18 +11,17 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-// Fetch teacher's name
-// Get teacher_id from session or database
+// Fetch teacher's name and ID
 if (!isset($_SESSION['teacher_id'])) {
     // Try to get teacher_id from database based on user_id
     $user_id = $_SESSION['user_id'];
-    $teacher_query = $conn->prepare("SELECT teacherID FROM teacher WHERE userID = ?");
+    $teacher_query = $conn->prepare("SELECT TeacherID FROM teacher WHERE userID = ?");
     $teacher_query->bind_param('i', $user_id);
     $teacher_query->execute();
     $teacher_result = $teacher_query->get_result();
     
     if ($teacher_result->num_rows) {
-        $_SESSION['teacher_id'] = $teacher_result->fetch_assoc()['teacherID'];
+        $_SESSION['teacher_id'] = $teacher_result->fetch_assoc()['TeacherID'];
         $teacher_id = $_SESSION['teacher_id'];
     } else {
         // Handle error - user is not a teacher
@@ -32,27 +32,36 @@ if (!isset($_SESSION['teacher_id'])) {
     $teacher_id = $_SESSION['teacher_id'];
 }
 
+// Get current school year
+$current_sy_query = $conn->query("SELECT school_year FROM school_year WHERE status = 'active' LIMIT 1");
+$current_sy = $current_sy_query->fetch_assoc()['school_year'] ?? date('Y') . '-' . (date('Y') + 1);
+
 $teacherName = '';
-$stmt = $conn->prepare("SELECT CONCAT(fName, ' ', lName) AS FullName FROM teacher WHERE teacherID = ?");
+$stmt = $conn->prepare("SELECT CONCAT(fName, ' ', lName) AS FullName FROM teacher WHERE TeacherID = ?");
 $stmt->bind_param('i', $teacher_id);
 $stmt->execute();
 $res = $stmt->get_result();
 if ($row = $res->fetch_assoc()) {
      $teacherName = $row['FullName'];
-    }
+}
 $stmt->close();
 
 // 2) Grab & validate subject_id and section_id from query string
 $subjectId = isset($_GET['subject_id']) ? (int)$_GET['subject_id'] : 0;
 $sectionId = isset($_GET['section_id']) ? (int)$_GET['section_id'] : 0;
 
-// 3) Fetch subject name and validate teacher is assigned to this subject
-$stmt = $conn->prepare("SELECT SubjectName FROM subject WHERE SubjectID = ? AND teacherID = ?");
-$stmt->bind_param('ii', $subjectId, $teacher_id);
+// 3) Validate that teacher is assigned to teach this subject and section
+$stmt = $conn->prepare("
+    SELECT s.SubjectName 
+    FROM subject s 
+    INNER JOIN assigned_subject a ON s.SubjectID = a.subject_id 
+    WHERE s.SubjectID = ? AND a.teacher_id = ? AND a.section_id = ?
+");
+$stmt->bind_param('iii', $subjectId, $teacher_id, $sectionId);
 $stmt->execute();
 $res = $stmt->get_result();
 if (!$res->num_rows) {
-    echo "You are not assigned to teach this subject or the subject does not exist."; 
+    echo "You are not assigned to teach this subject for this section or it does not exist."; 
     exit;
 }
 $subjectName = $res->fetch_assoc()['SubjectName'];
@@ -69,7 +78,7 @@ if (!$res->num_rows) {
 $section = $res->fetch_assoc();
 $stmt->close();
 
-// Determine default quarter based on existing uploaded quarters (choose next quarter after latest uploaded)
+// Determine default quarter based on existing uploaded quarters
 $defaultQuarter = 1;
 $qstmt = $conn->prepare("SELECT DISTINCT quarter FROM grades_details WHERE subjectID = ? AND teacherID = ? ORDER BY quarter ASC");
 if ($qstmt) {
@@ -228,7 +237,7 @@ if ($qstmt) {
                         </a>
                     </div>
                     <div class="card-body">
-                                                        <div class="instructions">
+                        <div class="instructions">
                             <h5><i class="fas fa-info-circle me-2"></i>Instructions</h5>
                             <p class="mb-0">
                                 - Ensure your Excel file follows the correct format.<br>
@@ -242,6 +251,7 @@ if ($qstmt) {
                         <form id="uploadForm" enctype="multipart/form-data">
                          <input type="hidden" name="subject_id" value="<?= $subjectId ?>">
                          <input type="hidden" name="section_id" value="<?= $sectionId ?>">
+                         <input type="hidden" name="school_year" value="<?= $current_sy ?>">
                             <div class="row">
                                 <div class="col-md-6 mt-4">
                                     <div class="mb-4">
@@ -259,17 +269,16 @@ if ($qstmt) {
                                     <div class="mt-2 text-secondary">
                                         <h5>
                                             Subject: <strong><?= htmlspecialchars($subjectName) ?></strong>
-                                            
                                         </h5>
                                         <h5>Section: <br>
                                         Grade <?= $section['GradeLevel'] ?>-<?= htmlspecialchars($section['SectionName']) ?></h5>
+                                        <h6>School Year: <?= $current_sy ?></h6>
                                         <div class="py-4 text-center">
                                             <a href="view_grades.php?subject_id=<?= $subjectId ?>&section_id=<?= $sectionId ?>" class="btn btn-outline-success">View Grades</a>
-                                            <!-- Back button moved to header (X) -->
                                         </div>
                                     </div>
                                 </div>
-            <div class="text-center mt-3 card py-3">
+                            <div class="text-center mt-3 card py-3">
     <?php
     if($subjectName == "Music" || $subjectName == "Arts" ||
      $subjectName == "PE" || $subjectName == "Health" || $subjectName == "MAPEH") {
@@ -323,9 +332,6 @@ if ($qstmt) {
                             </div>
 
                         </div>
-                        
-                       
-
                         </form>
                     </div>
                 </div>
@@ -407,7 +413,7 @@ if ($qstmt) {
             </div>
         </div>
     </div>
-
+    <script src="js/session_timer.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         document.getElementById('grade_file').addEventListener('change', function(e) {

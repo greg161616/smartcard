@@ -4,7 +4,7 @@ include '../config.php';
 include '../api/logging.php';
 
 // Check if user is principal
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'principal') {
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'head') {
     header('Location: ../login');
     exit;
 }

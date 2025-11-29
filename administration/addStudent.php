@@ -31,7 +31,7 @@ if (isset($_POST['add_student'])) {
             'email' => $email,
             'sectionID' => $sectionID
         ], 'warning');
-        header("Location: ../administration/studentlist"); 
+        header("Location: ../administration/studentlist.php"); 
         exit;
     }
 
@@ -47,7 +47,7 @@ if (isset($_POST['add_student'])) {
             'email' => $email
         ], 'warning');
         $chkEmail->close();
-        header("Location: ../administration/studentlist"); 
+        header("Location: ../administration/studentlist.php"); 
         exit;
     }
     $chkEmail->close();
@@ -64,7 +64,7 @@ if (isset($_POST['add_student'])) {
             'lrn' => $lrn
         ], 'warning');
         $chkLrn->close();
-        header("Location: ../administration/studentlist"); 
+        header("Location: ../administration/studentlist.php"); 
         exit;
     }
     $chkLrn->close();
@@ -81,7 +81,7 @@ if (isset($_POST['add_student'])) {
             'email' => $email,
             'error' => $conn->error
         ], 'error');
-        header("Location: ../administration/studentlist");
+        header("Location: ../administration/studentlist.php");
         exit;
     }
     $userId = $insU->insert_id; 
@@ -108,7 +108,7 @@ if (isset($_POST['add_student'])) {
             'lrn' => $lrn,
             'error' => $conn->error
         ], 'error');
-        header("Location: ../administration/studentlist"); 
+        header("Location: ../administration/studentlist.php"); 
         exit;
     }
     $studentId = $insS->insert_id;
@@ -127,7 +127,7 @@ if (isset($_POST['add_student'])) {
             'error' => $conn->error
         ], 'error');
         $insE->close();
-        header("Location: ../administration/studentlist");
+        header("Location: ../administration/studentlist.php");
         exit;
     }
     $insE->close();
@@ -154,5 +154,5 @@ if (isset($_POST['add_student'])) {
         ], 'warning');
     }
 }
-header("Location: ../administration/studentlist");
+header("Location: ../administration/studentlist.php");
 exit;

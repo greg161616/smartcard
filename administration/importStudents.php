@@ -46,18 +46,18 @@ if (isset($_POST['import_file'])) {
                     continue;
                 }
 
-                // Updated column mapping based on your file structure:
-                // [LRN, FirstName, MiddleName, LastName, Sex, Email, SectionName, GradeLevel]
+                // FIXED: Match the Excel column order
                 [
-                    $lRn,
-                    $firstName,
-                    $middleName,
-                    $lastName,
-                    $sex,
-                    $email,
-                    $sectionName,
-                    $gradeLevel
-                ] = array_pad($row, 8, null);
+                    $lRn,           // A - LRN
+                    $firstName,     // B - FirstName
+                    $middleName,    // C - MiddleName
+                    $lastName,      // D - LastName
+                    $sex,           // E - Sex
+                    $birthdate,     // F - Birthdate (not used in current code)
+                    $gradeLevel,    // G - Grade
+                    $sectionName,   // H - Section
+                    $email          // I - Email
+                ] = array_pad($row, 9, null);
 
                 // Basic validation (middle name, grade level and section are optional)
                 if (empty($lRn) || empty($firstName) || empty($lastName) || 

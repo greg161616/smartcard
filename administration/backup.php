@@ -238,7 +238,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'restore') {
       <div class="card mb-3">
         <div class="card-header">Export (Backup)</div>
         <div class="card-body">
-          <p>Click the button to download a full SQL dump of the database.</p>
+          <p>Click the button to download the whole database.</p>
           <form method="post">
             <input type="hidden" name="action" value="export">
             <button type="submit" class="btn btn-primary">Download Backup</button>
@@ -252,7 +252,9 @@ if (isset($_POST['action']) && $_POST['action'] === 'restore') {
       <div class="card mb-3">
         <div class="card-header">Import (Restore)</div>
         <div class="card-body">
-          <p>Upload a previously exported .sql file to restore the database.</p>
+          <div class="note-info">
+            <strong>Note:</strong> Upload a .sql file to restore the database. This will overwrite existing data. Please be assisted by an IT personnel when restoring the database.
+          </div>
           <form method="post" enctype="multipart/form-data">
             <input type="hidden" name="action" value="restore">
             <div class="mb-3">

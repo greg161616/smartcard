@@ -52,8 +52,94 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
     }
 }
 
+// Handle profile update
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
+    $firstName = trim($_POST['firstName']);
+    $middleName = trim($_POST['middleName']);
+    $lastName = trim($_POST['lastName']);
+    $birthdate = $_POST['birthdate'];
+    $sex = $_POST['sex'];
+    
+    // Validate inputs
+    if (empty($firstName) || empty($lastName)) {
+        $error = "First name and last name are required";
+    } else {
+        $userID = $studentData['UserID'];
+        $stmt = $conn->prepare("UPDATE student SET FirstName = ?, MiddleName = ?, LastName = ?, Birthdate = ?, Sex = ? WHERE userID = ?");
+        $stmt->bind_param("sssssi", $firstName, $middleName, $lastName, $birthdate, $sex, $userID);
+        
+        if ($stmt->execute()) {
+            $success = "Profile updated successfully!";
+            // Refresh student data
+            $_SESSION['success'] = $success;
+            header("Location: ".$_SERVER['PHP_SELF']."#account");
+            exit();
+        } else {
+            $error = "Error updating profile: " . $conn->error;
+        }
+    }
+}
+
+// Handle contact information update
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_contact'])) {
+    $address = trim($_POST['address']);
+    $contactNumber = trim($_POST['contactNumber']);
+    $parentName = trim($_POST['parentName']);
+    $parentsContact = trim($_POST['parentsContact']);
+    
+    // Validate inputs
+    if (empty($address) || empty($contactNumber) || empty($parentsContact)) {
+        $error = "All contact fields are required";
+    } else {
+        $userID = $studentData['UserID'];
+        $stmt = $conn->prepare("UPDATE student SET Address = ?, contactNumber = ?, parentname = ?, ParentsContact = ? WHERE userID = ?");
+        $stmt->bind_param("ssssi", $address, $contactNumber, $parentName, $parentsContact, $userID);
+        
+        if ($stmt->execute()) {
+            $success = "Contact information updated successfully!";
+            // Refresh student data
+            $_SESSION['success'] = $success;
+            header("Location: ".$_SERVER['PHP_SELF']."#additional");
+            exit();
+        } else {
+            $error = "Error updating contact information: " . $conn->error;
+        }
+    }
+}
+
+// Handle academic information update
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_academic'])) {
+    $lrn = trim($_POST['lrn']);
+    
+    // Validate inputs
+    if (empty($lrn)) {
+        $error = "LRN is required";
+    } else {
+        $userID = $studentData['UserID'];
+        $stmt = $conn->prepare("UPDATE student SET LRN = ? WHERE userID = ?");
+        $stmt->bind_param("si", $lrn, $userID);
+        
+        if ($stmt->execute()) {
+            $success = "Academic information updated successfully!";
+            // Refresh student data
+            $_SESSION['success'] = $success;
+            header("Location: ".$_SERVER['PHP_SELF']."#additional");
+            exit();
+        } else {
+            $error = "Error updating academic information: " . $conn->error;
+        }
+    }
+}
+
+// Check for success message from redirect
+if (isset($_SESSION['success'])) {
+    $success = $_SESSION['success'];
+    unset($_SESSION['success']);
+}
+
 // Fetch student data
 $studentData = [];
+$sectionData = [];
 $email = $_SESSION['email'];
 
 $userQuery = $conn->prepare("SELECT u.UserID, u.Email, s.* 
@@ -64,6 +150,19 @@ $userQuery->bind_param("s", $email);
 $userQuery->execute();
 $result = $userQuery->get_result();
 $studentData = $result->fetch_assoc();
+
+// Fetch student's current section enrollment
+if ($studentData) {
+    $sectionQuery = $conn->prepare("SELECT se.SectionID, se.SchoolYear, se.status, s.GradeLevel, s.SectionName
+                                    FROM section_enrollment se
+                                    JOIN section s ON se.SectionID = s.SectionID
+                                    WHERE se.StudentID = ? AND se.status = 'Active'
+                                    ORDER BY se.SchoolYear DESC LIMIT 1");
+    $sectionQuery->bind_param("i", $studentData['StudentID']);
+    $sectionQuery->execute();
+    $sectionResult = $sectionQuery->get_result();
+    $sectionData = $sectionResult->fetch_assoc();
+}
 
 $conn->close();
 ?>
@@ -92,7 +191,6 @@ $conn->close();
             background-color: #f5f7fa;
             color: #333;
         }
-        
         
         /* Main container */
         .settings-container {
@@ -166,6 +264,7 @@ $conn->close();
             margin-bottom: 20px;
             display: flex;
             align-items: center;
+            justify-content: space-between;
         }
         
         .section-header i {
@@ -251,10 +350,34 @@ $conn->close();
             border-color: #2980b9;
         }
         
+        .btn-edit {
+            background-color: transparent;
+            border: 1px solid var(--primary-color);
+            color: var(--primary-color);
+            padding: 6px 15px;
+        }
+        
+        .btn-edit:hover {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        
         .alert {
             padding: 12px 15px;
             border-radius: 6px;
             margin-bottom: 20px;
+        }
+        
+        .edit-form {
+            display: none;
+        }
+        
+        .edit-mode .view-mode {
+            display: none;
+        }
+        
+        .edit-mode .edit-form {
+            display: block;
         }
         
         /* Responsive design */
@@ -272,6 +395,7 @@ $conn->close();
             
             .settings-content {
                 width: 100%;
+                margin-left: 0;
             }
         }
         
@@ -286,6 +410,16 @@ $conn->close();
             
             .settings-section {
                 padding: 20px 15px;
+            }
+            
+            .section-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .section-header .btn {
+                margin-top: 10px;
+                align-self: flex-end;
             }
         }
     </style>
@@ -335,62 +469,128 @@ $conn->close();
             <div class="tab-pane fade show active" id="account">
                 <h2 class="mb-4">Account Settings</h2>
                 
-                <div class="settings-section">
+                <?php if ($error): ?>
+                    <div class="alert alert-danger"><?= $error ?></div>
+                <?php endif; ?>
+                
+                <?php if ($success): ?>
+                    <div class="alert alert-success"><?= $success ?></div>
+                <?php endif; ?>
+                
+                <div class="settings-section" id="profile-section">
                     <div class="section-header">
-                        <i class="fas fa-user-circle"></i>
-                        <h4 class="m-0">Profile Information</h4>
-                    </div>
-                    
-                    
-                    <div class="info-grid">
-                        <div class="info-item">
-                            <div class="info-label">First Name</div>
-                            <div class="info-value">
-                                <?= htmlspecialchars($studentData['FirstName'] ?? 'Not specified') ?>
-                            </div>
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-user-circle"></i>
+                            <h4 class="m-0">Profile Information</h4>
                         </div>
-                        
-                        <div class="info-item">
-                            <div class="info-label">Middle Name</div>
-                            <div class="info-value">
-                                <?= htmlspecialchars($studentData['MiddleName'] ?? 'Not specified') ?>
-                            </div>
-                        </div>
-                        
-                        <div class="info-item">
-                            <div class="info-label">Last Name</div>
-                            <div class="info-value">
-                                <?= htmlspecialchars($studentData['LastName'] ?? 'Not specified') ?>
-                            </div>
-                        </div>
-                        
-                        <div class="info-item">
-                            <div class="info-label">Email</div>
-                            <div class="info-value">
-                                <?= htmlspecialchars($studentData['Email'] ?? 'Not specified') ?>
-                            </div>
-                        </div>
-                        
-                        <div class="info-item">
-                            <div class="info-label">Birthdate</div>
-                            <div class="info-value">
-                                <?= $studentData['Birthdate'] ? date('F j, Y', strtotime($studentData['Birthdate'])) : 'Not specified' ?>
-                            </div>
-                        </div>
-                        
-                        <div class="info-item">
-                            <div class="info-label">Student ID</div>
-                            <div class="info-value">
-                                STD-<?= htmlspecialchars($studentData['StudentID'] ?? '0000') ?>
-                            </div>
-                        </div>
-                    </div>
-                    
-                  <!--  <div class="mt-4 text-end">
-                        <button class="btn btn-primary">
+                        <button class="btn btn-edit" id="edit-profile-btn">
                             <i class="fas fa-edit me-1"></i> Edit Profile
                         </button>
-                    </div> -->
+                    </div>
+                    
+                    <!-- View Mode -->
+                    <div class="view-mode">
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <div class="info-label">First Name</div>
+                                <div class="info-value">
+                                    <?= htmlspecialchars($studentData['FirstName'] ?? 'Not specified') ?>
+                                </div>
+                            </div>
+                            
+                            <div class="info-item">
+                                <div class="info-label">Middle Name</div>
+                                <div class="info-value">
+                                    <?= htmlspecialchars($studentData['MiddleName'] ?? 'Not specified') ?>
+                                </div>
+                            </div>
+                            
+                            <div class="info-item">
+                                <div class="info-label">Last Name</div>
+                                <div class="info-value">
+                                    <?= htmlspecialchars($studentData['LastName'] ?? 'Not specified') ?>
+                                </div>
+                            </div>
+                            
+                            <div class="info-item">
+                                <div class="info-label">Email</div>
+                                <div class="info-value">
+                                    <?= htmlspecialchars($studentData['Email'] ?? 'Not specified') ?>
+                                </div>
+                            </div>
+                            
+                            <div class="info-item">
+                                <div class="info-label">Birthdate</div>
+                                <div class="info-value">
+                                    <?= $studentData['Birthdate'] ? date('F j, Y', strtotime($studentData['Birthdate'])) : 'Not specified' ?>
+                                </div>
+                            </div>
+                            
+                            <div class="info-item">
+                                <div class="info-label">Sex</div>
+                                <div class="info-value">
+                                    <?= htmlspecialchars($studentData['Sex'] ?? 'Not specified') ?>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Edit Form -->
+                    <form method="post" class="edit-form">
+                        <input type="hidden" name="update_profile" value="1">
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <label for="firstName" class="info-label">First Name</label>
+                                <input type="text" class="form-control" id="firstName" name="firstName" 
+                                       value="<?= htmlspecialchars($studentData['FirstName'] ?? '') ?>" required>
+                            </div>
+                            
+                            <div class="info-item">
+                                <label for="middleName" class="info-label">Middle Name</label>
+                                <input type="text" class="form-control" id="middleName" name="middleName" 
+                                       value="<?= htmlspecialchars($studentData['MiddleName'] ?? '') ?>">
+                            </div>
+                            
+                            <div class="info-item">
+                                <label for="lastName" class="info-label">Last Name</label>
+                                <input type="text" class="form-control" id="lastName" name="lastName" 
+                                       value="<?= htmlspecialchars($studentData['LastName'] ?? '') ?>" required>
+                            </div>
+                            
+                            <div class="info-item">
+                                <div class="info-label">Email</div>
+                                <div class="info-value">
+                                    <?= htmlspecialchars($studentData['Email'] ?? 'Not specified') ?>
+                                    <small class="d-block text-muted">Email cannot be changed</small>
+                                </div>
+                            </div>
+                            
+                            <div class="info-item">
+                                <label for="birthdate" class="info-label">Birthdate</label>
+                                <input type="date" class="form-control" id="birthdate" name="birthdate" 
+                                       value="<?= htmlspecialchars($studentData['Birthdate'] ?? '') ?>">
+                            </div>
+                            
+                            <div class="info-item">
+                                <label for="sex" class="info-label">Sex</label>
+                                <select class="form-control" id="sex" name="sex" required>
+                                    <option value="">Select Sex</option>
+                                    <option value="Male" <?= ($studentData['Sex'] ?? '') == 'Male' ? 'selected' : '' ?>>Male</option>
+                                    <option value="Female" <?= ($studentData['Sex'] ?? '') == 'Female' ? 'selected' : '' ?>>Female</option>
+                                    <option value="Other" <?= ($studentData['Sex'] ?? '') == 'Other' ? 'selected' : '' ?>>Other</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-4 d-flex gap-2 justify-content-end">
+                            <button type="button" class="btn btn-secondary" id="cancel-profile-edit">
+                                Cancel
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-1"></i> Save Changes
+                            </button>
+                        </div>
+                    </form>
                 </div>
             </div> 
             
@@ -472,89 +672,164 @@ $conn->close();
             <div class="tab-pane fade" id="additional">
                 <h2 class="mb-4">Student Information</h2>
                 
-                <div class="settings-section">
+                <?php if ($error): ?>
+                    <div class="alert alert-danger"><?= $error ?></div>
+                <?php endif; ?>
+                
+                <?php if ($success): ?>
+                    <div class="alert alert-success"><?= $success ?></div>
+                <?php endif; ?>
+                
+                <div class="settings-section" id="contact-section">
                     <div class="section-header">
-                        <i class="fas fa-address-card"></i>
-                        <h4 class="m-0">Contact Information</h4>
-                    </div>
-                    
-                    <div class="info-grid">
-                        <div class="info-item">
-                            <div class="info-label">Address</div>
-                            <div class="info-value">
-                                <?= htmlspecialchars($studentData['Address'] ?? 'Not specified') ?>
-                            </div>
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-address-card"></i>
+                            <h4 class="m-0">Contact Information</h4>
                         </div>
-                        
-                        <div class="info-item">
-                            <div class="info-label">Contact Number</div>
-                            <div class="info-value">
-                                <?= htmlspecialchars($studentData['contactNumber'] ?? 'Not specified') ?>
-                            </div>
-                        </div>
-                        
-                        <div class="info-item">
-                            <div class="info-label">Parents' Contact</div>
-                            <div class="info-value">
-                                <?= htmlspecialchars($studentData['ParentsContact'] ?? 'Not specified') ?>
-                            </div>
-                        </div>
-                    </div>
-                    
-                  <!--  <div class="mt-4 text-end">
-                        <button class="btn btn-primary">
-                            <i class="fas fa-edit me-1"></i> Update Contact Info
+                        <button class="btn btn-edit" id="edit-contact-btn">
+                            <i class="fas fa-edit me-1"></i> Edit Contact Info
                         </button>
-                    </div> -->
+                    </div>
+                    
+                    <!-- View Mode -->
+                    <div class="view-mode">
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <div class="info-label">Address</div>
+                                <div class="info-value">
+                                    <?= htmlspecialchars($studentData['Address'] ?? 'Not specified') ?>
+                                </div>
+                            </div>
+                            
+                            <div class="info-item">
+                                <div class="info-label">Contact Number</div>
+                                <div class="info-value">
+                                    <?= htmlspecialchars($studentData['contactNumber'] ?? 'Not specified') ?>
+                                </div>
+                            </div>
+                        
+                        <div class="info-item">
+                                <div class="info-label">Parents' Name</div>
+                                <div class="info-value">
+                                    <?= htmlspecialchars($studentData['parentname'] ?? 'Not specified') ?>
+                                </div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">Parents' Contact</div>
+                                <div class="info-value">
+                                    <?= htmlspecialchars($studentData['ParentsContact'] ?? 'Not specified') ?>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Edit Form -->
+                    <form method="post" class="edit-form">
+                        <input type="hidden" name="update_contact" value="1">
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <label for="address" class="info-label">Address</label>
+                                <input type="text" class="form-control" id="address" name="address" 
+                                       value="<?= htmlspecialchars($studentData['Address'] ?? '') ?>" required>
+                            </div>
+                            
+                            <div class="info-item">
+                                <label for="contactNumber" class="info-label">Contact Number</label>
+                                <input type="text" class="form-control" id="contactNumber" name="contactNumber" 
+                                       value="<?= htmlspecialchars($studentData['contactNumber'] ?? '') ?>" required>
+                            </div>
+                            <div class="info-item">
+                                <label for="parentName" class="info-label">Parents' Name</label>
+                                <input type="text" class="form-control" id="parentName" name="parentName" 
+                                       value="<?= htmlspecialchars($studentData['parentname'] ?? '') ?>" required>
+                            </div>
+                            <div class="info-item">
+                                <label for="parentsContact" class="info-label">Parents' Contact</label>
+                                <input type="text" class="form-control" id="parentsContact" name="parentsContact" 
+                                       value="<?= htmlspecialchars($studentData['ParentsContact'] ?? '') ?>" required>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-4 d-flex gap-2 justify-content-end">
+                            <button type="button" class="btn btn-secondary" id="cancel-contact-edit">
+                                Cancel
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-1"></i> Save Changes
+                            </button>
+                        </div>
+                    </form>
                 </div>
                 
-                <div class="settings-section">
+                <div class="settings-section" id="academic-section">
                     <div class="section-header">
-                        <i class="fas fa-graduation-cap"></i>
-                        <h4 class="m-0">Academic Information</h4>
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-graduation-cap"></i>
+                            <h4 class="m-0">Academic Information</h4>
+                        </div>
                     </div>
                     
-                    <div class="info-grid">
-                        <div class="info-item">
-                            <div class="info-label">LRN</div>
-                            <div class="info-value">
-                                <?= htmlspecialchars($studentData['LRN'] ?? 'Not specified') ?>
+                    <!-- View Mode -->
+                    <div class="view-mode">
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <div class="info-label">LRN</div>
+                                <div class="info-value">
+                                    <?= htmlspecialchars($studentData['LRN'] ?? 'Not specified') ?>
+                                </div>
                             </div>
-                        </div>
-                        
-                        <div class="info-item">
-                            <div class="info-label">Gender</div>
-                            <div class="info-value">
-                                <?= htmlspecialchars($studentData['Gender'] ?? 'Not specified') ?>
+                            
+                            <div class="info-item">
+                                <div class="info-label">Current Grade Level</div>
+                                <div class="info-value">
+                                    <?= $sectionData ? 'Grade ' . htmlspecialchars($sectionData['GradeLevel']) : 'Not enrolled' ?>
+                                </div>
                             </div>
-                        </div>
-                        
-                        <div class="info-item">
-                            <div class="info-label">Grade Level</div>
-                            <div class="info-value">
-                                Grade <?= htmlspecialchars($studentData['GradeLevel'] ?? 'Not specified') ?>
+                            
+                            <div class="info-item">
+                                <div class="info-label">Current Section</div>
+                                <div class="info-value">
+                                    <?= $sectionData ? htmlspecialchars($sectionData['SectionName']) : 'Not enrolled' ?>
+                                </div>
                             </div>
-                        </div>
-                        
-                        <div class="info-item">
-                            <div class="info-label">Section</div>
-                            <div class="info-value">
-                                <?= htmlspecialchars($studentData['Section'] ?? 'Not specified') ?>
-                            </div>
-                        </div>
-                        
-                        
-                        <div class="info-item">
-                            <div class="info-label">Enrollment Status</div>
-                            <div class="info-value">
-                                <span class="badge bg-success">Active</span>
+                            
+                            <div class="info-item">
+                                <div class="info-label">School Year</div>
+                                <div class="info-value">
+                                    <?= $sectionData ? htmlspecialchars($sectionData['SchoolYear']) : 'Not enrolled' ?>
+                                </div>
                             </div>
                         </div>
                     </div>
+                    
+                    <!-- Edit Form -->
+                    <form method="post" class="edit-form">
+                        <input type="hidden" name="update_academic" value="1">
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <label for="lrn" class="info-label">LRN</label>
+                                <input type="text" class="form-control" id="lrn" name="lrn" 
+                                       value="<?= htmlspecialchars($studentData['LRN'] ?? '') ?>" required>
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-info mt-3">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <strong>Note:</strong> To change your grade level or section, please contact your school administrator.
+                        </div>
+                        
+                        <div class="mt-4 d-flex gap-2 justify-content-end">
+                            <button type="button" class="btn btn-secondary" id="cancel-academic-edit">
+                                Cancel
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-1"></i> Save Changes
+                            </button>
+                        </div>
+                    </form>
                 </div>
             </div>
-            
-       
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -626,6 +901,48 @@ $conn->close();
                 const tabTrigger = new bootstrap.Tab(document.querySelector(`a[href="${window.location.hash}"]`));
                 tabTrigger.show();
             }
+        });
+
+        // Edit functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            // Profile edit
+            const editProfileBtn = document.getElementById('edit-profile-btn');
+            const cancelProfileEdit = document.getElementById('cancel-profile-edit');
+            const profileSection = document.getElementById('profile-section');
+            
+            editProfileBtn.addEventListener('click', function() {
+                profileSection.classList.add('edit-mode');
+            });
+            
+            cancelProfileEdit.addEventListener('click', function() {
+                profileSection.classList.remove('edit-mode');
+            });
+            
+            // Contact edit
+            const editContactBtn = document.getElementById('edit-contact-btn');
+            const cancelContactEdit = document.getElementById('cancel-contact-edit');
+            const contactSection = document.getElementById('contact-section');
+            
+            editContactBtn.addEventListener('click', function() {
+                contactSection.classList.add('edit-mode');
+            });
+            
+            cancelContactEdit.addEventListener('click', function() {
+                contactSection.classList.remove('edit-mode');
+            });
+            
+            // Academic edit
+            const editAcademicBtn = document.getElementById('edit-academic-btn');
+            const cancelAcademicEdit = document.getElementById('cancel-academic-edit');
+            const academicSection = document.getElementById('academic-section');
+            
+            editAcademicBtn.addEventListener('click', function() {
+                academicSection.classList.add('edit-mode');
+            });
+            
+            cancelAcademicEdit.addEventListener('click', function() {
+                academicSection.classList.remove('edit-mode');
+            });
         });
     </script>
 </body>

@@ -1,9 +1,8 @@
 <?php
 session_start();
 include '../config.php'; 
-
 $userId = $_SESSION['user_id'];
-$stmt = $conn->prepare("SELECT TeacherID FROM teacher WHERE UserID = ?");
+$stmt = $conn->prepare("SELECT TeacherID, fName, lName FROM teacher WHERE UserID = ?");
 $stmt->bind_param('i', $userId);
 $stmt->execute();
 $res = $stmt->get_result();
@@ -11,7 +10,8 @@ if (!$res->num_rows) {
     echo "You are not registered as a teacher.";
     exit;
 }
-$teacherId = $res->fetch_assoc()['TeacherID'];
+$teacherData = $res->fetch_assoc();
+$teacherId = $teacherData['TeacherID'];
 $stmt->close();
 
 $schoolyear_query = "SELECT * FROM school_year WHERE status = 'active' LIMIT 1";
@@ -26,21 +26,21 @@ $femaleStudents = [];
 $subjectId = isset($_GET['subject_id']) ? (int)$_GET['subject_id'] : 0;
 $sectionId = isset($_GET['section_id']) ? (int)$_GET['section_id'] : 0;
 
+// Fixed query using correct table relationships
 $selectSql = "
 SELECT DISTINCT s.StudentID, s.FirstName, s.Middlename, s.LastName, s.Sex
 FROM student s
 JOIN section_enrollment se ON s.StudentID = se.StudentID
-JOIN section sec ON se.SectionID = sec.SectionID
-JOIN subject sub ON sec.SectionID = sub.secID
-WHERE se.SchoolYear = '$school_year' 
+JOIN assigned_subject ass ON se.SectionID = ass.section_id
+WHERE se.SchoolYear = ? 
   AND se.status = 'active' 
-  AND sub.TeacherID = ?
-  AND sec.SectionID = ? 
-  AND sub.SubjectID = ? 
+  AND ass.teacher_id = ?
+  AND ass.section_id = ? 
+  AND ass.school_year = ?
 ORDER BY s.Sex, s.LastName, s.FirstName
 ";
 $stmt = $conn->prepare($selectSql);
-$stmt->bind_param('iii', $teacherId, $sectionId, $subjectId);
+$stmt->bind_param('siis', $school_year, $teacherId, $sectionId, $school_year);
 $stmt->execute();
 $result = $stmt->get_result();
 while ($row = $result->fetch_assoc()) {
@@ -58,6 +58,7 @@ while ($row = $result->fetch_assoc()) {
 }
 $stmt->close();
 
+// Get subject details
 $stmt = $conn->prepare("SELECT SubjectName, written_work_percentage, performance_task_percentage, quarterly_assessment_percentage FROM subject WHERE SubjectID = ?");
 $stmt->bind_param('i', $subjectId);
 $stmt->execute();
@@ -440,9 +441,9 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
         <div class="card shadow-sm">
             <div class="card-header bg-info text-white justify-content-between d-flex align-items-center">
                 <h4 class="mb-0"> Class Record - <?= htmlspecialchars($subjectName) ?> </h4>
-                                        <a href="grading_sheet.php?subject_id=<?= $subjectId ?>&section_id=<?= $sectionId ?>" class="text-white">
-                            <i class="fas fa-times me-1" style="font-size: 28px;"></i> 
-                 </a>
+                <a href="grading_sheet.php?subject_id=<?= $subjectId ?>&section_id=<?= $sectionId ?>" class="text-white">
+                    <i class="fas fa-times me-1" style="font-size: 28px;"></i> 
+                </a>
             </div>
             <!-- Quarter Selector -->
             <div class="card-body border-bottom">
@@ -460,7 +461,7 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                         </select>
                     </div>
                     <div id="saveStatus" class="col-auto" role="alert">
- </div>
+                    </div>
                     <div class="col-auto ms-auto me-3">
                         <a
                           href="grades.php?subject_id=<?= $subjectId ?>&section_id=<?= $sectionId ?>"
@@ -471,7 +472,6 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                         <button id="saveButton" class="btn btn-success">
                             <i class="fas fa-save me-1"></i> Save Grades
                         </button>
-                        
                     </div>
                 </div>
             </div>
@@ -563,9 +563,6 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
             </div>
         </div>
     </div>
-
-    <!-- Save Status Indicator -->
-
 
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>

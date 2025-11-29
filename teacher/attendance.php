@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once '../config.php';
+date_default_timezone_set('Asia/Manila');
 
 // 1) Ensure teacher is logged in
 if (!isset($_SESSION['email']) || $_SESSION['role'] !== 'teacher') {
@@ -30,16 +31,17 @@ if (!$teacherID) {
 $date      = $_REQUEST['date']      ?? date('Y-m-d');
 $sectionID = isset($_REQUEST['sectionID']) ? intval($_REQUEST['sectionID']) : null;
 $viewMode  = isset($_REQUEST['view']) && $_REQUEST['view'] === 'true';
+$schoolYear = $_REQUEST['school_year'] ?? '';
 
-// 4) FIXED: Fetch all sections this teacher teaches 
+// 4) FIXED: Fetch all sections this teacher teaches using assigned_subject table
 $stmt = $conn->prepare("
     SELECT DISTINCT
         sec.SectionID,
         sec.GradeLevel,
         sec.SectionName
-      FROM subject sub
-      JOIN section sec ON sub.secID = sec.SectionID
-     WHERE sub.TeacherID = ?
+      FROM assigned_subject a
+      JOIN section sec ON a.section_id = sec.SectionID
+     WHERE a.teacher_id = ?
      ORDER BY sec.GradeLevel, sec.SectionName
 ");
 $stmt->bind_param("i", $teacherID);
@@ -55,7 +57,7 @@ $stmt->close();
 $selected = null;
 if ($sectionID) {
     foreach ($sections as $sec) {
-        if ($sec['SectionID'] == $sectionID) { // Changed === to == for type comparison
+        if ($sec['SectionID'] == $sectionID) {
             $selected = $sec;
             break;
         }
@@ -196,10 +198,9 @@ if ($selected && $viewMode) {
 <body>
   <?php include '../navs/teacherNav.php'; ?>
   <div class="container-fluid mt-4">
-
     <?php if (!$sectionID): ?>
       <!-- == STEP 1: Section Selection == -->
-      <div class="card card-container shadow-sm">
+      <div class="card shadow-sm">
         <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
           <h5 class="mb-0">Select Class to Take Attendance</h5>
           <form method="get" class="d-flex">
@@ -217,7 +218,7 @@ if ($selected && $viewMode) {
         <div class="card-body">
           <?php if (empty($sections)): ?>
             <div class="alert alert-warning mb-0">
-              You don't have any classes.
+              You don't have any classes assigned.
             </div>
           <?php else: ?>
             <div class="row g-4">
@@ -235,12 +236,12 @@ if ($selected && $viewMode) {
                     </div>
                     <div class="card-footer bg-transparent d-flex justify-content-between">
                       <a 
-                        href="?sectionID=<?= urlencode($sec['SectionID']) ?>&date=<?= urlencode($date) ?>"
+                        href="?sectionID=<?= urlencode($sec['SectionID']) ?>&date=<?= urlencode($date) ?>&school_year=<?= urlencode($schoolYear) ?>"
                         class="btn btn-success btn-sm">
                         <i class="bi bi-check-circle"></i> Take Attendance
                       </a>
                       <a 
-                        href="?sectionID=<?= urlencode($sec['SectionID']) ?>&date=<?= urlencode($date) ?>&view=true"
+                        href="?sectionID=<?= urlencode($sec['SectionID']) ?>&date=<?= urlencode($date) ?>&view=true&school_year=<?= urlencode($schoolYear) ?>"
                         class="btn btn-info btn-sm">
                         <i class="bi bi-eye"></i> View
                       </a>
@@ -256,7 +257,7 @@ if ($selected && $viewMode) {
     <?php else: ?>
       <!-- Back Button -->
       <div class="mb-3 justify-content-end d-flex me-4">
-        <a href="?date=<?= urlencode($date) ?>" class="text-secondary">
+        <a href="?date=<?= urlencode($date) ?>&school_year=<?= urlencode($schoolYear) ?>" class="text-secondary">
           <i class="fas fa-times" style="font-size: 26px;"></i>
         </a>
       </div>
@@ -265,13 +266,13 @@ if ($selected && $viewMode) {
       <ul class="nav nav-tabs mb-3">
         <li class="nav-item">
           <a class="nav-link <?= !$viewMode ? 'active' : '' ?>" 
-             href="?sectionID=<?= $sectionID ?>&date=<?= $date ?>">
+             href="?sectionID=<?= $sectionID ?>&date=<?= $date ?>&school_year=<?= urlencode($schoolYear) ?>">
             <i class="bi bi-pencil-square"></i> Take Attendance
           </a>
         </li>
         <li class="nav-item">
           <a class="nav-link <?= $viewMode ? 'active' : '' ?>" 
-             href="?sectionID=<?= $sectionID ?>&date=<?= $date ?>&view=true">
+             href="?sectionID=<?= $sectionID ?>&date=<?= $date ?>&view=true&school_year=<?= urlencode($schoolYear) ?>">
             <i class="bi bi-eye"></i> View Attendance
           </a>
         </li>
@@ -310,7 +311,7 @@ if ($selected && $viewMode) {
             SELECT st.LRN, st.FirstName, st.MiddleName, st.LastName
               FROM section_enrollment se
               JOIN student st ON se.StudentID = st.StudentID
-             WHERE se.SectionID = ?
+             WHERE se.SectionID = ? AND se.status = 'active'
              ORDER BY st.LastName, st.FirstName
           ");
           $s1->bind_param("i", $sectionID);
@@ -360,7 +361,7 @@ if ($selected && $viewMode) {
               </tbody>
             </table>
             <div class="d-flex justify-content-end py-2 mt-3">
-              <a href="?date=<?= urlencode($date) ?>" class="btn btn-secondary me-2 mb-5">
+              <a href="?date=<?= urlencode($date) ?>&school_year=<?= urlencode($schoolYear) ?>" class="btn btn-secondary me-2 mb-5">
                 <i class="bi bi-arrow-left"></i> Back
               </a>
               <button type="button" id="save-attendance" class="btn btn-success mb-5">
@@ -380,7 +381,7 @@ if ($selected && $viewMode) {
                   alert(j.message);
                   if (j.status === 'success') {
                     // Redirect back to class selection
-                    window.location.href = '?date=' + encodeURIComponent($('input[name="date"]').val());
+                    window.location.href = '?date=' + encodeURIComponent($('input[name="date"]').val()) + '&school_year=' + encodeURIComponent('<?= $schoolYear ?>');
                   }
                 })
                 .fail(function(){
@@ -409,6 +410,7 @@ if ($selected && $viewMode) {
                 AND a.TeacherID = ?
             JOIN section_enrollment se ON s.StudentID = se.StudentID 
                 AND se.SectionID = ?
+            WHERE se.status = 'active'
             ORDER BY s.LastName, s.FirstName
           ");
           $viewStmt->bind_param("siii", $date, $sectionID, $teacherID, $sectionID);
@@ -513,6 +515,7 @@ if ($selected && $viewMode) {
             <form method="get" class="row g-2">
               <input type="hidden" name="sectionID" value="<?= $sectionID ?>">
               <input type="hidden" name="view" value="true">
+              <input type="hidden" name="school_year" value="<?= htmlspecialchars($schoolYear) ?>">
               <div class="col-md-8">
                 <input type="date" name="date" value="<?= htmlspecialchars($date) ?>" 
                        class="form-control" required>
@@ -528,7 +531,7 @@ if ($selected && $viewMode) {
 
         <!-- Back button at the bottom -->
         <div class="mt-3">
-          <a href="?date=<?= urlencode($date) ?>" class="btn btn-secondary">
+          <a href="?date=<?= urlencode($date) ?>&school_year=<?= urlencode($schoolYear) ?>" class="btn btn-secondary">
             <i class="bi bi-arrow-left"></i> Back to Class Selection
           </a>
         </div>

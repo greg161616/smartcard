@@ -1,7 +1,7 @@
 <?php
 session_start();
 require '../config.php';
-
+date_default_timezone_set('Asia/Manila');
 // Check if user is logged in as teacher
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'teacher') {
     header("Location: ../login.php");

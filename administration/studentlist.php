@@ -6,7 +6,94 @@ include __DIR__ . '/../config.php';
 if (!isset($_SESSION['email']) || $_SESSION['role'] !== 'head') {
     header('Location: ../login.php');
     exit;
-} 
+}
+
+// Handle AJAX requests
+if (isset($_GET['action'])) {
+    $action = $_GET['action'];
+    
+    // Get filtered students based on criteria
+    if ($action == 'getFilteredStudents') {
+        $schoolYear = isset($_GET['schoolYear']) ? $_GET['schoolYear'] : '';
+        $gradeLevel = isset($_GET['gradeLevel']) ? $_GET['gradeLevel'] : '';
+        $sectionId = isset($_GET['sectionId']) ? $_GET['sectionId'] : '';
+        
+        $sql = "
+            SELECT
+              s.StudentID,
+              s.LRN,
+              CONCAT_WS(' ',s.LastName,',', s.FirstName, s.MiddleName ) AS FullName,
+              u.Email,
+              sec.GradeLevel,
+              sec.SectionName,
+              se.SchoolYear
+            FROM student AS s
+            JOIN `user` AS u ON u.UserID = s.userID
+            JOIN section_enrollment AS se ON se.StudentID = s.StudentID AND se.status = 'active'
+            JOIN section AS sec ON sec.SectionID = se.SectionID
+            WHERE 1=1
+        ";
+        
+        $params = [];
+        $types = '';
+        
+        if (!empty($schoolYear)) {
+            $sql .= " AND se.SchoolYear = ?";
+            $params[] = $schoolYear;
+            $types .= 's';
+        }
+        
+        if (!empty($gradeLevel)) {
+            $sql .= " AND sec.GradeLevel = ?";
+            $params[] = $gradeLevel;
+            $types .= 's';
+        }
+        
+        if (!empty($sectionId)) {
+            $sql .= " AND sec.SectionID = ?";
+            $params[] = $sectionId;
+            $types .= 'i';
+        }
+        
+        $sql .= " ORDER BY s.LastName, s.FirstName";
+        
+        $stmt = $conn->prepare($sql);
+        if (!empty($params)) {
+            $stmt->bind_param($types, ...$params);
+        }
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        $students = [];
+        while ($row = $result->fetch_assoc()) {
+            $students[] = $row;
+        }
+        
+        header('Content-Type: application/json');
+        echo json_encode($students);
+        exit;
+    }
+    
+    // Get sections by grade level
+    if ($action == 'getSectionsByGrade') {
+        $gradeLevel = isset($_GET['gradeLevel']) ? $_GET['gradeLevel'] : '';
+        
+        $sql = "SELECT SectionID, SectionName FROM section WHERE GradeLevel = ? ORDER BY SectionName";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('s', $gradeLevel);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        $sections = [];
+        while ($row = $result->fetch_assoc()) {
+            $sections[] = $row;
+        }
+        
+        header('Content-Type: application/json');
+        echo json_encode($sections);
+        exit;
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -62,6 +149,62 @@ if (!isset($_SESSION['email']) || $_SESSION['role'] !== 'head') {
       <div class="alert alert-danger"><?= htmlspecialchars($_SESSION['error']) ?></div>
       <?php unset($_SESSION['error']); ?>
     <?php endif; ?>
+
+    <!-- Filter Card -->
+    <div class="card mb-4">
+      <div class="card-header bg-light">
+        <h5 class="mb-0">Filter Students</h5>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-2">
+            <label for="schoolYearFilter" class="form-label">School Year</label>
+            <select class="form-select" id="schoolYearFilter">
+              <option value="">All</option>
+              <?php
+              $years_query = $conn->query("SELECT DISTINCT school_year FROM school_year ORDER BY school_year DESC");
+              while ($year = $years_query->fetch_assoc()):
+              ?>
+                <option value="<?= htmlspecialchars($year['school_year']) ?>">
+                  <?= htmlspecialchars($year['school_year']) ?>
+                </option>
+              <?php endwhile; ?>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label for="gradeLevelFilter" class="form-label">Grade Level</label>
+            <select class="form-select" id="gradeLevelFilter">
+              <option value="">All</option>
+              <?php
+              $grade_query = $conn->query("SELECT DISTINCT GradeLevel FROM section ORDER BY CAST(GradeLevel AS UNSIGNED), GradeLevel");
+              while ($grade = $grade_query->fetch_assoc()):
+              ?>
+                <option value="<?= htmlspecialchars($grade['GradeLevel']) ?>">
+                  <?= htmlspecialchars($grade['GradeLevel']) ?>
+                </option>
+              <?php endwhile; ?>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label for="sectionFilter" class="form-label">Section</label>
+            <select class="form-select" id="sectionFilter">
+              <option value="">All</option>
+              <?php
+              $section_query = $conn->query("SELECT SectionID, SectionName FROM section ORDER BY SectionName");
+              while ($section = $section_query->fetch_assoc()):
+              ?>
+                <option value="<?= htmlspecialchars($section['SectionID']) ?>">
+                  <?= htmlspecialchars($section['SectionName']) ?>
+                </option>
+              <?php endwhile; ?>
+            </select>
+          </div>
+          <div class="col-md-6 d-flex align-items-end">
+            <button type="button" id="resetFilter" class="btn btn-sm btn-outline-secondary ">Reset Filters</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div class="table-responsive">
       <table id="studentTable" class="table table-bordered table-hover align-middle">
@@ -539,6 +682,126 @@ $(document).ready(function() {
   $('#loadingModal').on('hidden.bs.modal', function() {
     clearTimeout(importTimeout);
     clearInterval(progressInterval);
+  });
+
+  // Filter functionality
+  var table = $('#studentTable').DataTable();
+  
+  // Handle grade level change to populate sections
+  $('#gradeLevelFilter').on('change', function() {
+    var gradeLevel = $(this).val();
+    var sectionSelect = $('#sectionFilter');
+    
+    if (gradeLevel) {
+      $.ajax({
+        url: '<?php echo $_SERVER['PHP_SELF']; ?>',
+        type: 'GET',
+        data: {
+          action: 'getSectionsByGrade',
+          gradeLevel: gradeLevel
+        },
+        dataType: 'json',
+        success: function(sections) {
+          sectionSelect.html('<option value="">All Sections</option>');
+          sections.forEach(function(section) {
+            sectionSelect.append(
+              $('<option></option>')
+                .val(section.SectionID)
+                .text(section.SectionName)
+            );
+          });
+        }
+      });
+    } else {
+      // Reset sections dropdown
+      sectionSelect.html('<option value="">All Sections</option>');
+      $.ajax({
+        url: '<?php echo $_SERVER['PHP_SELF']; ?>',
+        type: 'GET',
+        data: { action: 'getSectionsByGrade', gradeLevel: '' },
+        dataType: 'json',
+        success: function(sections) {
+          sectionSelect.html('<option value="">All Sections</option>');
+          sections.forEach(function(section) {
+            sectionSelect.append(
+              $('<option></option>')
+                .val(section.SectionID)
+                .text(section.SectionName)
+            );
+          });
+        }
+      });
+    }
+  });
+  
+  // Apply filters when any filter changes
+  function applyFilters() {
+    var schoolYear = $('#schoolYearFilter').val();
+    var gradeLevel = $('#gradeLevelFilter').val();
+    var sectionId = $('#sectionFilter').val();
+    
+    $.ajax({
+      url: '<?php echo $_SERVER['PHP_SELF']; ?>',
+      type: 'GET',
+      data: {
+        action: 'getFilteredStudents',
+        schoolYear: schoolYear,
+        gradeLevel: gradeLevel,
+        sectionId: sectionId
+      },
+      dataType: 'json',
+      success: function(students) {
+        // Clear the table
+        table.clear().draw();
+        
+        // Add filtered data
+        if (students.length > 0) {
+          students.forEach(function(student) {
+            table.row.add([
+              htmlEscape(student.LRN),
+              htmlEscape(student.FullName),
+              htmlEscape(student.Email),
+              htmlEscape(student.GradeLevel),
+              htmlEscape(student.SectionName),
+              '<button class="btn btn-sm btn-outline-primary view-btn" data-id="' + student.StudentID + '">View</button> ' +
+              '<button class="btn btn-sm btn-outline-warning edit-btn" data-id="' + student.StudentID + '">Edit</button>'
+            ]);
+          });
+        } else {
+          table.row.add([
+            'No students found.',
+            '',
+            '',
+            '',
+            '',
+            ''
+          ]);
+        }
+        
+        table.draw();
+      },
+      error: function() {
+        console.error('Error loading filtered students');
+      }
+    });
+  }
+  
+  // Helper function to escape HTML
+  function htmlEscape(text) {
+    return $('<div>').text(text).html();
+  }
+  
+  // Listen to filter changes
+  $('#schoolYearFilter, #gradeLevelFilter, #sectionFilter').on('change', function() {
+    applyFilters();
+  });
+  
+  // Reset filters
+  $('#resetFilter').on('click', function() {
+    $('#schoolYearFilter').val('');
+    $('#gradeLevelFilter').val('');
+    $('#sectionFilter').html('<option value="">All Sections</option>');
+    applyFilters();
   });
 
 });

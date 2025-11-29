@@ -1,7 +1,7 @@
 <?php 
 session_start();
 include '../config.php'; 
-
+date_default_timezone_set('Asia/Manila');
 // 1) Ensure teacher is logged in
 if (!isset($_SESSION['email']) || $_SESSION['role'] !== 'teacher') {
     header('Location: ../login.php');
@@ -185,7 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php include '../navs/teacherNav.php'; ?>
     
     <div class="profile-header py-5 mb-4">
-        <div class="container">
+        <div class="container-fluid">
             <h2 class="mb-1">Teacher Profile</h2>
             <p class="mb-0">Manage your personal information and credentials</p>
         </div>

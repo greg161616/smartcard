@@ -1,6 +1,7 @@
 <?php
 include '../config.php';
 session_start();
+date_default_timezone_set('Asia/Manila');
 
 // Check if user is logged in as teacher
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'teacher') {
@@ -8,21 +9,68 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'teacher') {
     exit();
 }
 
-// Get teacher information
-$teacher_id = $_SESSION['user_id'];
-$teacher_query = "SELECT * FROM teacher WHERE userID = '$teacher_id'";
-$teacher_result = mysqli_query($conn, $teacher_query);
-$teacher = mysqli_fetch_assoc($teacher_result);
+// Initialize variables
+$students_result = null;
+$current_year = '2025-2026';
 
-$schoolyear_query = "SELECT * FROM school_year WHERE status = 'active' LIMIT 1";
-$schoolyear_result = mysqli_query($conn, $schoolyear_query);
-$schoolyear = mysqli_fetch_assoc($schoolyear_result);
-$current_year = $schoolyear['school_year'];
+// Get teacher information - FIXED: Get TeacherID from teacher table
+$user_id = $_SESSION['user_id'];
 
-// Check if we're viewing a specific student's report card or generating PDF
-$student_id = isset($_GET['student_id']) ? $_GET['student_id'] : null;
+// Fetch active school year
+$schoolyear_query = "SELECT school_year FROM school_year WHERE status = 'active' LIMIT 1";
+$schoolyear_result = $conn->query($schoolyear_query);
+$schoolyear = $schoolyear_result ? $schoolyear_result->fetch_assoc() : null;
+$current_year = $schoolyear ? $schoolyear['school_year'] : '2025-2026';
+
+// Get teacher's basic info using prepared statement - FIXED: Get TeacherID properly
+$teacher_sql = "SELECT TeacherID, fName, lName, mName FROM teacher WHERE UserID = ?";
+$teacher_stmt = $conn->prepare($teacher_sql);
+$teacher_stmt->bind_param("i", $user_id);
+$teacher_stmt->execute();
+$teacher_result = $teacher_stmt->get_result();
+$teacher = $teacher_result->fetch_assoc();
+$teacher_id = $teacher ? $teacher['TeacherID'] : null; // This is the actual TeacherID
+$teacher_name = $teacher ? trim($teacher['fName'] . ' ' . ($teacher['mName'] ? $teacher['mName'] . ' ' : '') . $teacher['lName']) : 'Teacher';
+$teacher_stmt->close();
+
 $generate_pdf = isset($_GET['generate_pdf']) ? $_GET['generate_pdf'] : null;
 $quarter = isset($_GET['quarter']) ? $_GET['quarter'] : null;
+$student_id = isset($_GET['student_id']) ? $_GET['student_id'] : null;
+
+if (!$student_id) {
+    // Fetch students from teacher's advisory class for the list page - FIXED: Use TeacherID
+    if ($teacher_id) {
+        $advisory_sql = "SELECT SectionID, AdviserID FROM section WHERE AdviserID = ?";
+        $advisory_stmt = $conn->prepare($advisory_sql);
+        $advisory_stmt->bind_param("i", $teacher_id);
+        $advisory_stmt->execute();
+        $advisory_result = $advisory_stmt->get_result();
+        $advisory = $advisory_result->fetch_assoc();
+        $advisory_stmt->close();
+        
+        if ($advisory) {
+            $advisory_section_id = $advisory['SectionID'];
+            $students_sql = "
+                SELECT DISTINCT s.StudentID, s.FirstName, s.LastName, s.Middlename, 
+                                sec.GradeLevel, sec.SectionName
+                FROM student s
+                JOIN section_enrollment se ON s.StudentID = se.StudentID
+                JOIN section sec ON se.SectionID = sec.SectionID
+                WHERE se.SectionID = ? AND se.SchoolYear = ? AND se.status = 'active'
+                ORDER BY s.LastName, s.FirstName
+            ";
+            $students_stmt = $conn->prepare($students_sql);
+            $students_stmt->bind_param("is", $advisory_section_id, $current_year);
+            $students_stmt->execute();
+            $students_result = $students_stmt->get_result();
+            $students_stmt->close();
+        } else {
+            $students_result = null;
+        }
+    } else {
+        $students_result = null;
+    }
+}
 
 if ($student_id) {
     // REPORT CARD GENERATION CODE
@@ -33,10 +81,14 @@ if ($student_id) {
     $observed_values = [];
     $section = [];
 
-    // Get student information
-    $student_query = "SELECT * FROM student WHERE StudentID = '$student_id'";
-    $student_result = mysqli_query($conn, $student_query);
-    $student = mysqli_fetch_assoc($student_result);
+    // Get student information using prepared statement
+    $student_query = "SELECT * FROM student WHERE StudentID = ?";
+    $student_stmt = $conn->prepare($student_query);
+    $student_stmt->bind_param("i", $student_id);
+    $student_stmt->execute();
+    $student_result = $student_stmt->get_result();
+    $student = $student_result->fetch_assoc();
+    $student_stmt->close();
 
     if (!$student) {
         $_SESSION['error'] = "Student not found";
@@ -44,39 +96,39 @@ if ($student_id) {
         exit();
     }
 
-    // Get student's current section
+    // Get student's current section using prepared statement
     $section_query = "
         SELECT s.*, se.SchoolYear 
         FROM section_enrollment se 
         JOIN section s ON se.SectionID = s.SectionID 
-        WHERE se.StudentID = '$student_id' 
-        AND se.SchoolYear = '$current_year'
+        WHERE se.StudentID = ? 
+        AND se.SchoolYear = ?
         AND se.status = 'active'
         LIMIT 1
     ";
-    $section_result = mysqli_query($conn, $section_query);
-    if (mysqli_num_rows($section_result) > 0) {
-        $section = mysqli_fetch_assoc($section_result);
-    }
+    $section_stmt = $conn->prepare($section_query);
+    $section_stmt->bind_param("is", $student_id, $current_year);
+    $section_stmt->execute();
+    $section_result = $section_stmt->get_result();
+    $section = $section_result->fetch_assoc();
+    $section_stmt->close();
 
-    // Get grades from grades table
+    // Get grades from grades table using prepared statement - FIXED: Use proper subject relationship
     $grades_query = "
         SELECT g.*, s.SubjectName 
         FROM grades g 
         JOIN subject s ON g.subject = s.SubjectID 
-        WHERE g.student_id = '$student_id'
-        AND g.school_year = '$current_year'
-        
+        WHERE g.student_id = ?
+        AND g.school_year = ?
     ";
-    $grades_result = mysqli_query($conn, $grades_query);
+    $grades_stmt = $conn->prepare($grades_query);
+    $grades_stmt->bind_param("is", $student_id, $current_year);
+    $grades_stmt->execute();
+    $grades_result = $grades_stmt->get_result();
+    $grades_stmt->close();
 
-    if (!$grades_result) {
-        $_SESSION['error'] = "Failed to load grades: " . mysqli_error($conn);
-        header("Location: record.php");
-        exit();
-    }
-
-    while ($row = mysqli_fetch_assoc($grades_result)) {
+    $grades = [];
+    while ($row = $grades_result->fetch_assoc()) {
         $grades[] = $row;
     }
 
@@ -88,6 +140,8 @@ if ($student_id) {
         $year = $matches[1];
         $next_year = $matches[2];
     }
+    
+    // FIXED: Attendance query - check if student is in teacher's section
     $attendance_query = "
         SELECT MONTH(Date) as month_num, 
                COUNT(*) as total_days,
@@ -95,21 +149,21 @@ if ($student_id) {
                SUM(CASE WHEN Status = 'absent' THEN 1 ELSE 0 END) as absent_days,
                SUM(CASE WHEN Status = 'excused' THEN 1 ELSE 0 END) as excused_days
         FROM attendance 
-        WHERE StudentID = '$student_id'
+        WHERE StudentID = ?
+        AND SectionID = ?
         AND (
-            (YEAR(Date) = '$year' AND MONTH(Date) >= 6) OR 
-            (YEAR(Date) = '$next_year' AND MONTH(Date) <= 5)
+            (YEAR(Date) = ? AND MONTH(Date) >= 6) OR 
+            (YEAR(Date) = ? AND MONTH(Date) <= 5)
         )
         GROUP BY MONTH(Date), YEAR(Date)
         ORDER BY YEAR(Date), MONTH(Date)
     ";
-    $attendance_result = mysqli_query($conn, $attendance_query);
-
-    if (!$attendance_result) {
-        $_SESSION['error'] = "Failed to load attendance data";
-        header("Location: record.php");
-        exit();
-    }
+    $attendance_stmt = $conn->prepare($attendance_query);
+    $section_id = $section ? $section['SectionID'] : 0;
+    $attendance_stmt->bind_param("iiii", $student_id, $section_id, $year, $next_year);
+    $attendance_stmt->execute();
+    $attendance_result = $attendance_stmt->get_result();
+    $attendance_stmt->close();
 
     $attendance_data = [];
     while ($row = mysqli_fetch_assoc($attendance_result)) {
@@ -132,19 +186,109 @@ if ($student_id) {
         $attendance[$name] = isset($attendance_data[$num]) ? $attendance_data[$num] : ['present' => 0, 'absent' => 0, 'excused' => 0, 'total' => 0];
     }
 
-    // Get teacher's name for signature
-    $teacher_name_query = "SELECT fName, lName FROM teacher WHERE userID = '$teacher_id'";
-    $teacher_name_result = mysqli_query($conn, $teacher_name_query);
-    $teacher_name = mysqli_fetch_assoc($teacher_name_result);
-    $teacher_full_name = $teacher_name ? $teacher_name['fName'] . ' ' . $teacher_name['lName'] : 'Teacher';
+    // Get teacher's name for signature using prepared statement - FIXED: Use TeacherID
+    $teacher_name_query = "SELECT fName, lName FROM teacher WHERE TeacherID = ?";
+    $teacher_name_stmt = $conn->prepare($teacher_name_query);
+    $teacher_name_stmt->bind_param("i", $teacher_id);
+    $teacher_name_stmt->execute();
+    $teacher_name_result = $teacher_name_stmt->get_result();
+    $teacher_name_info = $teacher_name_result->fetch_assoc();
+    $teacher_name_stmt->close();
+    $teacher_full_name = $teacher_name_info ? $teacher_name_info['fName'] . ' ' . $teacher_name_info['lName'] : 'Teacher';
 
-    // Load observed/student values
+    // Load observed/student values using prepared statement
+    // NOTE: student_values table is not in your schema, so this might need adjustment
     $observed_values = [];
-    $vals_sql = "SELECT * FROM student_values WHERE student_id = '$student_id' AND school_year = '$current_year'";
-    $vals_res = mysqli_query($conn, $vals_sql);
-    if ($vals_res) {
-        while ($r = mysqli_fetch_assoc($vals_res)) {
+    if (tableExists($conn, 'student_values')) {
+        $vals_sql = "SELECT * FROM student_values WHERE student_id = ? AND school_year = ?";
+        $vals_stmt = $conn->prepare($vals_sql);
+        $vals_stmt->bind_param("is", $student_id, $current_year);
+        $vals_stmt->execute();
+        $vals_res = $vals_stmt->get_result();
+        $vals_stmt->close();
+        while ($r = $vals_res->fetch_assoc()) {
             $observed_values[intval($r['quarter'])] = $r;
+        }
+    }
+
+    // Get all subjects for the student's grade level in the specific order
+    $grade_level = !empty($section) ? $section['GradeLevel'] : '';
+    $section_name = !empty($section) ? $section['SectionName'] : '';
+
+    // Define the subjects in the specific order you want
+    $ordered_subjects = [
+        'Filipino',
+        'English', 
+        'Mathematics',
+        'Science',
+        'Araling Panlipunan (AP)',
+        'Values Education (VE)',
+        'Technology and Livelihood Education (TLE)',
+        'MAPEH'
+    ];
+
+    // Get all subjects for this grade level and section using prepared statement
+    // FIXED: Use assigned_subject table to get subjects for this section
+    $subjects_query = "
+        SELECT DISTINCT s.SubjectID, s.SubjectName 
+        FROM subject s 
+        JOIN assigned_subject a ON s.SubjectID = a.subject_id
+        JOIN section sec ON a.section_id = sec.SectionID
+        WHERE sec.GradeLevel = ? 
+        AND sec.SectionName = ?
+        AND a.school_year = ?
+        ORDER BY s.SubjectID
+    ";
+    $subjects_stmt = $conn->prepare($subjects_query);
+    $subjects_stmt->bind_param("sss", $grade_level, $section_name, $current_year);
+    $subjects_stmt->execute();
+    $subjects_result = $subjects_stmt->get_result();
+    $subjects_stmt->close();
+    $all_subjects = [];
+    while ($subject_row = $subjects_result->fetch_assoc()) {
+        $all_subjects[] = $subject_row;
+    }
+
+    // Reorder subjects according to the specified order
+    $ordered_subject_list = [];
+    foreach ($ordered_subjects as $subject_name) {
+        foreach ($all_subjects as $subject) {
+            if ($subject['SubjectName'] == $subject_name) {
+                $ordered_subject_list[] = $subject;
+                break;
+            }
+        }
+    }
+
+    // Add MAPEH components if MAPEH exists
+    $mapeh_found = false;
+    $mapeh_components = [
+        'Music and Arts',
+        'PE and Health'
+    ];
+
+    foreach ($ordered_subject_list as $index => $subject) {
+        if ($subject['SubjectName'] == 'MAPEH') {
+            $mapeh_found = true;
+            // Insert MAPEH components after MAPEH
+            array_splice($ordered_subject_list, $index + 1, 0, [
+                ['SubjectID' => 'MAPEH_MUSICARTS', 'SubjectName' => '• Music and Arts'],
+                ['SubjectID' => 'MAPEH_PEHEALTH', 'SubjectName' => '• PE and Health']
+            ]);
+            break;
+        }
+    }
+
+    // Validate grades when generating PDF directly
+    if ($generate_pdf && $quarter) {
+        $missing_grades = validateQuarterGrades($grades, $quarter, $ordered_subject_list);
+        
+        if (!empty($missing_grades)) {
+            $_SESSION['error'] = "Cannot generate PDF for Quarter $quarter. The following subjects are missing grades:\n\n" . 
+                                implode("\n", $missing_grades) . 
+                                "\n\nPlease complete all grades before generating the report card.";
+            header("Location: record.php");
+            exit();
         }
     }
 }
@@ -206,80 +350,10 @@ function validateQuarterGrades($grades, $quarter, $ordered_subject_list) {
     return $missing_grades;
 }
 
-// Get all subjects for the student's grade level in the specific order
-if ($student_id) {
-    $grade_level = !empty($section) ? $section['GradeLevel'] : '';
-    $section_name = !empty($section) ? $section['SectionName'] : '';
-
-    // Define the subjects in the specific order you want
-    $ordered_subjects = [
-        'Filipino',
-        'English', 
-        'Mathematics',
-        'Science',
-        'Araling Panlipunan (AP)',
-        'Values Education (VE)',
-        'Technology and Livelihood Education (TLE)',
-        'MAPEH'
-    ];
-
-    // Get all subjects for this grade level and section
-    $subjects_query = "
-        SELECT s.SubjectID, s.SubjectName 
-        FROM subject s 
-        JOIN section sec ON s.secID = sec.SectionID
-        WHERE sec.GradeLevel = '$grade_level' 
-        AND sec.SectionName = '$section_name'
-        ORDER BY s.SubjectID;
-    ";
-    $subjects_result = mysqli_query($conn, $subjects_query);
-    $all_subjects = [];
-    while ($subject_row = mysqli_fetch_assoc($subjects_result)) {
-        $all_subjects[] = $subject_row;
-    }
-
-    // Reorder subjects according to the specified order
-    $ordered_subject_list = [];
-    foreach ($ordered_subjects as $subject_name) {
-        foreach ($all_subjects as $subject) {
-            if ($subject['SubjectName'] == $subject_name) {
-                $ordered_subject_list[] = $subject;
-                break;
-            }
-        }
-    }
-
-    // Add MAPEH components if MAPEH exists
-    $mapeh_found = false;
-    $mapeh_components = [
-        'Music and Arts',
-        'PE and Health'
-    ];
-
-    foreach ($ordered_subject_list as $index => $subject) {
-        if ($subject['SubjectName'] == 'MAPEH') {
-            $mapeh_found = true;
-            // Insert MAPEH components after MAPEH
-            array_splice($ordered_subject_list, $index + 1, 0, [
-                ['SubjectID' => 'MAPEH_MUSICARTS', 'SubjectName' => '• Music and Arts'],
-                ['SubjectID' => 'MAPEH_PEHEALTH', 'SubjectName' => '• PE and Health']
-            ]);
-            break;
-        }
-    }
-
-    // Validate grades when generating PDF directly
-    if ($generate_pdf && $quarter) {
-        $missing_grades = validateQuarterGrades($grades, $quarter, $ordered_subject_list);
-        
-        if (!empty($missing_grades)) {
-            $_SESSION['error'] = "Cannot generate PDF for Quarter $quarter. The following subjects are missing grades:\n\n" . 
-                                implode("\n", $missing_grades) . 
-                                "\n\nPlease complete all grades before generating the report card.";
-            header("Location: record.php");
-            exit();
-        }
-    }
+// Helper function to check if table exists
+function tableExists($conn, $table) {
+    $result = $conn->query("SHOW TABLES LIKE '$table'");
+    return $result && $result->num_rows > 0;
 }
 ?>
 
@@ -307,6 +381,10 @@ if ($student_id) {
         }
         .card {
             margin-top: 20px;
+        }
+        .table-responsive {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
         }
         .table {
             margin: 0; padding: 0;
@@ -999,16 +1077,38 @@ if ($student_id) {
         }
         <?php endif; ?>
         <?php endif; ?>
+
+            .dashboard-header {
+            background: #2c3e50;
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+        }
     </style>
 </head>
 <body>
     <?php if (!$student_id): ?>
         <!-- STUDENT LIST PAGE -->
         <?php include '../navs/teacherNav.php';?>
-        
+            <div class="dashboard-header">
         <div class="container">
-            <div class="row justify-content-center">
-                <div class="col-md-10">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h1 class="display-5 fw-bold">Welcome, <?php echo htmlspecialchars($teacher_name); ?>!</h1>
+                    
+                    <p class="lead mb-0">Student List - <?php echo date('F j, Y'); ?></p>
+                </div>
+                <div class="col-md-4 text-end">
+                    <div class="bg-white rounded-pill px-3 py-2 d-inline-block">
+                        <small class="text-muted">School Year: <?php echo $current_year; ?></small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+        <div class="container-fluid">
+            <div class="row ">
+                <div class="col-md-12">
                     <div class="card shadow">
                         <div class="card-header">
                             <h4 class="mb-0">Student Record Cards</h4>
@@ -1039,74 +1139,95 @@ if ($student_id) {
                                 unset($_SESSION['success']);
                             }
 
-                            $adviserTeacherID = isset($teacher['TeacherID']) ? $teacher['TeacherID'] : null;
+                            // FIXED: Use the proper teacher_id variable
+                            $adviserTeacherID = $teacher_id;
                             
                             if (!$adviserTeacherID) {
                                 echo "<div class='alert alert-warning'>You don't have any advisory class</div>";
                             } else {
-                                $secRes = mysqli_query($conn, "SELECT SectionID, GradeLevel, SectionName FROM section WHERE AdviserID = '{$adviserTeacherID}' ORDER BY GradeLevel, SectionName");
+                                // FIXED: Use prepared statement for security
+                                $sec_sql = "SELECT SectionID, GradeLevel, SectionName FROM section WHERE AdviserID = ? ORDER BY GradeLevel, SectionName";
+                                $sec_stmt = $conn->prepare($sec_sql);
+                                $sec_stmt->bind_param("i", $adviserTeacherID);
+                                $sec_stmt->execute();
+                                $secRes = $sec_stmt->get_result();
+                                
                                 if ($secRes && mysqli_num_rows($secRes) > 0) {
                                     $secIds = [];
                                     while ($s = mysqli_fetch_assoc($secRes)) {
                                         $secIds[] = $s['SectionID'];
                                     }
-                                    $secList = implode(',', $secIds);
+                                    $sec_stmt->close();
 
+                                    // Create placeholders for the IN clause
+                                    $placeholders = str_repeat('?,', count($secIds) - 1) . '?';
+                                    
                                     $students_query = "
                                         SELECT s.StudentID, s.FirstName, s.LastName, s.Middlename, sec.GradeLevel, sec.SectionName
                                         FROM student s
                                         JOIN section_enrollment se ON s.StudentID = se.StudentID
                                         JOIN section sec ON se.SectionID = sec.SectionID
-                                        WHERE se.SectionID IN ({$secList})
-                                          AND se.SchoolYear = '$current_year'
+                                        WHERE se.SectionID IN ($placeholders)
+                                          AND se.SchoolYear = ?
                                           AND se.status = 'active'
                                         ORDER BY sec.GradeLevel, sec.SectionName, s.LastName, s.FirstName
                                     ";
-                                    $students_result = mysqli_query($conn, $students_query);
+                                    
+                                    $students_stmt = $conn->prepare($students_query);
+                                    
+                                    // Build types and bind parameters
+                                    $types = str_repeat('i', count($secIds)) . 's';
+                                    $params = array_merge($secIds, [$current_year]);
+                                    $students_stmt->bind_param($types, ...$params);
+                                    $students_stmt->execute();
+                                    $students_result = $students_stmt->get_result();
                                     
                                     if ($students_result && mysqli_num_rows($students_result) > 0) {
                                         ?>
-                                        <table class="table table-striped table-hover">
-                                            <thead class="table-primary">
-                                                <tr>
-                                                    <th>Name</th>
-                                                    <th>Grade & Section</th>
-                                                    <th>Actions</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                <?php
-                                                while ($row = mysqli_fetch_assoc($students_result)) {
-                                                    $fullName = trim($row['LastName'] . ', ' . $row['FirstName'] . ' ' . $row['Middlename']);
-                                                    $gradeSection = "Grade {$row['GradeLevel']} {$row['SectionName']}";
-                                                    ?>
-                                                    <tr>
-                                                        <td><?= htmlspecialchars($fullName) ?></td>
-                                                        <td><?= htmlspecialchars($gradeSection) ?></td>
-                                                        <td>
-                                                            <div class="btn-group btn-group-sm" role="group">
-                                                                <a href="?student_id=<?= $row['StudentID'] ?>" class="btn btn-primary">
-                                                                    <i class="fas fa-eye"></i> View
-                                                                </a>
-                                                                <div class="btn-group" role="group">
-                                                                    <button type="button" class="btn btn-success dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-                                                                        <i class="fas fa-file-pdf"></i> PDF
-                                                                    </button>
-                                                                    <ul class="dropdown-menu">
-                                                                        <li><a class="dropdown-item" href="?student_id=<?= $row['StudentID'] ?>&generate_pdf=1&quarter=1">Quarter 1</a></li>
-                                                                        <li><a class="dropdown-item" href="?student_id=<?= $row['StudentID'] ?>&generate_pdf=1&quarter=2">Quarter 2</a></li>
-                                                                        <li><a class="dropdown-item" href="?student_id=<?= $row['StudentID'] ?>&generate_pdf=1&quarter=3">Quarter 3</a></li>
-                                                                        <li><a class="dropdown-item" href="?student_id=<?= $row['StudentID'] ?>&generate_pdf=1&quarter=4">Quarter 4</a></li>
-                                                                    </ul>
-                                                                </div>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                    <?php
-                                                }
-                                                ?>
-                                            </tbody>
-                                        </table>
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <thead class="table-primary">
+            <tr>
+                <th>Name</th>
+                <th>Grade & Section</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php
+            while ($row = mysqli_fetch_assoc($students_result)) {
+                $fullName = trim($row['LastName'] . ', ' . $row['FirstName'] . ' ' . $row['Middlename']);
+                $gradeSection = "Grade {$row['GradeLevel']} {$row['SectionName']}";
+                ?>
+                <tr>
+                    <td><?= htmlspecialchars($fullName) ?></td>
+                    <td><?= htmlspecialchars($gradeSection) ?></td>
+                    <td>
+                        <div class="d-flex gap-2">
+                            <a href="?student_id=<?= $row['StudentID'] ?>" class="btn btn-primary btn-sm">
+                                <i class="fas fa-eye"></i> View
+                            </a>
+                            <div class="btn-group">
+                                <button type="button" class="btn btn-success btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="fas fa-file-pdf"></i> PDF
+                                </button>
+                                <ul class="dropdown-menu">
+                                    <li><a class="dropdown-item" href="?student_id=<?= $row['StudentID'] ?>&generate_pdf=1&quarter=1">Quarter 1</a></li>
+                                    <li><a class="dropdown-item" href="?student_id=<?= $row['StudentID'] ?>&generate_pdf=1&quarter=2">Quarter 2</a></li>
+                                    <li><a class="dropdown-item" href="?student_id=<?= $row['StudentID'] ?>&generate_pdf=1&quarter=3">Quarter 3</a></li>
+                                    <li><a class="dropdown-item" href="?student_id=<?= $row['StudentID'] ?>&generate_pdf=1&quarter=4">Quarter 4</a></li>
+                                </ul>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                <?php
+            }
+            $students_stmt->close();
+            ?>
+        </tbody>
+    </table>
+</div>
                                         <?php
                                     } else {
                                         echo "<div class='alert alert-info'>No students found in your advisory section(s)</div>";
@@ -1120,6 +1241,7 @@ if ($student_id) {
                     </div>
                 </div>
             </div>
+        </div>
         </div>
 
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

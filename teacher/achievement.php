@@ -1,6 +1,7 @@
 <?php
 session_start();
 include '../config.php'; 
+date_default_timezone_set('Asia/Manila');
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'teacher') {
     header('Location: ../login.php');
@@ -26,6 +27,22 @@ $section_id = $advisory['SectionID'];
 $section_name = $advisory['SectionName'];
 $grade_level = $advisory['GradeLevel'];
 
+// Fetch teacher information
+$teacher_sql = "SELECT fName, lName, mName FROM teacher WHERE UserID = ?";
+$teacher_stmt = $conn->prepare($teacher_sql);
+$teacher_stmt->bind_param("i", $teacher_id);
+$teacher_stmt->execute();
+$teacher_result = $teacher_stmt->get_result();
+$teacher_info = $teacher_result->fetch_assoc();
+$teacher_name = ($teacher_info) ? trim($teacher_info['fName'] . ' ' . $teacher_info['mName'] . ' ' . $teacher_info['lName']) : 'Teacher';
+
+// Fetch active school year
+$school_year_sql = "SELECT school_year FROM school_year WHERE status = 'active' LIMIT 1";
+$school_year_result = $conn->query($school_year_sql);
+$selected_school_year = ($school_year_result && $school_year_result->num_rows > 0) 
+    ? $school_year_result->fetch_assoc()['school_year'] 
+    : '2025-2026';
+
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['add_achievement'])) {
@@ -39,9 +56,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // Verify student is in teacher's advisory
         $verify_sql = "SELECT se.StudentID FROM section_enrollment se 
-                      WHERE se.StudentID = ? AND se.SectionID = ? AND se.SchoolYear = '2025-2026'";
+                      WHERE se.StudentID = ? AND se.SectionID = ? AND se.SchoolYear = ?";
         $verify_stmt = $conn->prepare($verify_sql);
-        $verify_stmt->bind_param("ii", $student_id, $section_id);
+        $verify_stmt->bind_param("iis", $student_id, $section_id, $selected_school_year);
         $verify_stmt->execute();
         $verified = $verify_stmt->get_result()->fetch_assoc();
         
@@ -69,9 +86,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Verify achievement belongs to teacher's advisory student
         $verify_sql = "SELECT a.AchievementID FROM achievements a 
                       JOIN section_enrollment se ON a.student_id = se.StudentID 
-                      WHERE a.AchievementID = ? AND se.SectionID = ? AND se.SchoolYear = '2025-2026'";
+                      WHERE a.AchievementID = ? AND se.SectionID = ? AND se.SchoolYear = ?";
         $verify_stmt = $conn->prepare($verify_sql);
-        $verify_stmt->bind_param("ii", $achievement_id, $section_id);
+        $verify_stmt->bind_param("iis", $achievement_id, $section_id, $selected_school_year);
         $verify_stmt->execute();
         $verified = $verify_stmt->get_result()->fetch_assoc();
         
@@ -102,9 +119,9 @@ if (isset($_GET['get_achievement_details'])) {
             FROM achievements a 
             JOIN student s ON a.student_id = s.StudentID 
             JOIN section_enrollment se ON s.StudentID = se.StudentID 
-            WHERE a.AchievementID = ? AND se.SectionID = ? AND se.SchoolYear = '2025-2026'";
+            WHERE a.AchievementID = ? AND se.SectionID = ? AND se.SchoolYear = ?";
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param("ii", $achievement_id, $section_id);
+    $stmt->bind_param("iis", $achievement_id, $section_id, $selected_school_year);
     $stmt->execute();
     $result = $stmt->get_result();
     
@@ -133,11 +150,11 @@ $achievements_sql = "
     FROM achievements a 
     JOIN student s ON a.student_id = s.StudentID 
     JOIN section_enrollment se ON s.StudentID = se.StudentID 
-    WHERE se.SectionID = ? AND se.SchoolYear = '2025-2026'
+    WHERE se.SectionID = ? AND se.SchoolYear = ?
     ORDER BY a.achievement_date DESC
 ";
 $achievements_stmt = $conn->prepare($achievements_sql);
-$achievements_stmt->bind_param("i", $section_id);
+$achievements_stmt->bind_param("is", $section_id, $selected_school_year);
 $achievements_stmt->execute();
 $achievements_result = $achievements_stmt->get_result();
 
@@ -145,10 +162,10 @@ $achievements_result = $achievements_stmt->get_result();
 $students_sql = "SELECT s.StudentID, s.FirstName, s.LastName, s.Middlename 
                  FROM student s 
                  JOIN section_enrollment se ON s.StudentID = se.StudentID 
-                 WHERE se.SectionID = ? AND se.SchoolYear = '2025-2026' 
+                 WHERE se.SectionID = ? AND se.SchoolYear = ? 
                  ORDER BY s.LastName, s.FirstName";
 $students_stmt = $conn->prepare($students_sql);
-$students_stmt->bind_param("i", $section_id);
+$students_stmt->bind_param("is", $section_id, $selected_school_year);
 $students_stmt->execute();
 $students_result = $students_stmt->get_result();
 ?>
@@ -211,36 +228,42 @@ $students_result = $students_stmt->get_result();
             border-radius: 10px;
             margin-bottom: 20px;
         }
+            .dashboard-header {
+            background: #2c3e50;
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+        }
     </style>
 </head>
 <body>
     <?php include '../navs/teacherNav.php'; ?>
-    
-    <div class="container mt-4">
-        <!-- Advisory Class Header -->
-        <div class="advisory-header">
-            <div class="row">
+        <div class="dashboard-header">
+        <div class="container">
+            <div class="row align-items-center">
                 <div class="col-md-8">
-                    <h2><i class="fas fa-users me-2"></i>My Advisory Class</h2>
-                    <h4>Grade <?php echo $grade_level; ?> - <?php echo $section_name; ?></h4>
-                    <p class="mb-0">Student Achievements Management</p>
+                    <h1 class="display-5 fw-bold">Welcome, <?php echo htmlspecialchars($teacher_name); ?>!</h1>
+                    
+                    <p class="lead mb-0">Student Achievements - <?php echo htmlspecialchars($section_name); ?> | <?php echo date('F j, Y'); ?></p>
                 </div>
                 <div class="col-md-4 text-end">
-                    <div class="bg-light text-dark rounded p-3 d-inline-block">
-                        <h5 class="mb-0"><?php echo $students_result->num_rows; ?> Students</h5>
-                        <small>Total in advisory</small>
+                    <div class="bg-white rounded-pill px-3 py-2 d-inline-block">
+                        <small class="text-muted">School Year: <?php echo htmlspecialchars($selected_school_year); ?></small>
                     </div>
                 </div>
             </div>
         </div>
-        
-        <!-- Statistics Cards -->
+    </div>
+    <div class="container-fluid mt-4">
         <div class="row mb-4">
             <div class="col-md-3">
                 <div class="stats-card sports">
                     <i class="fas fa-running text-success"></i>
                     <h4><?php 
-                        $sports_count = $conn->query("SELECT COUNT(*) FROM achievements a JOIN section_enrollment se ON a.student_id = se.StudentID WHERE a.achievement_type = 'Sports' AND se.SectionID = $section_id AND se.SchoolYear = '2025-2026'")->fetch_row()[0];
+                        $sports_stmt = $conn->prepare("SELECT COUNT(*) as cnt FROM achievements a JOIN section_enrollment se ON a.student_id = se.StudentID WHERE a.achievement_type = 'Sports' AND se.SectionID = ? AND se.SchoolYear = ?");
+                        $sports_stmt->bind_param("is", $section_id, $selected_school_year);
+                        $sports_stmt->execute();
+                        $sports_count = $sports_stmt->get_result()->fetch_assoc()['cnt'];
                         echo $sports_count;
                     ?></h4>
                     <p>Sports Achievements</p>
@@ -250,7 +273,10 @@ $students_result = $students_stmt->get_result();
                 <div class="stats-card journalism">
                     <i class="fas fa-newspaper text-primary"></i>
                     <h4><?php 
-                        $journalism_count = $conn->query("SELECT COUNT(*) FROM achievements a JOIN section_enrollment se ON a.student_id = se.StudentID WHERE a.achievement_type = 'Journalism' AND se.SectionID = $section_id AND se.SchoolYear = '2025-2026'")->fetch_row()[0];
+                        $journalism_stmt = $conn->prepare("SELECT COUNT(*) as cnt FROM achievements a JOIN section_enrollment se ON a.student_id = se.StudentID WHERE a.achievement_type = 'Journalism' AND se.SectionID = ? AND se.SchoolYear = ?");
+                        $journalism_stmt->bind_param("is", $section_id, $selected_school_year);
+                        $journalism_stmt->execute();
+                        $journalism_count = $journalism_stmt->get_result()->fetch_assoc()['cnt'];
                         echo $journalism_count;
                     ?></h4>
                     <p>Journalism Awards</p>
@@ -260,7 +286,10 @@ $students_result = $students_stmt->get_result();
                 <div class="stats-card academic">
                     <i class="fas fa-graduation-cap text-warning"></i>
                     <h4><?php 
-                        $academic_count = $conn->query("SELECT COUNT(*) FROM achievements a JOIN section_enrollment se ON a.student_id = se.StudentID WHERE a.achievement_type = 'Academic Contest' AND se.SectionID = $section_id AND se.SchoolYear = '2025-2026'")->fetch_row()[0];
+                        $academic_stmt = $conn->prepare("SELECT COUNT(*) as cnt FROM achievements a JOIN section_enrollment se ON a.student_id = se.StudentID WHERE a.achievement_type = 'Academic Contest' AND se.SectionID = ? AND se.SchoolYear = ?");
+                        $academic_stmt->bind_param("is", $section_id, $selected_school_year);
+                        $academic_stmt->execute();
+                        $academic_count = $academic_stmt->get_result()->fetch_assoc()['cnt'];
                         echo $academic_count;
                     ?></h4>
                     <p>Academic Contests</p>
@@ -270,7 +299,10 @@ $students_result = $students_stmt->get_result();
                 <div class="stats-card arts">
                     <i class="fas fa-palette text-info"></i>
                     <h4><?php 
-                        $arts_count = $conn->query("SELECT COUNT(*) FROM achievements a JOIN section_enrollment se ON a.student_id = se.StudentID WHERE a.achievement_type = 'Arts' AND se.SectionID = $section_id AND se.SchoolYear = '2025-2026'")->fetch_row()[0];
+                        $arts_stmt = $conn->prepare("SELECT COUNT(*) as cnt FROM achievements a JOIN section_enrollment se ON a.student_id = se.StudentID WHERE a.achievement_type = 'Arts' AND se.SectionID = ? AND se.SchoolYear = ?");
+                        $arts_stmt->bind_param("is", $section_id, $selected_school_year);
+                        $arts_stmt->execute();
+                        $arts_count = $arts_stmt->get_result()->fetch_assoc()['cnt'];
                         echo $arts_count;
                     ?></h4>
                     <p>Arts Achievements</p>

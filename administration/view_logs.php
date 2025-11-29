@@ -84,6 +84,7 @@ $filterString = implode(' • ', $filterDisplay);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>System Logs</title>
+    <link rel="icon" href="../img/logo.png" type="image/x-icon">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -247,11 +248,6 @@ $filterString = implode(' • ', $filterDisplay);
                     <i class="fas fa-list"></i> Log Entries 
                     <span class="badge bg-primary ms-2"><?php echo $filteredCount; ?> records</span>
                 </h5>
-                <div>
-                    <button onclick="window.print()" class="btn btn-sm btn-outline-primary">
-                        <i class="fas fa-print"></i> Print
-                    </button>
-                </div>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">

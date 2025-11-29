@@ -3,7 +3,7 @@
 session_start();
 require '../config.php';
 
-// Ensure admin is logged in
+// Ensure admin/headteacher is logged in
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'principal') {
     header('Location: ../login.php');
     exit;
@@ -20,8 +20,8 @@ if (!$sectionId || !$school_year) {
 
 // Fetch section details including adviser
 $sectionQuery = $conn->prepare("
-    SELECT s.SectionName, s.GradeLevel, 
-           t.fName, t.lName, t.mName, t.TeacherID
+    SELECT s.SectionID, s.SectionName, s.GradeLevel, 
+           t.fName, t.lName, t.mName, t.surfix, t.TeacherID
     FROM section s 
     LEFT JOIN teacher t ON s.AdviserID = t.TeacherID 
     WHERE s.SectionID = ?
@@ -45,25 +45,33 @@ if ($section['fName']) {
     if ($section['mName']) {
         $adviserName .= ' ' . substr($section['mName'], 0, 1) . '.';
     }
+    if ($section['surfix']) {
+        $adviserName .= ' ' . $section['surfix'];
+    }
 }
 
-// Fetch all subjects taught in this section with teacher information
+// Fetch all subjects assigned to this section for the school year with teacher information
 $subjectsQuery = "
-  SELECT 
-    sub.SubjectID,
-    sub.SubjectName,
-    sub.TeacherID,
-    t.fName as TeacherFirstName,
-    t.lName as TeacherLastName,
-    t.mName as TeacherMiddleName
-  FROM subject sub
-  LEFT JOIN teacher t ON sub.TeacherID = t.TeacherID
-  WHERE sub.secID = ?
-  ORDER BY sub.SubjectName
+    SELECT 
+        sub.SubjectID,
+        sub.SubjectName,
+        sub.written_work_percentage,
+        sub.performance_task_percentage,
+        sub.quarterly_assessment_percentage,
+        a.teacher_id,
+        t.fName as TeacherFirstName,
+        t.lName as TeacherLastName,
+        t.mName as TeacherMiddleName,
+        t.surfix as TeacherSuffix
+    FROM assigned_subject a
+    JOIN subject sub ON a.subject_id = sub.SubjectID
+    LEFT JOIN teacher t ON a.teacher_id = t.TeacherID
+    WHERE a.section_id = ? AND a.school_year = ?
+    ORDER BY sub.SubjectName
 ";
 
 $stmt = $conn->prepare($subjectsQuery);
-$stmt->bind_param('i', $sectionId);
+$stmt->bind_param('is', $sectionId, $school_year);
 $stmt->execute();
 $subjectsResult = $stmt->get_result();
 ?>
@@ -165,6 +173,11 @@ $subjectsResult = $stmt->get_result();
       white-space: nowrap;
       z-index: 1000;
     }
+    .percentage-info {
+      font-size: 0.8rem;
+      color: #6c757d;
+      margin-top: 5px;
+    }
   </style>
 </head>
 <body>
@@ -205,6 +218,9 @@ $subjectsResult = $stmt->get_result();
             if ($subject['TeacherMiddleName']) {
               $subjectTeacherName .= ' ' . substr($subject['TeacherMiddleName'], 0, 1) . '.';
             }
+            if ($subject['TeacherSuffix']) {
+              $subjectTeacherName .= ' ' . $subject['TeacherSuffix'];
+            }
           }
 
           // Check for grades in each quarter for this subject and school year
@@ -237,6 +253,16 @@ $subjectsResult = $stmt->get_result();
                   <?= htmlspecialchars($subjectTeacherName) ?>
                 </div>
 
+                <!-- Grading Components -->
+                <div class="percentage-info">
+                  <small>
+                    <strong>Grading Components:</strong><br>
+                    WW: <?= htmlspecialchars($subject['written_work_percentage']*100) ?>% | 
+                    PT: <?= htmlspecialchars($subject['performance_task_percentage']*100) ?>% | 
+                    QA: <?= htmlspecialchars($subject['quarterly_assessment_percentage']*100) ?>%
+                  </small>
+                </div>
+
                 <!-- Quarter Indicators -->
                 <div class="quarter-indicators">
                   <?php for ($quarter = 1; $quarter <= 4; $quarter++): 
@@ -254,7 +280,7 @@ $subjectsResult = $stmt->get_result();
                 </div>
                 
                 <div class="d-grid">
-                  <a href="view_grades.php?subject_id=<?= $subject['SubjectID'] ?>&section_id=<?= $sectionId ?>&teacher_id=<?= $subject['TeacherID'] ?>&school_year=<?= urlencode($school_year) ?>" 
+                  <a href="view_grades.php?subject_id=<?= $subject['SubjectID'] ?>&section_id=<?= $sectionId ?>&school_year=<?= urlencode($school_year) ?>" 
                      class="btn btn-primary">
                     <i class="fas fa-table me-1"></i> View Grade Sheet
                   </a>

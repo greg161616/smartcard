@@ -3,180 +3,146 @@ session_start();
 require __DIR__ . '/../config.php';
 date_default_timezone_set('Asia/Manila');
 
+// Get active school year
+$active_school_year = '';
+$result = mysqli_query($conn, "SELECT school_year FROM school_year WHERE status = 'active' LIMIT 1");
+if ($result && mysqli_num_rows($result) > 0) {
+    $row = mysqli_fetch_assoc($result);
+    $active_school_year = $row['school_year'];
+}
+mysqli_free_result($result);
+
 /**
- * Add a new subject.
+ * Add a new subject
  */
-function addSubjectByGrade(mysqli $conn, string $name, int $gradeLevel, int $sectionId, float $ww, float $pt, float $qa) {
-  $stmt = $conn->prepare("
-    INSERT INTO subject (SubjectName, GradeLevel, secID, written_work_percentage, performance_task_percentage, quarterly_assessment_percentage)
-    VALUES (?, ?, ?, ?, ?, ?)
-  ");
-  if (!$stmt) return false;
-  $stmt->bind_param("siiddd", $name, $gradeLevel, $sectionId, $ww, $pt, $qa);
-  $ok = $stmt->execute();
-  $stmt->close();
-  return $ok;
+function addSubject(mysqli $conn, string $name, float $ww, float $pt, float $qa) {
+    $stmt = $conn->prepare("
+        INSERT INTO subject (SubjectName, written_work_percentage, performance_task_percentage, quarterly_assessment_percentage)
+        VALUES (?, ?, ?, ?)
+    ");
+    if (!$stmt) return false;
+    $stmt->bind_param("sddd", $name, $ww, $pt, $qa);
+    $ok = $stmt->execute();
+    $stmt->close();
+    return $ok;
 }
 
 /**
- * Update an existing subject.
+ * Update an existing subject
  */
-function updateSubject(mysqli $conn, int $subjectId, string $name, int $gradeLevel, int $sectionId, float $ww, float $pt, float $qa) {
-  $stmt = $conn->prepare("
-    UPDATE subject
-    SET SubjectName = ?, GradeLevel = ?, secID = ?, written_work_percentage = ?, performance_task_percentage = ?, quarterly_assessment_percentage = ?
-    WHERE SubjectID = ?
-  ");
-  if (!$stmt) return false;
-  $stmt->bind_param("siidddi", $name, $gradeLevel, $sectionId, $ww, $pt, $qa, $subjectId);
-  $ok = $stmt->execute();
-  $stmt->close();
-  return $ok;
+function updateSubject(mysqli $conn, int $subjectId, string $name, float $ww, float $pt, float $qa) {
+    $stmt = $conn->prepare("
+        UPDATE subject
+        SET SubjectName = ?, written_work_percentage = ?, performance_task_percentage = ?, quarterly_assessment_percentage = ?
+        WHERE SubjectID = ?
+    ");
+    if (!$stmt) return false;
+    $stmt->bind_param("sdddi", $name, $ww, $pt, $qa, $subjectId);
+    $ok = $stmt->execute();
+    $stmt->close();
+    return $ok;
 }
 
 /**
- * Assign a teacher to a subject.
+ * Assign subject to teacher
  */
-function assignTeacher(mysqli $conn, int $subjectId, int $teacherId) {
-  $stmt = $conn->prepare("
-    UPDATE subject
-    SET TeacherID = ?
-    WHERE SubjectID = ?
-  ");
-  if (!$stmt) return false;
-  $stmt->bind_param("ii", $teacherId, $subjectId);
-  $ok = $stmt->execute();
-  $stmt->close();
-  return $ok;
+function assignSubjectToTeacher(mysqli $conn, int $teacherId, int $subjectId, int $sectionId, string $schoolYear) {
+    $stmt = $conn->prepare("
+        INSERT INTO assigned_subject (teacher_id, subject_id, section_id, school_year)
+        VALUES (?, ?, ?, ?)
+    ");
+    if (!$stmt) return false;
+    $stmt->bind_param("iiis", $teacherId, $subjectId, $sectionId, $schoolYear);
+    $ok = $stmt->execute();
+    $stmt->close();
+    return $ok;
 }
 
 /**
- * Add a new section.
+ * Remove subject assignment from teacher
  */
-function addSection(mysqli $conn, int $gradeLevel, string $sectionName, int $adviserId) {
-  $stmt = $conn->prepare("
-    INSERT INTO section (GradeLevel, SectionName, AdviserID)
-    VALUES (?, ?, ?)
-  ");
-  if (!$stmt) return false;
-  $stmt->bind_param("isi", $gradeLevel, $sectionName, $adviserId);
-  $ok = $stmt->execute();
-  $stmt->close();
-  return $ok;
-}
-
-/**
- * Update an existing section.
- */
-function updateSection(mysqli $conn, int $sectionId, int $gradeLevel, string $sectionName, int $adviserId) {
-  $stmt = $conn->prepare("
-    UPDATE section
-    SET GradeLevel = ?, SectionName = ?, AdviserID = ?
-    WHERE SectionID = ?
-  ");
-  if (!$stmt) return false;
-  $stmt->bind_param("isii", $gradeLevel, $sectionName, $adviserId, $sectionId);
-  $ok = $stmt->execute();
-  $stmt->close();
-  return $ok;
+function removeSubjectAssignment(mysqli $conn, int $assignmentId) {
+    $stmt = $conn->prepare("DELETE FROM assigned_subject WHERE ID = ?");
+    if (!$stmt) return false;
+    $stmt->bind_param("i", $assignmentId);
+    $ok = $stmt->execute();
+    $stmt->close();
+    return $ok;
 }
 
 // Handle all form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  // Add Subject
-  if (isset($_POST['add_subject'])) {
-    $name  = trim($_POST['subject_name'] ?? '');
-    $level = intval($_POST['grade_level'] ?? 0);
-    $sectionId = intval($_POST['section_id'] ?? 0);
-    $ww    = floatval($_POST['written_work_percentage'] ?? 0);
-    $pt    = floatval($_POST['performance_task_percentage'] ?? 0);
-    $qa    = floatval($_POST['quarterly_assessment_percentage'] ?? 0);
-    $total = $ww + $pt + $qa;
-    
-    if ($name === '' || !$level || !$sectionId) {
-      $_SESSION['error'] = "Subject name, grade level, and section are required.";
-    } elseif ($total !== 100.0) {
-      $_SESSION['error'] = "Percentages must total 100%. Current total: $total%.";
-    } elseif (!addSubjectByGrade($conn, $name, $level, $sectionId, $ww/100, $pt/100, $qa/100)) {
-      $_SESSION['error'] = "Failed to add subject.";
-    } else {
-      $_SESSION['message'] = "Subject added successfully.";
+    // Add Subject
+    if (isset($_POST['add_subject'])) {
+        $name = trim($_POST['subject_name'] ?? '');
+        $ww   = floatval($_POST['written_work_percentage'] ?? 0);
+        $pt   = floatval($_POST['performance_task_percentage'] ?? 0);
+        $qa   = floatval($_POST['quarterly_assessment_percentage'] ?? 0);
+        $total = $ww + $pt + $qa;
+        
+        if ($name === '') {
+            $_SESSION['error'] = "Subject name is required.";
+        } elseif ($total !== 100.0) {
+            $_SESSION['error'] = "Percentages must total 100%. Current total: $total%.";
+        } elseif (!addSubject($conn, $name, $ww/100, $pt/100, $qa/100)) {
+            $_SESSION['error'] = "Failed to add subject.";
+        } else {
+            $_SESSION['message'] = "Subject added successfully.";
+        }
+        header("Location: " . $_SERVER['REQUEST_URI']);
+        exit;
     }
-    header("Location: " . $_SERVER['REQUEST_URI']);
-    exit;
-  }
 
-  // Edit Subject
-  if (isset($_POST['edit_subject'])) {
-    $subjectId = intval($_POST['edit_subject_id'] ?? 0);
-    $name      = trim($_POST['edit_subject_name'] ?? '');
-    $level     = intval($_POST['edit_grade_level'] ?? 0);
-    $sectionId = intval($_POST['edit_section_id'] ?? 0);
-    $ww        = floatval($_POST['edit_written_work_percentage'] ?? 0);
-    $pt        = floatval($_POST['edit_performance_task_percentage'] ?? 0);
-    $qa        = floatval($_POST['edit_quarterly_assessment_percentage'] ?? 0);
-    $total     = $ww + $pt + $qa;
-    
-    if (!$subjectId || $name === '' || !$level || !$sectionId) {
-      $_SESSION['error'] = "All fields are required to edit.";
-    } elseif ($total !== 100.0) {
-      $_SESSION['error'] = "Percentages must total 100%. Current total: $total%.";
-    } elseif (!updateSubject($conn, $subjectId, $name, $level, $sectionId, $ww/100, $pt/100, $qa/100)) {
-      $_SESSION['error'] = "Failed to update subject.";
-    } else {
-      $_SESSION['message'] = "Subject updated successfully.";
+    // Edit Subject
+    if (isset($_POST['edit_subject'])) {
+        $subjectId = intval($_POST['edit_subject_id'] ?? 0);
+        $name      = trim($_POST['edit_subject_name'] ?? '');
+        $ww        = floatval($_POST['edit_written_work_percentage'] ?? 0);
+        $pt        = floatval($_POST['edit_performance_task_percentage'] ?? 0);
+        $qa        = floatval($_POST['edit_quarterly_assessment_percentage'] ?? 0);
+        $total     = $ww + $pt + $qa;
+        
+        if (!$subjectId || $name === '') {
+            $_SESSION['error'] = "All fields are required to edit.";
+        } elseif ($total !== 100.0) {
+            $_SESSION['error'] = "Percentages must total 100%. Current total: $total%.";
+        } elseif (!updateSubject($conn, $subjectId, $name, $ww/100, $pt/100, $qa/100)) {
+            $_SESSION['error'] = "Failed to update subject.";
+        } else {
+            $_SESSION['message'] = "Subject updated successfully.";
+        }
+        header("Location: " . $_SERVER['REQUEST_URI']);
+        exit;
     }
-    header("Location: " . $_SERVER['REQUEST_URI']);
-    exit;
-  }
 
-  // Assign/Reassign Teacher
-  if (isset($_POST['assign_teacher'])) {
-    $subjectId = intval($_POST['assign_subject_id'] ?? 0);
-    $teacherId = intval($_POST['teacher_id'] ?? 0);
-    if (!$subjectId || !$teacherId || !assignTeacher($conn, $subjectId, $teacherId)) {
-      $_SESSION['error'] = "Failed to assign teacher.";
-    } else {
-      $_SESSION['message'] = "Teacher assigned successfully.";
+    // Assign Subject to Teacher
+    if (isset($_POST['assign_subject'])) {
+        $teacherId = intval($_POST['teacher_id'] ?? 0);
+        $subjectId = intval($_POST['assign_subject_id'] ?? 0);
+        $sectionId = intval($_POST['section_id'] ?? 0);
+        
+        if (!$teacherId || !$subjectId || !$sectionId) {
+            $_SESSION['error'] = "All fields are required to assign subject.";
+        } elseif (!assignSubjectToTeacher($conn, $teacherId, $subjectId, $sectionId, $active_school_year)) {
+            $_SESSION['error'] = "Failed to assign subject to teacher.";
+        } else {
+            $_SESSION['message'] = "Subject assigned to teacher successfully.";
+        }
+        header("Location: " . $_SERVER['REQUEST_URI']);
+        exit;
     }
-    header("Location: " . $_SERVER['REQUEST_URI']);
-    exit;
-  }
 
-  // Add Section
-  if (isset($_POST['add_section'])) {
-    $gradeLevel = intval($_POST['section_grade_level'] ?? 0);
-    $sectionName = trim($_POST['section_name'] ?? '');
-    $adviserId = intval($_POST['section_adviser_id'] ?? 0);
-    
-    if (!$gradeLevel || $sectionName === '' || !$adviserId) {
-      $_SESSION['error'] = "All fields are required to add a section.";
-    } elseif (!addSection($conn, $gradeLevel, $sectionName, $adviserId)) {
-      $_SESSION['error'] = "Failed to add section.";
-    } else {
-      $_SESSION['message'] = "Section added successfully.";
+    // Remove Assignment
+    if (isset($_POST['remove_assignment'])) {
+        $assignmentId = intval($_POST['assignment_id'] ?? 0);
+        if (!$assignmentId || !removeSubjectAssignment($conn, $assignmentId)) {
+            $_SESSION['error'] = "Failed to remove assignment.";
+        } else {
+            $_SESSION['message'] = "Assignment removed successfully.";
+        }
+        header("Location: " . $_SERVER['REQUEST_URI']);
+        exit;
     }
-    header("Location: " . $_SERVER['REQUEST_URI']);
-    exit;
-  }
-
-  // Edit Section
-  if (isset($_POST['edit_section'])) {
-    $sectionId = intval($_POST['edit_section_id'] ?? 0);
-    $gradeLevel = intval($_POST['edit_section_grade_level'] ?? 0);
-    $sectionName = trim($_POST['edit_section_name'] ?? '');
-    $adviserId = intval($_POST['edit_section_adviser_id'] ?? 0);
-    
-    if (!$sectionId || !$gradeLevel || $sectionName === '' || !$adviserId) {
-      $_SESSION['error'] = "All fields are required to edit a section.";
-    } elseif (!updateSection($conn, $sectionId, $gradeLevel, $sectionName, $adviserId)) {
-      $_SESSION['error'] = "Failed to update section.";
-    } else {
-      $_SESSION['message'] = "Section updated successfully.";
-    }
-    header("Location: " . $_SERVER['REQUEST_URI']);
-    exit;
-  }
 }
 ?>
 <!DOCTYPE html>
@@ -184,14 +150,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Manage Subjects & Sections</title>
+  <title>Manage Subjects & Assignments</title>
   <link rel="icon" type="image/png" href="../img/logo.png">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <style>
+    .card {
+        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        border: 1px solid rgba(0, 0, 0, 0.125);
+    }
+    .table-responsive {
+        max-height: 500px;
+        overflow-y: auto;
+    }
+    .subject-list {
+        border-right: 2px solid #dee2e6;
+    }
+    .badge-percentage {
+        font-size: 0.75em;
+    }
+  </style>
 </head>
 <body>
   <?php include '../navs/headNav.php'; ?>
 
-  <div class="container mt-5">
+  <div class="container-fluid mt-4">
     <?php if (!empty($_SESSION['error'])): ?>
       <div class="alert alert-danger"><?= htmlspecialchars($_SESSION['error']) ?></div>
       <?php unset($_SESSION['error']); ?>
@@ -201,164 +183,167 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <?php unset($_SESSION['message']); ?>
     <?php endif; ?>
 
-    <!-- Tab Navigation -->
-    <ul class="nav nav-tabs mb-4" id="managementTabs" role="tablist">
-      <li class="nav-item" role="presentation">
-        <button class="nav-link active" id="subjects-tab" data-bs-toggle="tab" data-bs-target="#subjects" type="button" role="tab">
-          Subjects
-        </button>
-      </li>
-      <li class="nav-item" role="presentation">
-        <button class="nav-link" id="sections-tab" data-bs-toggle="tab" data-bs-target="#sections" type="button" role="tab">
-          Sections
-        </button>
-      </li>
-    </ul>
+    <!-- School Year Indicator -->
+    <?php if (!empty($active_school_year)): ?>
+    <div class="alert alert-info d-flex justify-content-between align-items-center">
+      <div>
+        <i class="fas fa-calendar-alt me-2"></i>
+        <strong>Active School Year:</strong> <?= htmlspecialchars($active_school_year) ?>
+      </div>
+    </div>
+    <?php endif; ?>
 
-    <div class="tab-content" id="managementTabsContent">
-      <!-- Subjects Tab -->
-      <div class="tab-pane fade show active" id="subjects" role="tabpanel">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-          <h2>Manage Subjects</h2>
-          <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addSubjectModal">
-            Add Subject
-          </button>
+    <div class="row">
+      <!-- Left Column: Subjects List -->
+      <div class="col-md-5 subject-list">
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Subjects</h5>
+            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addSubjectModal">
+              Add Subject
+            </button>
+          </div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="table table-bordered table-hover">
+                <thead class="table-light">
+                  <tr>
+                    <th>Subject Name</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php
+                  $subjects = $conn->query("
+                    SELECT 
+                      SubjectID,
+                      SubjectName,
+                      written_work_percentage,
+                      performance_task_percentage,
+                      quarterly_assessment_percentage
+                    FROM subject
+                    ORDER BY SubjectName
+                  ");
+                  
+                  while ($subject = $subjects->fetch_assoc()):
+                    $wwPercent = floatval($subject['written_work_percentage']) * 100;
+                    $ptPercent = floatval($subject['performance_task_percentage']) * 100;
+                    $qaPercent = floatval($subject['quarterly_assessment_percentage']) * 100;
+                  ?>
+                  <tr>
+                    <td><?= htmlspecialchars($subject['SubjectName']) ?></td>
+                    <td class="d-flex gap-1">
+                      <button 
+                        class="btn btn-info btn-sm"
+                        data-bs-toggle="modal" 
+                        data-bs-target="#viewSubjectModal"
+                        data-subject-id="<?= (int)$subject['SubjectID'] ?>"
+                        data-subject-name="<?= htmlspecialchars($subject['SubjectName']) ?>"
+                        data-written-work="<?= $wwPercent ?>"
+                        data-performance-task="<?= $ptPercent ?>"
+                        data-quarterly-assessment="<?= $qaPercent ?>"
+                      >
+                        View
+                      </button>
+
+                      <button 
+                        class="btn btn-light border-dark btn-sm"
+                        data-bs-toggle="modal" 
+                        data-bs-target="#editSubjectModal"
+                        data-subject-id="<?= (int)$subject['SubjectID'] ?>"
+                        data-subject-name="<?= htmlspecialchars($subject['SubjectName']) ?>"
+                        data-written-work="<?= $wwPercent ?>"
+                        data-performance-task="<?= $ptPercent ?>"
+                        data-quarterly-assessment="<?= $qaPercent ?>"
+                      >
+                        Edit
+                      </button>
+
+                      <button 
+                        class="btn btn-primary btn-sm"
+                        data-bs-toggle="modal" 
+                        data-bs-target="#assignSubjectModal"
+                        data-subject-id="<?= (int)$subject['SubjectID'] ?>"
+                        data-subject-name="<?= htmlspecialchars($subject['SubjectName']) ?>"
+                      >
+                        Assign
+                      </button>
+                    </td>
+                  </tr>
+                  <?php endwhile; ?>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-
-        <table class="table table-bordered table-hover">
-          <thead class="table-light">
-            <tr>
-              <th>Subject</th>
-              <th>Grade Level</th>
-              <th>Section</th>
-              <th>Written Work %</th>
-              <th>Performance Task %</th>
-              <th>Quarterly Assessment %</th>
-              <th>Teacher</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <?php
-            $rs = $conn->query("
-              SELECT 
-                s.SubjectID,
-                s.SubjectName,
-                s.GradeLevel,
-                s.secID,
-                s.written_work_percentage,
-                s.performance_task_percentage,
-                s.quarterly_assessment_percentage,
-                CONCAT(t.fName,' ',t.mName,' ',t.lName) AS TeacherName,
-                sec.SectionName
-              FROM subject s
-              LEFT JOIN teacher t ON s.TeacherID = t.TeacherID
-              LEFT JOIN section sec ON s.secID = sec.SectionID
-              ORDER BY s.GradeLevel, sec.SectionName, s.SubjectName
-            ");
-            while ($r = $rs->fetch_assoc()):
-              $wwPercent = floatval($r['written_work_percentage']) * 100;
-              $ptPercent = floatval($r['performance_task_percentage']) * 100;
-              $qaPercent = floatval($r['quarterly_assessment_percentage']) * 100;
-            ?>
-            <tr>
-              <td><?= htmlspecialchars($r['SubjectName']) ?></td>
-              <td>Grade <?= (int)$r['GradeLevel'] ?></td>
-              <td><?= htmlspecialchars($r['SectionName'] ?: '—') ?></td>
-              <td><?= $wwPercent ?>%</td>
-              <td><?= $ptPercent ?>%</td>
-              <td><?= $qaPercent ?>%</td>
-              <td><?= htmlspecialchars($r['TeacherName'] ?: '—') ?></td>
-              <td class="d-flex gap-1">
-                <button 
-                  class="btn btn-light border-dark btn-sm"
-                  data-bs-toggle="modal" 
-                  data-bs-target="#editSubjectModal"
-                  data-subject-id="<?= (int)$r['SubjectID'] ?>"
-                  data-subject-name="<?= htmlspecialchars($r['SubjectName']) ?>"
-                  data-grade-level="<?= (int)$r['GradeLevel'] ?>"
-                  data-section-id="<?= (int)$r['secID'] ?>"
-                  data-written-work="<?= $wwPercent ?>"
-                  data-performance-task="<?= $ptPercent ?>"
-                  data-quarterly-assessment="<?= $qaPercent ?>"
-                >Edit</button>
-
-                <button 
-                  class="btn btn-sm <?= empty($r['TeacherName']) ? 'btn-primary' : 'btn-secondary' ?>"
-                  data-bs-toggle="modal" 
-                  data-bs-target="#assignTeacherModal"
-                  data-subject-id="<?= (int)$r['SubjectID'] ?>"
-                >
-                  <?= empty($r['TeacherName']) ? 'Assign' : 'Reassign' ?>
-                </button>
-              </td>
-            </tr>
-            <?php endwhile; ?>
-          </tbody>
-        </table>
       </div>
 
-      <!-- Sections Tab -->
-      <div class="tab-pane fade" id="sections" role="tabpanel">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-          <h2>Manage Sections</h2>
-          <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addSectionModal">
-            Add Section
-          </button>
+      <!-- Right Column: Assigned Subjects -->
+      <div class="col-md-7">
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Assigned Subjects to Teachers</h5>
+          </div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="table table-bordered table-hover">
+                <thead class="table-light">
+                  <tr>
+                    <th>Teacher</th>
+                    <th>Subject</th>
+                    <th>Section</th>
+                    <th>School Year</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php
+                  $assignments = $conn->query("
+                    SELECT 
+                      a.ID as assignment_id,
+                      CONCAT(t.fName, ' ', t.lName) as teacher_name,
+                      s.SubjectName,
+                      sec.SectionName,
+                      a.school_year
+                    FROM assigned_subject a
+                    INNER JOIN teacher t ON a.teacher_id = t.TeacherID
+                    INNER JOIN subject s ON a.subject_id = s.SubjectID
+                    INNER JOIN section sec ON a.section_id = sec.SectionID
+                    WHERE a.school_year = '" . mysqli_real_escape_string($conn, $active_school_year) . "'
+                    ORDER BY t.lName, t.fName, s.SubjectName
+                  ");
+                  
+                  if ($assignments && $assignments->num_rows > 0):
+                    while ($assignment = $assignments->fetch_assoc()):
+                  ?>
+                  <tr>
+                    <td><?= htmlspecialchars($assignment['teacher_name']) ?></td>
+                    <td><?= htmlspecialchars($assignment['SubjectName']) ?></td>
+                    <td><?= htmlspecialchars($assignment['SectionName']) ?></td>
+                    <td><?= htmlspecialchars($assignment['school_year']) ?></td>
+                    <td>
+                      <form method="post" class="d-inline">
+                        <input type="hidden" name="assignment_id" value="<?= $assignment['assignment_id'] ?>">
+                        <button type="submit" name="remove_assignment" class="btn btn-sm btn-danger" 
+                                onclick="return confirm('Are you sure you want to remove this assignment?')">
+                          Remove
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                  <?php 
+                    endwhile;
+                  else:
+                  ?>
+                  <tr>
+                    <td colspan="5" class="text-center text-muted">No subjects assigned to teachers yet.</td>
+                  </tr>
+                  <?php endif; ?>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-
-        <table class="table table-bordered table-hover">
-          <thead class="table-light">
-            <tr>
-              <th>Section Name</th>
-              <th>Grade Level</th>
-              <th>Adviser</th>
-              <th>Student Count</th>
-              <th>Subject Count</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <?php
-            $sections_rs = $conn->query("
-              SELECT 
-                s.SectionID,
-                s.SectionName,
-                s.GradeLevel,
-                s.AdviserID,
-                CONCAT(t.fName,' ',t.mName,' ',t.lName) AS AdviserName,
-                COUNT(DISTINCT se.StudentID) as student_count,
-                COUNT(DISTINCT sub.SubjectID) as subject_count
-              FROM section s
-              LEFT JOIN teacher t ON s.AdviserID = t.TeacherID
-              LEFT JOIN section_enrollment se ON s.SectionID = se.SectionID AND se.status = 'active'
-              LEFT JOIN subject sub ON s.SectionID = sub.secID
-              GROUP BY s.SectionID, s.SectionName, s.GradeLevel, t.fName, t.mName, t.lName
-              ORDER BY s.GradeLevel, s.SectionName
-            ");
-            while ($section = $sections_rs->fetch_assoc()):
-            ?>
-            <tr>
-              <td><?= htmlspecialchars($section['SectionName']) ?></td>
-              <td>Grade <?= (int)$section['GradeLevel'] ?></td>
-              <td><?= htmlspecialchars($section['AdviserName'] ?: '—') ?></td>
-              <td class="text-center"><?= (int)$section['student_count'] ?></td>
-              <td class="text-center"><?= (int)$section['subject_count'] ?></td>
-              <td>
-                <button 
-                  class="btn btn-light border-dark btn-sm"
-                  data-bs-toggle="modal" 
-                  data-bs-target="#editSectionModal"
-                  data-section-id="<?= (int)$section['SectionID'] ?>"
-                  data-section-name="<?= htmlspecialchars($section['SectionName']) ?>"
-                  data-grade-level="<?= (int)$section['GradeLevel'] ?>"
-                  data-adviser-id="<?= (int)$section['AdviserID'] ?>"
-                >Edit</button>
-              </td>
-            </tr>
-            <?php endwhile; ?>
-          </tbody>
-        </table>
       </div>
     </div>
   </div>
@@ -375,30 +360,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <div class="mb-3">
             <label class="form-label">Subject Name</label>
             <input type="text" name="subject_name" class="form-control" required>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Grade Level</label>
-            <select name="grade_level" class="form-select" required>
-              <option value="" disabled selected>Select grade level</option>
-              <option value="7">Grade 7</option>
-              <option value="8">Grade 8</option>
-              <option value="9">Grade 9</option>
-              <option value="10">Grade 10</option>
-            </select>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Section</label>
-            <select name="section_id" class="form-select" required>
-              <option value="" disabled selected>Select section</option>
-              <?php
-              $sections = $conn->query("SELECT SectionID, SectionName, GradeLevel FROM section ORDER BY GradeLevel, SectionName");
-              while ($section = $sections->fetch_assoc()):
-              ?>
-                <option value="<?= (int)$section['SectionID'] ?>">
-                  Grade <?= (int)$section['GradeLevel'] ?> - <?= htmlspecialchars($section['SectionName']) ?>
-                </option>
-              <?php endwhile; ?>
-            </select>
           </div>
           <div class="mb-3">
             <label class="form-label">Written Work %</label>
@@ -424,6 +385,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
   </div>
 
+  <!-- View Subject Modal -->
+  <div class="modal fade" id="viewSubjectModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Subject Details</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-bold">Subject Name</label>
+            <p id="view-subject-name" class="form-control-plaintext fs-5"></p>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Written Work</label>
+            <p id="view-ww-percentage" class="form-control-plaintext fs-6"></p>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Performance Task</label>
+            <p id="view-pt-percentage" class="form-control-plaintext fs-6"></p>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Quarterly Assessment</label>
+            <p id="view-qa-percentage" class="form-control-plaintext fs-6"></p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Edit Subject Modal -->
   <div class="modal fade" id="editSubjectModal" tabindex="-1">
     <div class="modal-dialog">
@@ -437,30 +431,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <div class="mb-3">
             <label class="form-label">Subject Name</label>
             <input type="text" name="edit_subject_name" id="edit-subject-name" class="form-control" required>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Grade Level</label>
-            <select name="edit_grade_level" id="edit-grade-level" class="form-select" required>
-              <option value="" disabled>Select grade level</option>
-              <option value="7">Grade 7</option>
-              <option value="8">Grade 8</option>
-              <option value="9">Grade 9</option>
-              <option value="10">Grade 10</option>
-            </select>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Section</label>
-            <select name="edit_section_id" id="edit-section-id" class="form-select" required>
-              <option value="" disabled>Select section</option>
-              <?php
-              $sections = $conn->query("SELECT SectionID, SectionName, GradeLevel FROM section ORDER BY GradeLevel, SectionName");
-              while ($section = $sections->fetch_assoc()):
-              ?>
-                <option value="<?= (int)$section['SectionID'] ?>">
-                  Grade <?= (int)$section['GradeLevel'] ?> - <?= htmlspecialchars($section['SectionName']) ?>
-                </option>
-              <?php endwhile; ?>
-            </select>
           </div>
           <div class="mb-3">
             <label class="form-label">Written Work %</label>
@@ -486,124 +456,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
   </div>
 
-  <!-- Assign Teacher Modal -->
-  <div class="modal fade" id="assignTeacherModal" tabindex="-1">
+  <!-- Assign Subject Modal -->
+  <div class="modal fade" id="assignSubjectModal" tabindex="-1">
     <div class="modal-dialog">
       <form method="post" class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title">Assign Teacher</h5>
+          <h5 class="modal-title">Assign Subject to Teacher</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
           <input type="hidden" name="assign_subject_id" id="assign-subject-id">
           <div class="mb-3">
+            <label class="form-label">Subject</label>
+            <input type="text" id="assign-subject-name" class="form-control" readonly>
+          </div>
+          <div class="mb-3">
             <label class="form-label">Teacher</label>
             <select name="teacher_id" class="form-select" required>
               <option value="" disabled selected>Select teacher</option>
               <?php
-              $tr = $conn->query("SELECT TeacherID, fName, mName, lName FROM teacher");
-              while ($t = $tr->fetch_assoc()):
-                $name = htmlspecialchars("{$t['fName']} {$t['mName']} {$t['lName']}");
-              ?>
-                <option value="<?= (int)$t['TeacherID'] ?>"><?= $name ?></option>
-              <?php endwhile; ?>
-            </select>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" name="assign_teacher" class="btn btn-primary">Save</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- Add Section Modal -->
-  <div class="modal fade" id="addSectionModal" tabindex="-1">
-    <div class="modal-dialog">
-      <form method="post" class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title">Add Section</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <div class="mb-3">
-            <label class="form-label">Grade Level</label>
-            <select name="section_grade_level" class="form-select" required>
-              <option value="" disabled selected>Select grade level</option>
-              <option value="7">Grade 7</option>
-              <option value="8">Grade 8</option>
-              <option value="9">Grade 9</option>
-              <option value="10">Grade 10</option>
-            </select>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Section Name</label>
-            <input type="text" name="section_name" class="form-control" placeholder="e.g., Section A, STEM, ABM" required>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Adviser</label>
-            <select name="section_adviser_id" class="form-select" required>
-              <option value="" disabled selected>Select adviser</option>
-              <?php
-              $teachers_rs = $conn->query("SELECT TeacherID, fName, mName, lName FROM teacher");
-              while ($teacher = $teachers_rs->fetch_assoc()):
+              $teachers = $conn->query("SELECT TeacherID, fName, mName, lName FROM teacher ORDER BY lName, fName");
+              while ($teacher = $teachers->fetch_assoc()):
                 $name = htmlspecialchars("{$teacher['fName']} {$teacher['mName']} {$teacher['lName']}");
               ?>
                 <option value="<?= (int)$teacher['TeacherID'] ?>"><?= $name ?></option>
               <?php endwhile; ?>
             </select>
           </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" name="add_section" class="btn btn-primary">Save</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- Edit Section Modal -->
-  <div class="modal fade" id="editSectionModal" tabindex="-1">
-    <div class="modal-dialog">
-      <form method="post" class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title">Edit Section</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <input type="hidden" name="edit_section_id" id="edit-section-id">
           <div class="mb-3">
-            <label class="form-label">Grade Level</label>
-            <select name="edit_section_grade_level" id="edit-section-grade-level" class="form-select" required>
-              <option value="" disabled>Select grade level</option>
-              <option value="7">Grade 7</option>
-              <option value="8">Grade 8</option>
-              <option value="9">Grade 9</option>
-              <option value="10">Grade 10</option>
-            </select>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Section Name</label>
-            <input type="text" name="edit_section_name" id="edit-section-name" class="form-control" required>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Adviser</label>
-            <select name="edit_section_adviser_id" id="edit-section-adviser-id" class="form-select" required>
-              <option value="" disabled>Select adviser</option>
+            <label class="form-label">Section</label>
+            <select name="section_id" class="form-select" required>
+              <option value="" disabled selected>Select section</option>
               <?php
-              $teachers_rs = $conn->query("SELECT TeacherID, fName, mName, lName FROM teacher");
-              while ($teacher = $teachers_rs->fetch_assoc()):
-                $name = htmlspecialchars("{$teacher['fName']} {$teacher['mName']} {$teacher['lName']}");
+              $sections = $conn->query("SELECT SectionID, SectionName, GradeLevel FROM section ORDER BY GradeLevel, SectionName");
+              while ($section = $sections->fetch_assoc()):
               ?>
-                <option value="<?= (int)$teacher['TeacherID'] ?>"><?= $name ?></option>
+                <option value="<?= (int)$section['SectionID'] ?>">
+                  Grade <?= (int)$section['GradeLevel'] ?> - <?= htmlspecialchars($section['SectionName']) ?>
+                </option>
               <?php endwhile; ?>
             </select>
           </div>
+          <div class="mb-3">
+            <small class="text-muted">Subject will be assigned for the active school year: <strong><?= htmlspecialchars($active_school_year) ?></strong></small>
+          </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" name="edit_section" class="btn btn-primary">Update</button>
+          <button type="submit" name="assign_subject" class="btn btn-primary">Assign</button>
         </div>
       </form>
     </div>
@@ -612,61 +512,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <script>
+    // Populate View Subject modal
+    $('#viewSubjectModal').on('show.bs.modal', function(e) {
+      const btn = $(e.relatedTarget);
+      $('#view-subject-name').text(btn.data('subject-name'));
+      
+      const ww = btn.data('written-work');
+      const pt = btn.data('performance-task');
+      const qa = btn.data('quarterly-assessment');
+      
+      $('#view-ww-percentage').text(ww + '%');
+      $('#view-pt-percentage').text(pt + '%');
+      $('#view-qa-percentage').text(qa + '%');
+    });
+
     // Populate Edit Subject modal
     $('#editSubjectModal').on('show.bs.modal', function(e) {
       const btn = $(e.relatedTarget);
       $('#edit-subject-id').val(btn.data('subject-id'));
       $('#edit-subject-name').val(btn.data('subject-name'));
-      $('#edit-grade-level').val(btn.data('grade-level'));
-      $('#edit-section-id').val(btn.data('section-id'));
       $('#edit-written-work-percentage').val(btn.data('written-work'));
       $('#edit-performance-task-percentage').val(btn.data('performance-task'));
       $('#edit-quarterly-assessment-percentage').val(btn.data('quarterly-assessment'));
     });
     
-    // Populate Assign Teacher modal
-    $('#assignTeacherModal').on('show.bs.modal', function(e) {
-      $(this).find('#assign-subject-id').val($(e.relatedTarget).data('subject-id'));
-    });
-
-    // Populate Edit Section modal
-    $('#editSectionModal').on('show.bs.modal', function(e) {
+    // Populate Assign Subject modal
+    $('#assignSubjectModal').on('show.bs.modal', function(e) {
       const btn = $(e.relatedTarget);
-      $('#edit-section-id').val(btn.data('section-id'));
-      $('#edit-section-name').val(btn.data('section-name'));
-      $('#edit-section-grade-level').val(btn.data('grade-level'));
-      $('#edit-section-adviser-id').val(btn.data('adviser-id'));
+      $('#assign-subject-id').val(btn.data('subject-id'));
+      $('#assign-subject-name').val(btn.data('subject-name'));
     });
 
     // Real-time percentage total validation
-    function validatePercentageTotal() {
-      const ww = parseFloat($('#edit-written-work-percentage').val()) || 0;
-      const pt = parseFloat($('#edit-performance-task-percentage').val()) || 0;
-      const qa = parseFloat($('#edit-quarterly-assessment-percentage').val()) || 0;
+    function validatePercentageTotal(modalId) {
+      const modal = $(modalId);
+      const ww = parseFloat(modal.find('input[name*="written_work_percentage"]').val()) || 0;
+      const pt = parseFloat(modal.find('input[name*="performance_task_percentage"]').val()) || 0;
+      const qa = parseFloat(modal.find('input[name*="quarterly_assessment_percentage"]').val()) || 0;
       const total = ww + pt + qa;
       
+      modal.find('.percentage-warning').remove();
+      
       if (total !== 100) {
-        $('.percentage-warning').remove();
-        $('#editSubjectModal .modal-body').append('<div class="alert alert-warning percentage-warning mt-2">Percentages total: ' + total + '%. Must equal 100%.</div>');
-      } else {
-        $('.percentage-warning').remove();
+        modal.find('.modal-body').append('<div class="alert alert-warning percentage-warning mt-2">Percentages total: ' + total + '%. Must equal 100%.</div>');
+        return false;
       }
+      return true;
     }
 
     // Attach validation to percentage inputs
-    $('#editSubjectModal').on('input', 'input[type="number"]', validatePercentageTotal);
+    $('#editSubjectModal').on('input', 'input[type="number"]', function() {
+      validatePercentageTotal('#editSubjectModal');
+    });
+    
     $('#addSubjectModal').on('input', 'input[type="number"]', function() {
-      const ww = parseFloat($('#addSubjectModal input[name="written_work_percentage"]').val()) || 0;
-      const pt = parseFloat($('#addSubjectModal input[name="performance_task_percentage"]').val()) || 0;
-      const qa = parseFloat($('#addSubjectModal input[name="quarterly_assessment_percentage"]').val()) || 0;
-      const total = ww + pt + qa;
-      
-      if (total !== 100) {
-        $('.percentage-warning').remove();
-        $('#addSubjectModal .modal-body').append('<div class="alert alert-warning percentage-warning mt-2">Percentages total: ' + total + '%. Must equal 100%.</div>');
-      } else {
-        $('.percentage-warning').remove();
+      validatePercentageTotal('#addSubjectModal');
+    });
+
+    // Validate before form submission
+    $('form').on('submit', function() {
+      if ($(this).find('input[name*="written_work_percentage"]').length > 0) {
+        const modalId = $(this).closest('.modal').attr('id');
+        return validatePercentageTotal('#' + modalId);
       }
+      return true;
     });
   </script>
 </body>

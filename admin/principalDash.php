@@ -1,7 +1,7 @@
 <?php
 session_start();
 include '../config.php';
-
+date_default_timezone_set('Asia/Manila');
 if (!isset($_SESSION['email']) || $_SESSION['role'] !== 'principal') {
     header('Location: ../login.php');
     exit();

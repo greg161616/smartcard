@@ -247,11 +247,6 @@ $filterString = implode(' • ', $filterDisplay);
                     <i class="fas fa-list"></i> Log Entries 
                     <span class="badge bg-primary ms-2"><?php echo $filteredCount; ?> records</span>
                 </h5>
-                <div>
-                    <button onclick="window.print()" class="btn btn-sm btn-outline-primary">
-                        <i class="fas fa-print"></i> Print
-                    </button>
-                </div>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">

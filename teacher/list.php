@@ -2,7 +2,7 @@
 // Start session and include config at the top
 session_start();
 include __DIR__ . '/../config.php';
-
+date_default_timezone_set('Asia/Manila');
 // Check if teacher is logged in
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'teacher') {
     header("Location: ../login.php");
@@ -97,11 +97,16 @@ $teacher = $teacher_result->fetch_assoc();
 $teacher_name = trim($teacher['fName'] . ' ' . ($teacher['mName'] ? $teacher['mName'] . ' ' : '') . $teacher['lName']);
 $teacher_stmt->close();
 
+// Get teacher's assigned sections for the current school year
 $sectionSql = "
-    SELECT DISTINCT sec.SectionID, CONCAT(sec.GradeLevel, ' - ', sec.SectionName) as SectionDisplay 
-    FROM section sec 
-    INNER JOIN subject sub ON sec.SectionID = sub.secID
-    WHERE sub.TeacherID = ?
+    SELECT DISTINCT 
+        sec.SectionID, 
+        CONCAT(sec.GradeLevel, ' - ', sec.SectionName) as SectionDisplay,
+        sec.GradeLevel,
+        sec.SectionName
+    FROM assigned_subject a
+    INNER JOIN section sec ON a.section_id = sec.SectionID
+    WHERE a.teacher_id = ?
     ORDER BY sec.GradeLevel, sec.SectionName
 ";
 
@@ -118,41 +123,30 @@ if ($sectionResult && $sectionResult->num_rows > 0) {
 }
 $sectionStmt->close();
 
-$schoolYearSql = "
-    SELECT DISTINCT se.SchoolYear 
-    FROM section_enrollment se
-    INNER JOIN section sec ON sec.SectionID = se.SectionID
-    INNER JOIN subject sub ON sec.SectionID = sub.secID
-    WHERE sub.TeacherID = ?
-    ORDER BY se.SchoolYear DESC
-";
-
-$schoolYearStmt = $conn->prepare($schoolYearSql);
-$schoolYearStmt->bind_param("i", $teacherId);
-$schoolYearStmt->execute();
-$schoolYearResult = $schoolYearStmt->get_result();
+// Fetch all school years from school_year table for dropdown
+$schoolYearSql = "SELECT school_year FROM school_year ORDER BY school_year DESC";
+$schoolYearResult = $conn->query($schoolYearSql);
 
 $schoolYears = [];
 if ($schoolYearResult && $schoolYearResult->num_rows > 0) {
-    while ($year = $schoolYearResult->fetch_assoc()) {
-        $schoolYears[] = $year['SchoolYear'];
-    }
+  while ($year = $schoolYearResult->fetch_assoc()) {
+    $schoolYears[] = $year['school_year'];
+  }
 }
-$schoolYearStmt->close();
 
 // If no school years found, use current academic year as default
 if (empty($schoolYears)) {
-    $currentYear = date('Y');
-    $nextYear = $currentYear + 1;
-    $defaultSchoolYear = $currentYear . '-' . $nextYear;
-    $schoolYears[] = $defaultSchoolYear;
+  $currentYear = date('Y');
+  $nextYear = $currentYear + 1;
+  $defaultSchoolYear = $currentYear . '-' . $nextYear;
+  $schoolYears[] = $defaultSchoolYear;
 }
 
 // Get selected filters from form submission or set defaults
 $selectedSection = isset($_POST['section_filter']) ? $_POST['section_filter'] : (isset($sections[0]['SectionID']) ? $sections[0]['SectionID'] : '');
 $selectedSchoolYear = isset($_POST['school_year_filter']) ? $_POST['school_year_filter'] : (isset($schoolYears[0]) ? $schoolYears[0] : '');
 
-// FIXED: Build the student query with section and school year filters (without sched table)
+// Build the student query with section and school year filters using assigned_subject
 $studentSql = "
     SELECT DISTINCT
         s.StudentID,
@@ -168,9 +162,9 @@ $studentSql = "
     JOIN section_enrollment AS se ON se.StudentID = s.StudentID AND se.status = 'active'
     JOIN section AS sec ON sec.SectionID = se.SectionID
     WHERE sec.SectionID IN (
-        SELECT DISTINCT sub.secID 
-        FROM subject sub 
-        WHERE sub.TeacherID = ?
+        SELECT DISTINCT a.section_id 
+        FROM assigned_subject a 
+        WHERE a.teacher_id = ?
     )
     AND se.SchoolYear = ?
 ";
@@ -293,7 +287,7 @@ $stmt->close();
                 <div class="col-md-8">
                     <h1 class="display-5 fw-bold">Welcome, <?php echo htmlspecialchars($teacher_name); ?>!</h1>
                     
-                    <p class="lead mb-0">Teacher Dashboard - <?php echo date('F j, Y'); ?></p>
+                    <p class="lead mb-0">Student List - <?php echo date('F j, Y'); ?></p>
                 </div>
                 <div class="col-md-4 text-end">
                     <div class="bg-white rounded-pill px-3 py-2 d-inline-block">
@@ -352,7 +346,6 @@ $stmt->close();
       <div class="alert alert-warning">
         <h4>No Classes Assigned</h4>
         <p class="mb-0">You are not currently assigned as an adviser or teacher for any classes.</p>
-        <p class="mb-0"><small>Teacher ID: <?= $teacherId ?></small></p>
       </div>
     <?php else: ?>
 

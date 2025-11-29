@@ -2,6 +2,7 @@
 // File: view_grades.php
 session_start();
 require '../config.php';
+date_default_timezone_set('Asia/Manila');
 
 // 1) Ensure teacher is logged in
 if (!isset($_SESSION['user_id'])) {
@@ -26,23 +27,27 @@ $stmt->close();
 $subjectId = isset($_GET['subject_id']) ? (int)$_GET['subject_id'] : 0;
 $sectionId = isset($_GET['section_id']) ? (int)$_GET['section_id'] : 0;
 
-// 4) Validate that the teacher is assigned to this subject and section
+// 4) Get current school year
+$current_sy_query = $conn->query("SELECT school_year FROM school_year WHERE status = 'active' LIMIT 1");
+$current_sy = $current_sy_query->fetch_assoc()['school_year'] ?? date('Y') . '-' . (date('Y') + 1);
+
+// 5) Validate that the teacher is assigned to this subject and section
 $validateStmt = $conn->prepare("
     SELECT COUNT(*) as count 
-    FROM subject 
-    WHERE TeacherID = ? AND SubjectID = ? AND secID = ?
+    FROM assigned_subject 
+    WHERE teacher_id = ? AND subject_id = ? AND section_id = ? AND school_year = ?
 ");
-$validateStmt->bind_param('iii', $teacherId, $subjectId, $sectionId);
+$validateStmt->bind_param('iiis', $teacherId, $subjectId, $sectionId, $current_sy);
 $validateStmt->execute();
 $validateResult = $validateStmt->get_result()->fetch_assoc();
 $validateStmt->close();
 
 if ($validateResult['count'] == 0) {
-    echo "<div class='alert alert-danger'>You are not assigned to this class.</div>";
+    echo "<div class='alert alert-danger'>You are not assigned to this class for the current school year.</div>";
     exit;
 }
 
-// 5) Fetch section info
+// 6) Fetch section info
 $s = $conn->prepare("SELECT GradeLevel, SectionName FROM section WHERE SectionID = ?");
 $s->bind_param('i', $sectionId);
 $s->execute();
@@ -54,7 +59,7 @@ if (!$sr->num_rows) {
 $section = $sr->fetch_assoc();
 $s->close();
 
-// 6) Fetch subject name
+// 7) Fetch subject name
 $sb = $conn->prepare("SELECT SubjectName FROM subject WHERE SubjectID = ?");
 $sb->bind_param('i', $subjectId);
 $sb->execute();
@@ -62,9 +67,10 @@ $sbr = $sb->get_result();
 $subjectName = $sbr->num_rows ? $sbr->fetch_assoc()['SubjectName'] : '';
 $sb->close();
 
-// 7) Query enrolled students + their grades, separated by gender and ordered by name
+// 8) Query enrolled students + their grades, separated by gender and ordered by name
 $q = "
 SELECT 
+    st.StudentID,
     st.LRN,
     st.FirstName,
     st.MiddleName,
@@ -74,28 +80,19 @@ SELECT
     g.Q1, g.Q2, g.Q3, g.Q4, g.Final
 FROM section_enrollment se
 JOIN student st ON se.StudentID = st.StudentID
-JOIN subject sub ON se.SectionID = sub.secID
 LEFT JOIN grades g 
     ON g.student_id = st.StudentID 
    AND g.subject = ?
+   AND g.uploadedby = ?
 WHERE se.SectionID = ?
-  AND sub.SubjectID = ?
-  AND sub.TeacherID = ?
+  AND se.SchoolYear = ?
   AND se.status = 'active'
 ORDER BY st.Sex, st.LastName, st.FirstName
 ";
 $stmt = $conn->prepare($q);
-$stmt->bind_param('iiii', $subjectId, $sectionId, $subjectId, $teacherId);
+$stmt->bind_param('iiis', $subjectId, $teacherId, $sectionId, $current_sy);
 $stmt->execute();
 $res2 = $stmt->get_result();
-
-// 8) Pull the School Year from the first row if available
-$schoolYear = '';
-if ($res2->num_rows > 0) {
-    $firstRow = $res2->fetch_assoc();
-    $schoolYear = htmlspecialchars($firstRow['SchoolYear']);
-    mysqli_data_seek($res2, 0);
-}
 
 // 9) Separate students by gender
 $maleStudents = [];
@@ -123,6 +120,7 @@ while ($row = $res2->fetch_assoc()) {
       cursor: pointer;
       color: #232425ff;
       position: relative;
+      text-decoration: underline dotted;
     }
     .grade-link:hover {
       color: #0056b3;
@@ -150,6 +148,10 @@ while ($row = $res2->fetch_assoc()) {
       border-radius: 5px;
       margin-bottom: 15px;
     }
+    .no-grade {
+      color: #6c757d;
+      font-style: italic;
+    }
   </style>
 </head>
 <body>
@@ -158,33 +160,35 @@ while ($row = $res2->fetch_assoc()) {
   <div class="container mt-5">
     <div class="d-flex justify-content-between align-items-center mb-4">
       <h2>Student Grades</h2>
+      <a href="upload.php?subject_id=<?= $subjectId ?>&section_id=<?= $sectionId ?>" class="btn btn-primary">
+        <i class="fas fa-upload me-1"></i> Upload Grades
+      </a>
     </div>
 
     <div class="card mb-4">
       <div class="card-body">
-              <div class="justify-content-end d-flex">
-             <a href="grading_sheet.php" class="text-secondary"> <i class="fas fa-times" style="font-size: 28px;"></i></a>
-      </div>
+        <div class="justify-content-end d-flex">
+          <a href="grading_sheet.php" class="text-secondary"> 
+            <i class="fas fa-times" style="font-size: 28px;"></i>
+          </a>
+        </div>
         <h5 class="card-title">Class Information</h5>
         <p class="card-text">
           <strong>Subject:</strong> <?= htmlspecialchars($subjectName) ?><br>
           <strong>Section:</strong> Grade <?= htmlspecialchars($section['GradeLevel']) ?>-<?= htmlspecialchars($section['SectionName']) ?><br>
-          <?php if ($schoolYear): ?>
-            <strong>School Year:</strong> <?= $schoolYear ?>
-          <?php endif; ?>
+          <strong>School Year:</strong> <?= htmlspecialchars($current_sy) ?>
         </p>
       </div>
-
     </div>
 
     <?php if (count($maleStudents) === 0 && count($femaleStudents) === 0): ?>
-      <div class="alert alert-info">No students or grades found for this class.</div>
+      <div class="alert alert-info">No enrolled students found for this class in the current school year.</div>
     <?php else: ?>
       <!-- Male Students Section -->
       <?php if (count($maleStudents) > 0): ?>
       <div class="gender-section">
         <div class="gender-header">
-          <h4>Male</h4>
+          <h4><i class="fas fa-mars me-2"></i>Male Students (<?= count($maleStudents) ?>)</h4>
         </div>
         <div class="table-responsive">
           <table class="table table-bordered table-striped">
@@ -211,26 +215,50 @@ while ($row = $res2->fetch_assoc()) {
                   <td><?= htmlspecialchars($row['LRN']) ?></td>
                   <td><?= $fullName ?></td>
                   <td>
-                    <span class="grade-link" onclick="showGradeDetails(<?= $row['LRN'] ?>, 1)">
-                      <?= htmlspecialchars($row['Q1']) ?>
-                    </span>
+                    <?php if (!empty($row['Q1'])): ?>
+                      <span class="grade-link" onclick="showGradeDetails(<?= $row['StudentID'] ?>, 1)">
+                        <?= htmlspecialchars($row['Q1']) ?>
+                      </span>
+                    <?php else: ?>
+                      <span class="no-grade">No grade</span>
+                    <?php endif; ?>
                   </td>
                   <td>
-                    <span class="grade-link" onclick="showGradeDetails(<?= $row['LRN'] ?>, 2)">
-                      <?= htmlspecialchars($row['Q2']) ?>
-                    </span>
+                    <?php if (!empty($row['Q2'])): ?>
+                      <span class="grade-link" onclick="showGradeDetails(<?= $row['StudentID'] ?>, 2)">
+                        <?= htmlspecialchars($row['Q2']) ?>
+                      </span>
+                    <?php else: ?>
+                      <span class="no-grade">No grade</span>
+                    <?php endif; ?>
                   </td>
                   <td>
-                    <span class="grade-link" onclick="showGradeDetails(<?= $row['LRN'] ?>, 3)">
-                      <?= htmlspecialchars($row['Q3']) ?>
-                    </span>
+                    <?php if (!empty($row['Q3'])): ?>
+                      <span class="grade-link" onclick="showGradeDetails(<?= $row['StudentID'] ?>, 3)">
+                        <?= htmlspecialchars($row['Q3']) ?>
+                      </span>
+                    <?php else: ?>
+                      <span class="no-grade">No grade</span>
+                    <?php endif; ?>
                   </td>
                   <td>
-                    <span class="grade-link" onclick="showGradeDetails(<?= $row['LRN'] ?>, 4)">
-                      <?= htmlspecialchars($row['Q4']) ?>
-                    </span>
+                    <?php if (!empty($row['Q4'])): ?>
+                      <span class="grade-link" onclick="showGradeDetails(<?= $row['StudentID'] ?>, 4)">
+                        <?= htmlspecialchars($row['Q4']) ?>
+                      </span>
+                    <?php else: ?>
+                      <span class="no-grade">No grade</span>
+                    <?php endif; ?>
                   </td>
-                  <td><strong><?= htmlspecialchars($row['Final']) ?></strong></td>
+                  <td>
+                    <strong>
+                      <?php if (!empty($row['Final'])): ?>
+                        <?= htmlspecialchars($row['Final']) ?>
+                      <?php else: ?>
+                        <span class="no-grade">-</span>
+                      <?php endif; ?>
+                    </strong>
+                  </td>
                 </tr>
               <?php endforeach; ?>
             </tbody>
@@ -243,7 +271,7 @@ while ($row = $res2->fetch_assoc()) {
       <?php if (count($femaleStudents) > 0): ?>
       <div class="gender-section">
         <div class="gender-header">
-          <h4>Female</h4>
+          <h4><i class="fas fa-venus me-2"></i>Female Students (<?= count($femaleStudents) ?>)</h4>
         </div>
         <div class="table-responsive">
           <table class="table table-bordered table-striped">
@@ -270,26 +298,50 @@ while ($row = $res2->fetch_assoc()) {
                   <td><?= htmlspecialchars($row['LRN']) ?></td>
                   <td><?= $fullName ?></td>
                   <td>
-                    <span class="grade-link" onclick="showGradeDetails(<?= $row['LRN'] ?>, 1)">
-                      <?= htmlspecialchars($row['Q1']) ?>
-                    </span>
+                    <?php if (!empty($row['Q1'])): ?>
+                      <span class="grade-link" onclick="showGradeDetails(<?= $row['StudentID'] ?>, 1)">
+                        <?= htmlspecialchars($row['Q1']) ?>
+                      </span>
+                    <?php else: ?>
+                      <span class="no-grade">No grade</span>
+                    <?php endif; ?>
                   </td>
                   <td>
-                    <span class="grade-link" onclick="showGradeDetails(<?= $row['LRN'] ?>, 2)">
-                      <?= htmlspecialchars($row['Q2']) ?>
-                    </span>
+                    <?php if (!empty($row['Q2'])): ?>
+                      <span class="grade-link" onclick="showGradeDetails(<?= $row['StudentID'] ?>, 2)">
+                        <?= htmlspecialchars($row['Q2']) ?>
+                      </span>
+                    <?php else: ?>
+                      <span class="no-grade">No grade</span>
+                    <?php endif; ?>
                   </td>
                   <td>
-                    <span class="grade-link" onclick="showGradeDetails(<?= $row['LRN'] ?>, 3)">
-                      <?= htmlspecialchars($row['Q3']) ?>
-                    </span>
+                    <?php if (!empty($row['Q3'])): ?>
+                      <span class="grade-link" onclick="showGradeDetails(<?= $row['StudentID'] ?>, 3)">
+                        <?= htmlspecialchars($row['Q3']) ?>
+                      </span>
+                    <?php else: ?>
+                      <span class="no-grade">No grade</span>
+                    <?php endif; ?>
                   </td>
                   <td>
-                    <span class="grade-link" onclick="showGradeDetails(<?= $row['LRN'] ?>, 4)">
-                      <?= htmlspecialchars($row['Q4']) ?>
-                    </span>
+                    <?php if (!empty($row['Q4'])): ?>
+                      <span class="grade-link" onclick="showGradeDetails(<?= $row['StudentID'] ?>, 4)">
+                        <?= htmlspecialchars($row['Q4']) ?>
+                      </span>
+                    <?php else: ?>
+                      <span class="no-grade">No grade</span>
+                    <?php endif; ?>
                   </td>
-                  <td><strong><?= htmlspecialchars($row['Final']) ?></strong></td>
+                  <td>
+                    <strong>
+                      <?php if (!empty($row['Final'])): ?>
+                        <?= htmlspecialchars($row['Final']) ?>
+                      <?php else: ?>
+                        <span class="no-grade">-</span>
+                      <?php endif; ?>
+                    </strong>
+                  </td>
                 </tr>
               <?php endforeach; ?>
             </tbody>
@@ -320,22 +372,39 @@ while ($row = $res2->fetch_assoc()) {
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
-    function showGradeDetails(lrn, quarter) {
+    function showGradeDetails(studentId, quarter) {
       // Show loading message
-      document.getElementById('gradeDetailsContent').innerHTML = '<p>Loading grade details...</p>';
+      document.getElementById('gradeDetailsContent').innerHTML = `
+        <div class="text-center py-4">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p class="mt-2">Loading grade details...</p>
+        </div>
+      `;
       
       // Create and show modal
       const modal = new bootstrap.Modal(document.getElementById('gradeDetailsModal'));
       modal.show();
       
       // Fetch grade details via AJAX
-      fetch(`grades_details.php?lrn=${lrn}&subject_id=<?= $subjectId ?>&quarter=${quarter}&school_year=<?= urlencode($schoolYear) ?>`)
-        .then(response => response.text())
+      fetch(`grades_details.php?student_id=${studentId}&subject_id=<?= $subjectId ?>&quarter=${quarter}&school_year=<?= urlencode($current_sy) ?>&teacher_id=<?= $teacherId ?>`)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Network response was not ok');
+          }
+          return response.text();
+        })
         .then(data => {
           document.getElementById('gradeDetailsContent').innerHTML = data;
         })
         .catch(error => {
-          document.getElementById('gradeDetailsContent').innerHTML = '<p>Error loading grade details.</p>';
+          document.getElementById('gradeDetailsContent').innerHTML = `
+            <div class="alert alert-danger">
+              <i class="fas fa-exclamation-triangle me-2"></i>
+              Error loading grade details. Please try again.
+            </div>
+          `;
           console.error('Error:', error);
         });
     }

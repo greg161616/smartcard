@@ -3,6 +3,11 @@
 session_start();
 include __DIR__ . '/../config.php';
 
+// Get filter values from GET parameters
+$gradeFilter = isset($_GET['grade']) ? $_GET['grade'] : '';
+$sectionFilter = isset($_GET['section']) ? $_GET['section'] : '';
+$schoolYearFilter = isset($_GET['school_year']) ? $_GET['school_year'] : '';
+
 // Handle AJAX request for student details
 if (isset($_GET['action']) && $_GET['action'] == 'getStudentDetails' && isset($_GET['id'])) {
     $studentId = $_GET['id'];
@@ -66,6 +71,28 @@ if (isset($_GET['action']) && $_GET['action'] == 'getStudentDetails' && isset($_
     }
     exit();
 }
+
+// Handle AJAX request for sections based on grade level
+if (isset($_GET['action']) && $_GET['action'] == 'getSections' && isset($_GET['grade'])) {
+    $grade = $_GET['grade'];
+    $sections = [];
+    
+    if (!empty($grade)) {
+        $sql = "SELECT DISTINCT SectionID, SectionName FROM section WHERE GradeLevel = ? ORDER BY SectionName";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("s", $grade);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        while ($row = $result->fetch_assoc()) {
+            $sections[] = $row;
+        }
+    }
+    
+    header('Content-Type: application/json');
+    echo json_encode($sections);
+    exit();
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -100,76 +127,203 @@ if (isset($_GET['action']) && $_GET['action'] == 'getStudentDetails' && isset($_
       margin-bottom: 15px;
       color: #0d6efd;
     }
+    .filter-card {
+      border: 1px solid #dee2e6;
+      border-radius: 0.375rem;
+      box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    }
+    .filter-card .card-header {
+      background-color: #f8f9fa;
+      border-bottom: 1px solid #dee2e6;
+    }
+    .filter-form .form-group {
+      margin-bottom: 1rem;
+    }
   </style>
 </head>
 <body>
   <?php include __DIR__ . '/../navs/adminNav.php'; ?>
 
-  <div class="container mt-5">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h2 class="mb-0">Student List</h2>
-    </div>
+  <div class="container-fluid mt-5">
+    <div class="row">
+      <div class="col-12">
+        <!-- Filter Card -->
+        <div class="card filter-card mb-4">
+          <div class="card-header">
+            <h5 class="mb-0">Filter Students</h5>
+          </div>
+          <div class="card-body">
+            <form id="filterForm" method="GET" class="filter-form">
+              <div class="row">
+                <div class="col-md-3">
+                  <div class="form-group">
+                    <label for="school_year" class="form-label">School Year</label>
+                    <select class="form-select" id="school_year" name="school_year">
+                      <option value="">All School Years</option>
+                      <option value="2023-2024" <?= $schoolYearFilter == '2023-2024' ? 'selected' : '' ?>>2023-2024</option>
+                      <option value="2024-2025" <?= $schoolYearFilter == '2024-2025' ? 'selected' : '' ?>>2024-2025</option>
+                      <option value="2025-2026" <?= $schoolYearFilter == '2025-2026' ? 'selected' : '' ?>>2025-2026</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="col-md-3">
+                  <div class="form-group">
+                    <label for="grade" class="form-label">Grade Level</label>
+                    <select class="form-select" id="grade" name="grade">
+                      <option value="">All Grade Levels</option>
+                      <option value="7" <?= $gradeFilter == '7' ? 'selected' : '' ?>>Grade 7</option>
+                      <option value="8" <?= $gradeFilter == '8' ? 'selected' : '' ?>>Grade 8</option>
+                      <option value="9" <?= $gradeFilter == '9' ? 'selected' : '' ?>>Grade 9</option>
+                      <option value="10" <?= $gradeFilter == '10' ? 'selected' : '' ?>>Grade 10</option>
+                      <option value="11" <?= $gradeFilter == '11' ? 'selected' : '' ?>>Grade 11</option>
+                      <option value="12" <?= $gradeFilter == '12' ? 'selected' : '' ?>>Grade 12</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="col-md-3">
+                  <div class="form-group">
+                    <label for="section" class="form-label">Section</label>
+                    <select class="form-select" id="section" name="section" <?= empty($gradeFilter) ? 'disabled' : '' ?>>
+                      <option value="">All Sections</option>
+                      <?php
+                      // Populate sections based on selected grade level
+                      if (!empty($gradeFilter)) {
+                          $sql = "SELECT DISTINCT SectionID, SectionName FROM section WHERE GradeLevel = ? ORDER BY SectionName";
+                          $stmt = $conn->prepare($sql);
+                          $stmt->bind_param("s", $gradeFilter);
+                          $stmt->execute();
+                          $result = $stmt->get_result();
+                          
+                          while ($row = $result->fetch_assoc()) {
+                              $selected = ($sectionFilter == $row['SectionName']) ? 'selected' : '';
+                              echo "<option value=\"" . htmlspecialchars($row['SectionName']) . "\" $selected>" . htmlspecialchars($row['SectionName']) . "</option>";
+                          }
+                      }
+                      ?>
+                    </select>
+                  </div>
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                  <div class="form-group w-100">
+                    <button type="submit" class="btn btn-primary w-100">Apply Filters</button>
+                  </div>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
 
-    <?php if (!empty($_SESSION['message'])): ?>
-      <div class="alert alert-success"><?= htmlspecialchars($_SESSION['message']) ?></div>
-      <?php unset($_SESSION['message']); ?>
-    <?php endif; ?>
-    <?php if (!empty($_SESSION['error'])): ?>
-      <div class="alert alert-danger"><?= htmlspecialchars($_SESSION['error']) ?></div>
-      <?php unset($_SESSION['error']); ?>
-    <?php endif; ?>
+        <!-- Student List Card -->
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Student List</h5>
+            <a href="#" class="btn btn-success">Add Student</a>
+          </div>
+          <div class="card-body">
+            <?php if (!empty($_SESSION['message'])): ?>
+              <div class="alert alert-success"><?= htmlspecialchars($_SESSION['message']) ?></div>
+              <?php unset($_SESSION['message']); ?>
+            <?php endif; ?>
+            <?php if (!empty($_SESSION['error'])): ?>
+              <div class="alert alert-danger"><?= htmlspecialchars($_SESSION['error']) ?></div>
+              <?php unset($_SESSION['error']); ?>
+            <?php endif; ?>
 
-    <div class="table-responsive">
-      <table id="studentTable" class="table table-bordered table-hover align-middle">
-        <thead class="table-info">
-          <tr>
-            <th>LRN</th>
-            <th>Full Name</th>
-            <th>Email</th>
-            <th>Grade Level</th>
-            <th>Section</th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php
-          $sql = "
-            SELECT
-              s.StudentID,
-              s.LRN,
-              CONCAT_WS(' ', s.FirstName, s.MiddleName, s.LastName) AS FullName,
-              u.Email,
-              sec.GradeLevel,
-              sec.SectionName
-            FROM student AS s
-            JOIN `user` AS u ON u.UserID = s.userID
-            JOIN section_enrollment AS se ON se.StudentID = s.StudentID AND se.status = 'active'
-            JOIN section AS sec ON sec.SectionID = se.SectionID
-            ORDER BY s.LastName, s.FirstName
-          ";
-          $res = $conn->query($sql);
-          if ($res && $res->num_rows):
-            while ($row = $res->fetch_assoc()):
-          ?>
-            <tr class="clickable-row" data-id="<?= $row['StudentID'] ?>">
-              <td><?= htmlspecialchars($row['LRN']) ?></td>
-              <td><?= htmlspecialchars($row['FullName']) ?></td>
-              <td><?= htmlspecialchars($row['Email']) ?></td>
-              <td><?= htmlspecialchars($row['GradeLevel']) ?></td>
-              <td><?= htmlspecialchars($row['SectionName']) ?></td>
-            </tr>
-          <?php
-            endwhile;
-          else:
-          ?>
-            <tr>
-              <td colspan="7" class="text-center">No students found.</td>
-            </tr>
-          <?php endif; ?>
-        </tbody>
-      </table>
+            <div class="table-responsive">
+              <table id="studentTable" class="table table-bordered table-hover align-middle">
+                <thead class="table-info">
+                  <tr>
+                    <th>LRN</th>
+                    <th>Full Name</th>
+                    <th>Email</th>
+                    <th>Grade Level</th>
+                    <th>Section</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php
+                  // Build the query with filters
+                  $sql = "
+                    SELECT
+                      s.StudentID,
+                      s.LRN,
+                      CONCAT_WS(' ', s.FirstName, s.MiddleName, s.LastName) AS FullName,
+                      u.Email,
+                      sec.GradeLevel,
+                      sec.SectionName
+                    FROM student AS s
+                    JOIN `user` AS u ON u.UserID = s.userID
+                    JOIN section_enrollment AS se ON se.StudentID = s.StudentID AND se.status = 'active'
+                    JOIN section AS sec ON sec.SectionID = se.SectionID
+                  ";
+                  
+                  $whereConditions = [];
+                  $params = [];
+                  $types = "";
+                  
+                  // Add grade level filter if selected
+                  if (!empty($gradeFilter)) {
+                    $whereConditions[] = "sec.GradeLevel = ?";
+                    $params[] = $gradeFilter;
+                    $types .= "s";
+                  }
+                  
+                  // Add section filter if selected
+                  if (!empty($sectionFilter)) {
+                    $whereConditions[] = "sec.SectionName = ?";
+                    $params[] = $sectionFilter;
+                    $types .= "s";
+                  }
+                  
+                  // Add WHERE clause if there are conditions
+                  if (!empty($whereConditions)) {
+                    $sql .= " WHERE " . implode(" AND ", $whereConditions);
+                  }
+                  
+                  $sql .= " ORDER BY s.LastName, s.FirstName";
+                  
+                  // Prepare and execute the query
+                  $stmt = $conn->prepare($sql);
+                  
+                  if (!empty($params)) {
+                    $stmt->bind_param($types, ...$params);
+                  }
+                  
+                  $stmt->execute();
+                  $res = $stmt->get_result();
+                  
+                  if ($res && $res->num_rows):
+                    while ($row = $res->fetch_assoc()):
+                  ?>
+                    <tr class="clickable-row" data-id="<?= $row['StudentID'] ?>">
+                      <td><?= htmlspecialchars($row['LRN']) ?></td>
+                      <td><?= htmlspecialchars($row['FullName']) ?></td>
+                      <td><?= htmlspecialchars($row['Email']) ?></td>
+                      <td><?= htmlspecialchars($row['GradeLevel']) ?></td>
+                      <td><?= htmlspecialchars($row['SectionName']) ?></td>
+                      <td class="action-cell">
+                        <button class="btn btn-sm btn-outline-primary view-student" data-id="<?= $row['StudentID'] ?>">View</button>
+                        <button class="btn btn-sm btn-outline-secondary">Edit</button>
+                      </td>
+                    </tr>
+                  <?php
+                    endwhile;
+                  else:
+                  ?>
+                    <tr>
+                      <td colspan="6" class="text-center">No students found.</td>
+                    </tr>
+                  <?php endif; ?>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
-
+    
   <!-- View Student Modal -->
   <div class="modal fade" id="viewModal" tabindex="-1" aria-labelledby="viewModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
@@ -195,7 +349,12 @@ if (isset($_GET['action']) && $_GET['action'] == 'getStudentDetails' && isset($_
   <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
   <script>
     $(document).ready(function() {
-      $('#studentTable').DataTable();
+      // Initialize DataTable
+      $('#studentTable').DataTable({
+        pageLength: 10,
+        lengthMenu: [[5, 10, 25, 50, -1], [5, 10, 25, 50, "All"]]
+      });
+      
       // Function to load student details
       function viewStudent(studentId) {
         // Show loading indicator
@@ -229,9 +388,52 @@ if (isset($_GET['action']) && $_GET['action'] == 'getStudentDetails' && isset($_
         var studentId = $(this).data('id');
         viewStudent(studentId);
       });
+      
+      // View Student Details when clicking view button
+      $('.view-student').click(function(e) {
+        e.stopPropagation();
+        var studentId = $(this).data('id');
+        viewStudent(studentId);
+      });
 
-
-
+      // Dynamic section dropdown based on grade level selection
+      $('#grade').change(function() {
+        var gradeLevel = $(this).val();
+        var sectionDropdown = $('#section');
+        
+        if (gradeLevel) {
+          // Enable section dropdown
+          sectionDropdown.prop('disabled', false);
+          
+          // Clear current options
+          sectionDropdown.html('<option value="">All Sections</option>');
+          
+          // Fetch sections for selected grade level
+          $.ajax({
+            url: '<?php echo $_SERVER['PHP_SELF']; ?>',
+            type: 'GET',
+            data: { 
+              action: 'getSections',
+              grade: gradeLevel
+            },
+            success: function(response) {
+              // Add new options
+              response.forEach(function(section) {
+                sectionDropdown.append(
+                  $('<option></option>').val(section.SectionName).text(section.SectionName)
+                );
+              });
+            },
+            error: function() {
+              console.error('Error loading sections');
+            }
+          });
+        } else {
+          // Disable section dropdown if no grade level selected
+          sectionDropdown.prop('disabled', true);
+          sectionDropdown.html('<option value="">All Sections</option>');
+        }
+      });
     });
   </script>
 </body>
