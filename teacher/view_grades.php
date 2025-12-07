@@ -160,9 +160,6 @@ while ($row = $res2->fetch_assoc()) {
   <div class="container mt-5">
     <div class="d-flex justify-content-between align-items-center mb-4">
       <h2>Student Grades</h2>
-      <a href="upload.php?subject_id=<?= $subjectId ?>&section_id=<?= $sectionId ?>" class="btn btn-primary">
-        <i class="fas fa-upload me-1"></i> Upload Grades
-      </a>
     </div>
 
     <div class="card mb-4">

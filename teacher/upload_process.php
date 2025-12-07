@@ -112,6 +112,126 @@ function getTeacherName($conn, $teacher_id) {
     return 'Teacher';
 }
 
+// Improved name parsing function
+function parseStudentName($full_name) {
+    $full_name = trim(preg_replace('/\s+/', ' ', $full_name));
+    
+    // Default result
+    $result = [
+        'first_name' => '',
+        'middle_name' => '',
+        'last_name' => '',
+        'parsed_format' => $full_name
+    ];
+    
+    // Remove any suffixes (Jr., Sr., II, III, etc.)
+    $suffixes = [' JR', ' SR', ' II', ' III', ' IV', ' V', ' JR.', ' SR.', ' I', ' II.', ' III.', ' IV.'];
+    $full_name = str_ireplace($suffixes, '', $full_name);
+    
+    // Format 1: "Lastname, Firstname Middlename"
+    if (str_contains($full_name, ',')) {
+        $parts = explode(',', $full_name, 2);
+        $result['last_name'] = trim($parts[0]);
+        $first_middle = trim($parts[1] ?? '');
+        
+        // Split first and middle names
+        $first_middle_parts = explode(' ', $first_middle);
+        $result['first_name'] = trim($first_middle_parts[0] ?? '');
+        
+        // Handle middle name/initial
+        if (count($first_middle_parts) > 1) {
+            $middle = trim(implode(' ', array_slice($first_middle_parts, 1)));
+            // If middle is just an initial, keep it as is
+            if (strlen($middle) === 1 || (strlen($middle) === 2 && substr($middle, -1) === '.')) {
+                $result['middle_name'] = rtrim($middle, '.');
+            } else {
+                $result['middle_name'] = $middle;
+            }
+        }
+    } 
+    // Format 2: "Firstname Middlename Lastname"
+    else {
+        $parts = explode(' ', $full_name);
+        
+        // At least 2 parts needed
+        if (count($parts) >= 2) {
+            $result['first_name'] = trim(array_shift($parts));
+            $result['last_name'] = trim(array_pop($parts));
+            
+            // Anything left is middle name
+            if (!empty($parts)) {
+                $result['middle_name'] = trim(implode(' ', $parts));
+            }
+        } 
+        // Fallback: just first and last name (2 parts)
+        elseif (count($parts) === 2) {
+            $result['first_name'] = trim($parts[0]);
+            $result['last_name'] = trim($parts[1]);
+        }
+    }
+    
+    return $result;
+}
+
+// Helper function to match student with database using first and last name only
+function findStudentInDatabase($conn, $first_name, $last_name, $middle_name = '') {
+    // Strategy 1: Exact match with first and last name (case-insensitive)
+    $stmt = $conn->prepare("SELECT StudentID, FirstName, LastName, Middlename 
+                           FROM student 
+                           WHERE LOWER(TRIM(LastName)) = LOWER(TRIM(?)) 
+                           AND LOWER(TRIM(FirstName)) = LOWER(TRIM(?))");
+    $stmt->bind_param("ss", $last_name, $first_name);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    if ($result->num_rows > 0) {
+        $student = $result->fetch_assoc();
+        $stmt->close();
+        return $student;
+    }
+    $stmt->close();
+    
+    // Strategy 2: Try without any middle name parts (if first name has space)
+    $first_name_parts = explode(' ', $first_name);
+    if (count($first_name_parts) > 1) {
+        // First part is first name, rest might be middle
+        $base_first_name = trim($first_name_parts[0]);
+        
+        $stmt = $conn->prepare("SELECT StudentID, FirstName, LastName, Middlename 
+                               FROM student 
+                               WHERE LOWER(TRIM(LastName)) = LOWER(TRIM(?)) 
+                               AND LOWER(TRIM(FirstName)) = LOWER(TRIM(?))");
+        $stmt->bind_param("ss", $last_name, $base_first_name);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        if ($result->num_rows > 0) {
+            $student = $result->fetch_assoc();
+            $stmt->close();
+            return $student;
+        }
+        $stmt->close();
+    }
+    
+    // Strategy 3: Fuzzy match - check if names contain each other
+    $stmt = $conn->prepare("SELECT StudentID, FirstName, LastName, Middlename 
+                           FROM student 
+                           WHERE LOWER(TRIM(LastName)) LIKE LOWER(CONCAT('%', TRIM(?), '%'))
+                           AND LOWER(TRIM(FirstName)) LIKE LOWER(CONCAT('%', TRIM(?), '%'))");
+    $stmt->bind_param("ss", $last_name, $first_name);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    if ($result->num_rows > 0) {
+        $student = $result->fetch_assoc();
+        $stmt->close();
+        return $student;
+    }
+    $stmt->close();
+    
+    return null;
+}
+
 // Enable error reporting for debugging
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
@@ -276,7 +396,8 @@ $response = [
     'message_type' => 'info',
     'students_not_found' => [],
     'students_not_enrolled' => [],
-    'students_processed' => 0
+    'students_processed' => 0,
+    'incomplete_grades' => []  // New field to track students with incomplete grades
 ];
 
 try {
@@ -323,14 +444,19 @@ try {
     }
     
     // Get subject ID - FIXED: Check assigned_subject table instead of teacherID in subject table
-    $subject_stmt = $conn->prepare("SELECT s.SubjectID 
-                                   FROM subject s 
-                                   INNER JOIN assigned_subject a ON s.SubjectID = a.subject_id 
-                                   WHERE s.SubjectName = ? AND a.teacher_id = ?");
-    $subject_stmt->bind_param("si", $subject_name, $teacher_id);
-    $subject_stmt->execute();
-    $subject_result = $subject_stmt->get_result();
-    $subject = $subject_result->fetch_assoc();
+$subject_stmt = $conn->prepare("SELECT s.SubjectID 
+                               FROM subject s 
+                               INNER JOIN assigned_subject a ON s.SubjectID = a.subject_id 
+                               WHERE (s.SubjectName = ? OR s.SubjectName LIKE ?) 
+                               AND a.teacher_id = ? 
+                               AND a.school_year = ?");
+$subject_name_clean = trim($subject_name);
+$subject_name_like = "%" . $subject_name_clean . "%";
+$subject_stmt->bind_param("ssis", $subject_name_clean, $subject_name_like, $teacher_id, $school_year);
+$subject_stmt->execute();
+$subject_result = $subject_stmt->get_result();
+$subject = $subject_result->fetch_assoc();
+
     
     if (!$subject) {
         throw new Exception("Subject '$subject_name' not found or not assigned to the logged-in teacher.");
@@ -419,7 +545,7 @@ if ($excelSection !== null && $section_info && $section_info['SectionName'] !== 
     $dbSectionRaw = $section_info['SectionName'];
     $dbSecClean = preg_replace('/grade\s*\d+/i', '', $dbSectionRaw);
     $dbSecClean = preg_replace('/^\s*\d+[-\s]*/', '', $dbSecClean);
-    $dbSecClean = preg_replace('/[^a-zA-Z0-9\s\-]/', ' ', $dbSecClean);
+    $dbSecClean = preg_replace('/[^a-zA-Z0-9\s\-]/', ' ', $dbSectionRaw);
     $dbSecClean = strtolower(trim(preg_replace('/\s+/', ' ', $dbSecClean)));
     $dbSecClean = trim($dbSecClean, " -");
 
@@ -439,13 +565,15 @@ if ($excelSection !== null && $section_info && $section_info['SectionName'] !== 
         log_system_action($conn, 'Grade Upload Started', $teacher_id, [
             'uploaded_by' => $teacher_display,
             'message' => $startMessage,
-            'file_name' => $file['name']
+            'file_name' => $file['name'],
+            'subject_id' => $subject_id,
+            'teacher_id' => $teacher_id
         ], 'info');
     } catch (Exception $logEx) {
         error_log('Logging failed (start): ' . $logEx->getMessage());
     }
     
-    // Extract highest possible scores (row 10)
+    // Extract highest possible scores (row 10) with improved error handling
     $highest_scores = [
         'ww1' => $quarter_sheet->getCell('F10')->getValue(),
         'ww2' => $quarter_sheet->getCell('G10')->getValue(),
@@ -478,6 +606,33 @@ if ($excelSection !== null && $section_info && $section_info['SectionName'] !== 
         'qa_ws' => $quarter_sheet->getCell('AH10')->getValue()
     ];
     
+    // Normalize HPS values: handle errors, empty values, and convert to appropriate types
+    foreach ($highest_scores as $key => &$hpsValue) {
+        if (in_array($key, [
+            'ww1', 'ww2', 'ww3', 'ww4', 'ww5', 'ww6', 'ww7', 'ww8', 'ww9', 'ww10',
+            'pt1', 'pt2', 'pt3', 'pt4', 'pt5', 'pt6', 'pt7', 'pt8', 'pt9', 'pt10',
+            'qa1', 'ww_total', 'pt_total'
+        ])) {
+            // Check for Excel errors or empty values
+            if ($hpsValue === null || $hpsValue === '' || 
+                (is_string($hpsValue) && (
+                    str_starts_with($hpsValue, '#') || 
+                    str_starts_with($hpsValue, '=') ||
+                    strtoupper($hpsValue) === 'N/A' ||
+                    strtoupper($hpsValue) === '#N/A' ||
+                    strtoupper($hpsValue) === '#DIV/0!' ||
+                    strtoupper($hpsValue) === '#VALUE!' ||
+                    strtoupper($hpsValue) === '#REF!'
+                ))) {
+                $hpsValue = 0;  // Empty HPS is allowed - means the teacher didn't use this assessment item
+            } elseif (is_string($hpsValue) && is_numeric(trim($hpsValue))) {
+                $hpsValue = (float) trim($hpsValue);
+            } elseif (is_numeric($hpsValue)) {
+                $hpsValue = (float) $hpsValue;
+            }
+        }
+    }
+    
     // Prepare the student queries
     $student_stmt = $conn->prepare("SELECT StudentID FROM student 
         WHERE LOWER(TRIM(LastName)) = LOWER(?) AND LOWER(TRIM(FirstName)) = LOWER(?)");
@@ -492,6 +647,45 @@ if ($excelSection !== null && $section_info && $section_info['SectionName'] !== 
     $students_to_process = [];
     $students_not_found = [];
     $students_not_enrolled = [];
+    $students_incomplete_grades = []; // Track students with incomplete grades
+    
+    // Define score fields and calculated fields
+    $score_fields = [
+        'ww1', 'ww2', 'ww3', 'ww4', 'ww5', 'ww6', 'ww7', 'ww8', 'ww9', 'ww10',
+        'pt1', 'pt2', 'pt3', 'pt4', 'pt5', 'pt6', 'pt7', 'pt8', 'pt9', 'pt10',
+        'qa1'
+    ];
+    
+    $calculated_fields = [
+        'ww_total', 'ww_ps', 'ww_ws', 'pt_total', 'pt_ps', 'pt_ws', 
+        'qa_ps', 'qa_ws', 'initial_grade', 'quarterly_grade'
+    ];
+    
+    // Helper function to check if a value is an Excel error
+    function isExcelError($value) {
+        if (!is_string($value)) return false;
+        $upper = strtoupper($value);
+        return str_starts_with($upper, '#') || 
+               $upper === 'N/A' || 
+               $upper === '#N/A' || 
+               $upper === '#DIV/0!' || 
+               $upper === '#VALUE!' || 
+               $upper === '#REF!';
+    }
+    
+    // Helper function to safely get cell value
+    function getCellValueSafely($cell) {
+        try {
+            $value = $cell->getCalculatedValue();
+            // Handle Excel errors
+            if (is_string($value) && isExcelError($value)) {
+                return null;
+            }
+            return $value;
+        } catch (Exception $e) {
+            return null;
+        }
+    }
     
     // Process student data (male students rows 12-61, female students rows 63-112)
     for ($row = 12; $row <= 112; $row++) {
@@ -500,46 +694,30 @@ if ($excelSection !== null && $section_info && $section_info['SectionName'] !== 
         $student_name = trim($quarter_sheet->getCell('B' . $row)->getCalculatedValue());
         if (empty($student_name)) continue;
         
-        // Parse student name
-        $last_name = '';
-        $first_name = '';
-        
-        if (str_contains($student_name, ',')) {
-            $name_parts = array_map('trim', explode(',', $student_name, 2));
-            $last_name = $name_parts[0];
-            $first_name = $name_parts[1];
-            
-            if (str_contains($first_name, ' ')) {
-                $first_name_parts = explode(' ', $first_name);
-                $first_name = $first_name_parts[0];
-            }
-        } else {
-            $name_parts = explode(' ', $student_name);
-            $first_name = array_shift($name_parts);
-            $last_name = implode(' ', $name_parts);
-        }
-        
-        $last_name = preg_replace('/\s+/', ' ', trim($last_name));
-        $first_name = preg_replace('/\s+/', ' ', trim($first_name));
-        
-        if (empty($last_name) || empty($first_name)) {
+        // Parse the name using the new function
+        $parsed_name = parseStudentName($student_name);
+
+        if (empty($parsed_name['first_name']) || empty($parsed_name['last_name'])) {
             $students_not_found[] = $student_name . " (Invalid name format)";
             continue;
         }
-        
-        // Find student in database
-        $student_id = null;
-        $student_stmt->bind_param("ss", $last_name, $first_name);
-        $student_stmt->execute();
-        $student_result = $student_stmt->get_result();
-        
-        if ($student_result->num_rows > 0) {
-            $student = $student_result->fetch_assoc();
-            $student_id = $student['StudentID'];
-        } else {
-            $students_not_found[] = "$student_name (Parsed as: $first_name $last_name)";
+
+        // Try to find the student in database
+        $student = findStudentInDatabase($conn, 
+            $parsed_name['first_name'], 
+            $parsed_name['last_name'], 
+            $parsed_name['middle_name'] ?? ''
+        );
+
+        if (!$student) {
+            $students_not_found[] = "$student_name (Parsed as: " . 
+                                    trim($parsed_name['first_name'] . ' ' . 
+                                         ($parsed_name['middle_name'] ? $parsed_name['middle_name'] . ' ' : '') . 
+                                         $parsed_name['last_name']) . ")";
             continue;
         }
+
+        $student_id = $student['StudentID'];
         
         // Check if student is enrolled in this subject's section for the current school year
         $enrollment_stmt->bind_param("isi", $student_id, $school_year, $subject_id);
@@ -551,7 +729,7 @@ if ($excelSection !== null && $section_info && $section_info['SectionName'] !== 
             continue;
         }
         
-        // Extract student scores with validation
+        // Extract student scores with improved validation
         $student_scores = [];
         $score_cells = [
             'ww1' => 'F', 'ww2' => 'G', 'ww3' => 'H', 'ww4' => 'I', 'ww5' => 'J',
@@ -564,23 +742,78 @@ if ($excelSection !== null && $section_info && $section_info['SectionName'] !== 
             'initial_grade' => 'AI', 'quarterly_grade' => 'AJ'
         ];
         
+        $student_errors = []; // Track validation errors for this student
+        
         foreach ($score_cells as $key => $cell) {
-            $value = $quarter_sheet->getCell($cell . $row)->getCalculatedValue();
+            $value = getCellValueSafely($quarter_sheet->getCell($cell . $row));
             
-            if (($value === null || $value === '') && !in_array($key, ['ww_total', 'pt_total'])) {
-                throw new Exception("Please try again. A column in your Excel sheet cannot be null or have no score. Please make sure to fill all the student scores before uploading.");
-            }
-            
-            if (in_array($key, ['ww_total', 'ww_ps', 'ww_ws', 'pt_total', 'pt_ps', 'pt_ws', 'qa_ps', 'qa_ws', 'initial_grade', 'quarterly_grade'])) {
-                $student_scores[$key] = is_numeric($value) ? $value : 0;
+            // Check if it's a score field (ww1-ww10, pt1-pt10, qa1)
+            if (in_array($key, $score_fields)) {
+                $hps_for_key = $highest_scores[$key] ?? 0;
+                
+                // If HPS is set (non-zero), student must have a valid score
+                if ($hps_for_key > 0) {
+                    if ($value === null || $value === '' || isExcelError($value)) {
+                        $student_errors[] = "Missing score for $key (HPS: $hps_for_key)";
+                        $student_scores[$key] = 0; // Set to 0 for now, will be rejected later
+                    } elseif (!is_numeric($value)) {
+                        $student_errors[] = "Non-numeric score for $key: $value";
+                        $student_scores[$key] = 0;
+                    } else {
+                        $student_scores[$key] = (float) $value;
+                    }
+                } else {
+                    // No HPS or HPS is 0, student can have empty score
+                    if ($value === null || $value === '' || isExcelError($value) || !is_numeric($value)) {
+                        $student_scores[$key] = 0;
+                    } else {
+                        $student_scores[$key] = (float) $value;
+                    }
+                }
+            } 
+            // Check if it's a calculated field
+            elseif (in_array($key, $calculated_fields)) {
+                // For calculated fields (totals, percentages, weights), allow empty/errors
+                if ($value === null || $value === '' || isExcelError($value) || !is_numeric($value)) {
+                    $student_scores[$key] = 0;
+                } else {
+                    $student_scores[$key] = (float) $value;
+                }
             } else {
-                $student_scores[$key] = $value;
+                // For other fields, set to 0
+                $student_scores[$key] = 0;
+            }
+        }
+        
+        // Check if student has any validation errors
+        if (!empty($student_errors)) {
+            $error_message = "$student_name - " . implode(", ", $student_errors);
+            $students_incomplete_grades[] = $error_message;
+            continue; // Skip this student
+        }
+        
+        // Additional validation: Check if quarterly_grade is valid (if HPS for any component exists)
+        $hasAnyHPS = false;
+        foreach ($score_fields as $field) {
+            if (($highest_scores[$field] ?? 0) > 0) {
+                $hasAnyHPS = true;
+                break;
+            }
+        }
+        
+        // If there's any HPS, quarterly_grade should be valid
+        if ($hasAnyHPS) {
+            $quarterly_grade = $student_scores['quarterly_grade'] ?? 0;
+            if ($quarterly_grade === 0 || !is_numeric($quarterly_grade)) {
+                $students_incomplete_grades[] = "$student_name - Missing or invalid quarterly grade";
+                continue;
             }
         }
         
         $students_to_process[] = [
             'student_id' => $student_id,
-            'scores' => $student_scores
+            'scores' => $student_scores,
+            'name' => $student_name
         ];
     }
     
@@ -648,30 +881,65 @@ if ($excelSection !== null && $section_info && $section_info['SectionName'] !== 
         }
     }
 
-    // If there are any missing students or students not enrolled, don't insert any data
-    if (!empty($students_not_found) || !empty($students_not_enrolled) || !empty($missing_in_excel) || !empty($missing_in_db)) {
+    // If there are validation issues, don't insert any data
+    $hasValidationIssues = !empty($students_not_found) || 
+                          !empty($students_not_enrolled) || 
+                          !empty($missing_in_excel) || 
+                          !empty($missing_in_db) ||
+                          !empty($students_incomplete_grades);
+    
+    if ($hasValidationIssues) {
         $response['students_not_found'] = $students_not_found;
         $response['students_not_enrolled'] = $students_not_enrolled;
+        $response['incomplete_grades'] = $students_incomplete_grades;
         
         $messageParts = [];
         if (!empty($students_not_found)) {
-            $messageParts[] = count($students_not_found) . " students not found";
+            $messageParts[] = count($students_not_found) . " students not found in database";
         }
         if (!empty($students_not_enrolled)) {
             $messageParts[] = count($students_not_enrolled) . " students not enrolled in this subject";
         }
+        if (!empty($students_incomplete_grades)) {
+            $messageParts[] = count($students_incomplete_grades) . " students have incomplete grades";
+        }
         if (!empty($missing_in_excel)) {
-            $messageParts[] = count($missing_in_excel) . " students present in list but missing from Excel";
+            $messageParts[] = count($missing_in_excel) . " students missing from Excel (present in class list)";
         }
         if (!empty($missing_in_db)) {
-            $messageParts[] = count($missing_in_db) . " students present in Excel but not enrolled in list";
+            $messageParts[] = count($missing_in_db) . " students in Excel not enrolled in class";
         }
 
         $detailed = [];
         if (!empty($missing_in_excel_names)) $detailed['missing_in_excel'] = $missing_in_excel_names;
         if (!empty($missing_in_db_names)) $detailed['missing_in_db'] = $missing_in_db_names;
+        if (!empty($students_incomplete_grades)) $detailed['incomplete_grades_details'] = array_slice($students_incomplete_grades, 0, 5);
 
-        $message = "Upload failed due to the following issues: " . implode('; ', $messageParts) . '.';
+        $message = "Upload failed. Please fix the following issues: " . implode('; ', $messageParts) . '.';
+        
+        if (!empty($students_incomplete_grades)) {
+            $message .= " Students with incomplete grades need scores for all assessment items that have Highest Possible Scores (HPS).";
+        }
+
+        // Log the failed upload with student IDs and subject ID
+        try {
+            $teacher_display = getTeacherDisplayName($conn, $teacher_id);
+            $failedMessage = "Grade upload failed for {$subject_name} — Q{$quarter} ({$school_year}).";
+            log_system_action($conn, 'Grade Upload Failed', $teacher_id, [
+                'uploaded_by' => $teacher_display,
+                'message' => $failedMessage,
+                'file_name' => $file['name'],
+                'subject_id' => $subject_id,
+                'teacher_id' => $teacher_id,
+                'students_not_found' => $students_not_found,
+                'students_not_enrolled' => $students_not_enrolled,
+                'students_incomplete_grades' => count($students_incomplete_grades),
+                'missing_in_excel' => $missing_in_excel_names,
+                'missing_in_db' => $missing_in_db_names
+            ], 'error');
+        } catch (Exception $logEx) {
+            error_log('Logging failed (validation): ' . $logEx->getMessage());
+        }
 
         echo json_encode(array_merge([
             'message' => $message,
@@ -749,6 +1017,7 @@ if ($excelSection !== null && $section_info && $section_info['SectionName'] !== 
     foreach ($students_to_process as $student_data) {
         $student_id = $student_data['student_id'];
         $student_scores = $student_data['scores'];
+        $student_name = $student_data['name'];
         
         $types = 'iiiis';
         $types .= str_repeat('d', 13); // ww scores
@@ -769,7 +1038,7 @@ if ($excelSection !== null && $section_info && $section_info['SectionName'] !== 
 
         if (!$insert_grades_details->bind_param($types, ...$params) || !$insert_grades_details->execute()) {
             if (strpos($insert_grades_details->error, 'cannot be null') !== false) {
-                throw new Exception("Please try again. A column in your Excel sheet cannot be null or have no score. Please make sure to fill all the student scores before uploading.");
+                throw new Exception("Database error: Cannot insert null values. Please make sure all required student scores are filled in the Excel sheet.");
             }
             error_log("Error inserting grades for student $student_id: " . $insert_grades_details->error);
         } else {
@@ -817,30 +1086,18 @@ if ($excelSection !== null && $section_info && $section_info['SectionName'] !== 
                 }
 
                 // Parse the name
-                if (str_contains($fullName, ',')) {
-                    [$lastNamePart, $firstMiddle] = array_map('trim', explode(',', $fullName, 2));
-                    $firstNamePart = explode(' ', $firstMiddle)[0];
-                } else {
-                    $partsName = explode(' ', $fullName);
-                    $firstNamePart = array_shift($partsName);
-                    $lastNamePart = array_pop($partsName) ?: '';
-                }
+                $parsed_name = parseStudentName($fullName);
+                $firstNamePart = $parsed_name['first_name'];
+                $lastNamePart = $parsed_name['last_name'];
 
-                // Find student in database
-                $studentStmt = $conn->prepare(
-                    "SELECT StudentID FROM student WHERE LOWER(TRIM(LastName)) = LOWER(TRIM(?)) AND LOWER(TRIM(FirstName)) = LOWER(TRIM(?))"
-                );
-                $studentStmt->bind_param('ss', $lastNamePart, $firstNamePart);
-                $studentStmt->execute();
-                $studentRes = $studentStmt->get_result();
-                if ($studentRes->num_rows > 0) {
-                    $sidRow = $studentRes->fetch_assoc()['StudentID'];
-                } else {
+                // Find student in database using the same function
+                $student = findStudentInDatabase($conn, $firstNamePart, $lastNamePart, $parsed_name['middle_name'] ?? '');
+                if (!$student) {
                     $summary_errors[] = "Student not found in summary: $fullName (Section $currentSection)";
-                    $studentStmt->close();
                     continue;
                 }
-                $studentStmt->close();
+                
+                $sidRow = $student['StudentID'];
 
                 // Check enrollment for summary grades
                 $enrollment_stmt_summary = $conn->prepare("SELECT se.StudentID 
@@ -953,7 +1210,7 @@ if ($excelSection !== null && $section_info && $section_info['SectionName'] !== 
                 
                 if (!$gradeStmt->execute()) {
                     if (strpos($gradeStmt->error, 'cannot be null') !== false) {
-                        throw new Exception("Please try again. A column in your Excel sheet cannot be null or have no score. Please make sure to fill all the student scores before uploading.");
+                        throw new Exception("Database error: Cannot insert null values from summary sheet. Please complete all grades in the Excel file.");
                     }
                     $summary_errors[] = "Database error updating grades for $fullName: " . $gradeStmt->error;
                 }
@@ -964,7 +1221,7 @@ if ($excelSection !== null && $section_info && $section_info['SectionName'] !== 
         }
     } catch (Exception $summaryException) {
         if (strpos($summaryException->getMessage(), 'cannot be null') !== false) {
-            throw new Exception("Please try again. A column in your Excel sheet cannot be null or have no score. Please make sure to fill all the student scores before uploading.");
+            throw new Exception("Database error: Cannot insert null values from summary sheet. Please complete all grades in the Excel file.");
         }
         $summary_errors[] = $summaryException->getMessage();
     }   
@@ -977,15 +1234,19 @@ if ($excelSection !== null && $section_info && $section_info['SectionName'] !== 
     $response['message'] = "Grades successfully uploaded! Processed {$response['students_processed']} students for {$subject_name} - Q{$quarter} ({$school_year}).";
     $response['message_type'] = 'success';
     
-    // Log successful upload
+    // Log successful upload with student IDs and subject ID
     try {
         $teacher_display = getTeacherDisplayName($conn, $teacher_id);
         $successMessage = "Successfully uploaded {$response['students_processed']} grades for {$subject_name} — Q{$quarter} ({$school_year}).";
+        $student_ids = array_column($students_to_process, 'student_id');
         log_system_action($conn, 'Grade Upload Completed', $teacher_id, [
             'uploaded_by' => $teacher_display,
             'message' => $successMessage,
             'file_name' => $file['name'],
-            'students_processed' => $response['students_processed']
+            'subject_id' => $subject_id,
+            'teacher_id' => $teacher_id,
+            'students_processed' => $response['students_processed'],
+            'student_ids' => $student_ids
         ], 'success');
     } catch (Exception $logEx) {
         error_log('Logging failed (success): ' . $logEx->getMessage());
@@ -993,13 +1254,13 @@ if ($excelSection !== null && $section_info && $section_info['SectionName'] !== 
 
 } catch (Exception $e) {
     if (strpos($e->getMessage(), 'cannot be null') !== false) {
-        $response['message'] = "Please try again. A column in your Excel sheet cannot be null or have no score. Please make sure to fill all the student scores before uploading.";
+        $response['message'] = "Database error: Cannot insert null values. Please complete all student scores in the Excel file before uploading.";
     } else {
         $response['message'] = "Error processing file: " . $e->getMessage();
     }
     $response['message_type'] = 'danger';
     
-    // Log failure
+    // Log failure with available IDs
     try {
         $tid = $teacher_id ?? null;
         $teacher_display = getTeacherDisplayName($conn, $tid);
@@ -1011,6 +1272,8 @@ if ($excelSection !== null && $section_info && $section_info['SectionName'] !== 
             'uploaded_by' => $teacher_display,
             'message' => $friendly,
             'file_name' => isset($file['name']) ? $file['name'] : null,
+            'subject_id' => isset($subject_id) ? $subject_id : null,
+            'teacher_id' => $tid,
             'technical' => $e->getMessage()
         ], 'error');
     } catch (Exception $logEx) {

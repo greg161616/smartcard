@@ -1,3 +1,26 @@
+<?php
+
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'head') {
+    header('Location: ../login.php');
+    exit;
+}
+
+
+// Get admin's profile picture
+$user_id = $_SESSION['user_id'];
+$profilePicturePath = '../img/default.jpg'; // Default fallback
+
+// Fetch profile picture from database
+$picStmt = $conn->prepare("SELECT path FROM profile_picture WHERE user_id = ? ORDER BY uploaded_at DESC LIMIT 1");
+$picStmt->bind_param("i", $user_id);
+$picStmt->execute();
+$picResult = $picStmt->get_result();
+if ($picResult->num_rows > 0) {
+    $profilePicture = $picResult->fetch_assoc();
+    $profilePicturePath = $profilePicture['path'];
+}
+$picStmt->close();
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -24,7 +47,7 @@
     top: 0;
     left: 0;
     right: 0;
-    z-index: 1000; /* Reduced from 1001 to 1000 */
+    z-index: 1000;
 }
 .profile-circle {
     width: 60px;
@@ -33,6 +56,10 @@
     object-fit: cover;
     display: block;
     cursor: pointer;
+    transition: transform 0.2s ease;
+}
+.profile-circle:hover {
+    transform: scale(1.05);
 }
 .dropdown-item:hover {
     background: rgb(232, 234, 235);
@@ -45,7 +72,7 @@
     position: fixed;
     left: 0;
     top: 0;
-    z-index: 1001; /* Increased from 1000 to 1001 */
+    z-index: 1001;
     display: flex;
     flex-direction: column;
     transition: transform 0.3s ease;
@@ -81,7 +108,7 @@ body {
     background:rgb(236, 240, 243);
     margin-left: var(--sidebar-width) !important;
     transition: margin-left 0.3s ease;
-    padding-top: 70px; /* Add padding to account for fixed header */
+    padding-top: 70px;
 }
 a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active {
     background: #e0f7fa !important;
@@ -89,13 +116,15 @@ a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active 
     border-radius: 8px;
 }
 
-/* Profile dropdown styles */
+/* Profile dropdown styles - FIXED VERSION */
 .profile-dropdown {
     position: relative;
     display: inline-block;
+    height: 100%;
+    display: flex;
+    align-items: center;
 }
 .profile-dropdown-content {
-    display: none;
     position: absolute;
     background-color: white;
     min-width: 160px;
@@ -103,7 +132,12 @@ a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active 
     z-index: 1100;
     border-radius: 8px;
     right: 0;
-    top: 70px;
+    top: 100%;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+    pointer-events: none;
+    padding: 5px 0;
 }
 .profile-dropdown-content a {
     color: black;
@@ -120,15 +154,30 @@ a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active 
 .profile-dropdown-content hr {
     margin: 5px 0;
 }
-.profile-dropdown.active .profile-dropdown-content {
-    display: block;
+
+/* Hover functionality for desktop */
+@media (min-width: 769px) {
+    .profile-dropdown:hover .profile-dropdown-content {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+    }
+}
+
+/* Click functionality for mobile */
+@media (max-width: 768px) {
+    .profile-dropdown.active .profile-dropdown-content {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+    }
 }
 
 /* Scrollable sidebar styles */
 .sidebar-content {
     flex: 1;
     overflow-y: auto;
-    padding-bottom: 60px; /* Space for the fixed logout button */
+    padding-bottom: 60px;
 }
 
 .sidebar-footer {
@@ -201,14 +250,14 @@ a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active 
     
     body {
         margin-left: 0 !important;
-        padding-top: 70px; /* Maintain padding for fixed header */
+        padding-top: 70px;
     }
     
     .admin-sidebar {
         transform: translateX(-100%);
-        top: 70px; /* Add 70px margin-top for mobile */
-        height: calc(100vh - 70px); /* Adjust height to account for header */
-        z-index: 1002; /* Higher z-index for mobile */
+        top: 70px;
+        height: calc(100vh - 70px);
+        z-index: 1002;
     }
     
     .admin-sidebar.mobile-open {
@@ -221,7 +270,7 @@ a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active 
     
     .sidebar-overlay.active {
         display: block;
-        z-index: 998; /* Lower than sidebar but higher than other content */
+        z-index: 998;
     }
     
     .sidebar-footer {
@@ -233,16 +282,16 @@ a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active 
     .header {
         padding-left: 15px;
         padding-right: 15px;
-        position: fixed; /* Ensure header stays fixed */
+        position: fixed;
         top: 0;
         left: 0;
         right: 0;
-        z-index: 1001; /* Higher than overlay but lower than sidebar */
+        z-index: 1001;
     }
     
     .profile-dropdown-content {
         right: 10px;
-        top: 65px;
+        top: 100%;
     }
 }
   </style>
@@ -255,7 +304,7 @@ a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active 
   </button>
   <div class="ms-auto">
     <div class="profile-dropdown" id="profileDropdown">
-      <img src="../img/default.jpg" alt="Profile Picture" class="profile-circle border border-secondary">
+      <img src="<?php echo htmlspecialchars($profilePicturePath); ?>" alt="Profile Picture" class="profile-circle border border-secondary">
       <div class="profile-dropdown-content">
         <a href="profile.php"><i class="bi bi-person" style="margin-right: 8px;"></i> Profile</a>
         <hr>
@@ -319,7 +368,7 @@ a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active 
 </div>
 
 <script>
-  document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', function () {
     const links = document.querySelectorAll('.admin-sidebar .nav-link');
     const currentUrl = window.location.pathname.replace(/\\/g, '/');
     let masterListActive = false;
@@ -391,15 +440,18 @@ a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active 
     // Profile dropdown functionality
     const profileDropdown = document.getElementById('profileDropdown');
     
-    profileDropdown.addEventListener('click', function(e) {
-      e.stopPropagation();
-      this.classList.toggle('active');
-    });
-    
-    // Close dropdown when clicking outside
-    document.addEventListener('click', function() {
-      profileDropdown.classList.remove('active');
-    });
+    // Only add click functionality for mobile devices
+    if (window.innerWidth <= 768) {
+        profileDropdown.addEventListener('click', function(e) {
+            e.stopPropagation();
+            this.classList.toggle('active');
+        });
+        
+        // Close dropdown when clicking outside (for mobile)
+        document.addEventListener('click', function() {
+            profileDropdown.classList.remove('active');
+        });
+    }
     
     // Close sidebar when clicking on a link (for mobile)
     if (window.innerWidth <= 768) {
@@ -421,7 +473,7 @@ a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active 
         sidebarOverlay.classList.remove('active');
       }
     });
-  });
+});
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

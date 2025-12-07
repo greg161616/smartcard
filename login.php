@@ -394,7 +394,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
             <button type="submit" class="btn btn-custom w-100 py-2 fw-bold btn-login">Login</button>
             <div class="mt-3 text-center">
-              <a href="#" class="text-decoration-none text-primary">Forgot password?</a>
+              <a href="forgot_password.php" class="text-decoration-none text-primary">Forgot password?</a>
             </div>
           </form>
         </div>

@@ -1,6 +1,7 @@
 <?php
 session_start();
 include '../config.php';
+require_once __DIR__ . '/../api/log_helper.php'; // Add logging helper
 
 // Set content type to JSON
 header('Content-Type: application/json');
@@ -8,6 +9,51 @@ header('Content-Type: application/json');
 // Enable error reporting for debugging
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
+
+// Function to get teacher display name for logging
+function getTeacherDisplayName($conn, $teacher_id) {
+    if (empty($teacher_id)) return 'Unknown Teacher';
+    try {
+        $q = $conn->prepare("SELECT COALESCE(fName, '') AS fname, COALESCE(lName, '') AS lname FROM teacher WHERE TeacherID = ? LIMIT 1");
+        if ($q) {
+            $q->bind_param('i', $teacher_id);
+            $q->execute();
+            $r = $q->get_result();
+            if ($r && $r->num_rows > 0) {
+                $row = $r->fetch_assoc();
+                $q->close();
+                $name = trim($row['fname'] . ' ' . $row['lname']);
+                if ($name !== '') return $name . " (ID: $teacher_id)";
+            }
+            $q->close();
+        }
+    } catch (Exception $ex) {
+        // ignore and fall back
+    }
+    return "Teacher #$teacher_id";
+}
+
+// Function to get subject name for logging
+function getSubjectName($conn, $subject_id) {
+    if (empty($subject_id)) return 'Unknown Subject';
+    try {
+        $q = $conn->prepare("SELECT SubjectName FROM subject WHERE SubjectID = ? LIMIT 1");
+        if ($q) {
+            $q->bind_param('i', $subject_id);
+            $q->execute();
+            $r = $q->get_result();
+            if ($r && $r->num_rows > 0) {
+                $row = $r->fetch_assoc();
+                $q->close();
+                return $row['SubjectName'];
+            }
+            $q->close();
+        }
+    } catch (Exception $ex) {
+        // ignore and fall back
+    }
+    return "Subject #$subject_id";
+}
 
 // Check if it's a POST request
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -51,9 +97,23 @@ if (!$teacherID || !$subjectID || !$schoolYear || !$quarter) {
 // Initialize response
 $response = ['success' => false, 'message' => ''];
 
+// Get teacher and subject names for logging
+$teacher_name = getTeacherDisplayName($conn, $teacherID);
+$subject_name = getSubjectName($conn, $subjectID);
+
 try {
     // Start transaction
     $conn->begin_transaction();
+
+    // Log the start of grade saving
+    log_system_action($conn, 'Grade Save Started', $teacherID, [
+        'teacher' => $teacher_name,
+        'subject' => $subject_name,
+        'quarter' => $quarter,
+        'school_year' => $schoolYear,
+        'students_count' => count($grades),
+        'message' => "Starting to save grades for {$subject_name} - Quarter {$quarter}"
+    ], 'info');
 
     // Validate teacherID exists to avoid foreign key errors when inserting summary grades
     $checkTeacher = $conn->prepare("SELECT TeacherID FROM teacher WHERE TeacherID = ?");
@@ -186,6 +246,10 @@ try {
     }
     
     // 2. Save or update student grades (with initial_grade and quarterly_grade)
+    $students_processed = 0;
+    $students_updated = 0;
+    $students_inserted = 0;
+    
     foreach ($grades as $grade) {
         $studentID = $grade['studentID'];
         
@@ -255,6 +319,7 @@ if (!$updateGradeStmt) {
                 throw new Exception("Update failed: " . $updateGradeStmt->error);
             }
             $updateGradeStmt->close();
+            $students_updated++;
         } else {
             // Insert new grade
             $insertGradeSql = "
@@ -311,7 +376,10 @@ if (!$updateGradeStmt) {
                 throw new Exception("Insert failed: " . $insertGradeStmt->error);
             }
             $insertGradeStmt->close();
+            $students_inserted++;
         }
+        
+        $students_processed++;
         
         // 3. Update summary grades table
         $quarterColumn = 'Q' . $quarter;
@@ -378,12 +446,34 @@ if (!$updateGradeStmt) {
     $response['success'] = true;
     $response['message'] = 'Grades saved successfully';
     
+    // Log successful save
+    log_system_action($conn, 'Grade Save Completed', $teacherID, [
+        'teacher' => $teacher_name,
+        'subject' => $subject_name,
+        'quarter' => $quarter,
+        'school_year' => $schoolYear,
+        'students_processed' => $students_processed,
+        'students_updated' => $students_updated,
+        'students_inserted' => $students_inserted,
+        'message' => "Successfully saved grades for {$subject_name} - Quarter {$quarter} ({$students_processed} students)"
+    ], 'success');
+    
 } catch (Exception $e) {
     // Rollback transaction on error
     $conn->rollback();
     
     $response['success'] = false;
     $response['message'] = 'Error: ' . $e->getMessage();
+    
+    // Log error
+    log_system_action($conn, 'Grade Save Error', $teacherID, [
+        'teacher' => $teacher_name,
+        'subject' => $subject_name,
+        'quarter' => $quarter,
+        'school_year' => $schoolYear,
+        'error_message' => $e->getMessage(),
+        'message' => "Failed to save grades for {$subject_name} - Quarter {$quarter}"
+    ], 'error');
     
     error_log("Save grades error: " . $e->getMessage());
 }

@@ -18,6 +18,18 @@ $stmt->execute();
 $result = $stmt->get_result();
 $principal_data = $result->fetch_assoc();
 
+// Get profile picture
+$profilePicturePath = '../img/default.jpg';
+$picStmt = $conn->prepare("SELECT path FROM profile_picture WHERE user_id = ? ORDER BY uploaded_at DESC LIMIT 1");
+$picStmt->bind_param("i", $user_id);
+$picStmt->execute();
+$picResult = $picStmt->get_result();
+if ($picResult->num_rows > 0) {
+    $profilePicture = $picResult->fetch_assoc();
+    $profilePicturePath = $profilePicture['path'];
+}
+$picStmt->close();
+
 // Handle profile update
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['update_profile'])) {
@@ -31,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = "Please enter a valid email address!";
         } else {
             // Check if email already exists for other users
-            $check_stmt = $conn->prepare("SELECT UserID FROM users WHERE email = ? AND UserID != ?");
+            $check_stmt = $conn->prepare("SELECT UserID FROM user WHERE email = ? AND UserID != ?");
             $check_stmt->bind_param("si", $email, $user_id);
             $check_stmt->execute();
             $check_result = $check_stmt->get_result();
@@ -40,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = "Email already exists! Please use a different email.";
             } else {
                 // Update users table (email)
-                $update_user_stmt = $conn->prepare("UPDATE users SET Email = ? WHERE UserID = ?");
+                $update_user_stmt = $conn->prepare("UPDATE user SET Email = ? WHERE UserID = ?");
                 $update_user_stmt->bind_param("si", $email, $user_id);
                 $update_user_stmt->execute();
                 
@@ -48,6 +60,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $update_admin_stmt = $conn->prepare("UPDATE admin SET FullName = ? WHERE UserID = ?");
                 $update_admin_stmt->bind_param("si", $full_name, $user_id);
                 $update_admin_stmt->execute();
+                
+                // Handle profile picture upload
+                if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === 0) {
+                    $allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+                    $maxFileSize = 5 * 1024 * 1024; // 5MB
+                    
+                    $fileType = $_FILES['profile_picture']['type'];
+                    $fileSize = $_FILES['profile_picture']['size'];
+                    
+                    if (in_array($fileType, $allowedTypes) && $fileSize <= $maxFileSize) {
+                        // Create upload directory if it doesn't exist
+                        $uploadDir = '../uploads/profile_pictures/';
+                        if (!is_dir($uploadDir)) {
+                            mkdir($uploadDir, 0777, true);
+                        }
+                        
+                        // Generate unique filename
+                        $fileExtension = pathinfo($_FILES['profile_picture']['name'], PATHINFO_EXTENSION);
+                        $fileName = 'principal_' . $user_id . '_' . time() . '.' . $fileExtension;
+                        $filePath = $uploadDir . $fileName;
+                        
+                        if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $filePath)) {
+                            // Check if profile picture exists
+                            $check_pic_stmt = $conn->prepare("SELECT profile_id FROM profile_picture WHERE user_id = ?");
+                            $check_pic_stmt->bind_param("i", $user_id);
+                            $check_pic_stmt->execute();
+                            $pic_result = $check_pic_stmt->get_result();
+                            
+                            if ($pic_result->num_rows > 0) {
+                                // Update existing
+                                $update_pic_stmt = $conn->prepare("UPDATE profile_picture SET path = ?, uploaded_at = NOW() WHERE user_id = ?");
+                                $update_pic_stmt->bind_param("si", $filePath, $user_id);
+                                $update_pic_stmt->execute();
+                                $update_pic_stmt->close();
+                            } else {
+                                // Insert new
+                                $insert_pic_stmt = $conn->prepare("INSERT INTO profile_picture (user_id, email, path, uploaded_at) VALUES (?, ?, ?, NOW())");
+                                $insert_pic_stmt->bind_param("iss", $user_id, $email, $filePath);
+                                $insert_pic_stmt->execute();
+                                $insert_pic_stmt->close();
+                            }
+                            $check_pic_stmt->close();
+                            $profilePicturePath = $filePath;
+                        }
+                    }
+                }
                 
                 // Log the action
                 $log_action = "PROFILE_UPDATE";
@@ -81,7 +139,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = "New password must be at least 6 characters long!";
         } else {
             // Get current user's password from database
-            $stmt = $conn->prepare("SELECT Password FROM users WHERE UserID = ?");
+            $stmt = $conn->prepare("SELECT Password FROM user WHERE UserID = ?");
             $stmt->bind_param("i", $user_id);
             $stmt->execute();
             $result = $stmt->get_result();
@@ -90,7 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($user && password_verify($current_password, $user['Password'])) {
                 // Update password
                 $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
-                $update_stmt = $conn->prepare("UPDATE users SET Password = ? WHERE UserID = ?");
+                $update_stmt = $conn->prepare("UPDATE user SET Password = ? WHERE UserID = ?");
                 $update_stmt->bind_param("si", $hashed_password, $user_id);
                 
                 if ($update_stmt->execute()) {
@@ -110,6 +168,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+    
+    // Handle profile picture removal
+    if (isset($_POST['remove_profile_picture'])) {
+        $deleteStmt = $conn->prepare("DELETE FROM profile_picture WHERE user_id = ?");
+        $deleteStmt->bind_param("i", $user_id);
+        
+        if ($deleteStmt->execute()) {
+            // Delete the physical file
+            if ($profilePicturePath && file_exists($profilePicturePath) && $profilePicturePath !== '../img/default.jpg') {
+                unlink($profilePicturePath);
+            }
+            $profilePicturePath = '../img/default.jpg';
+            $success = "Profile picture removed successfully!";
+        } else {
+            $error = "Error removing profile picture: " . $conn->error;
+        }
+        $deleteStmt->close();
+    }
 }
 ?>
 
@@ -123,10 +199,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
-        .profile-container {
-            max-width: 800px;
-            margin: 0 auto;
-        }
+
         .nav-pills .nav-link.active {
             background-color: #667eea;
         }
@@ -144,13 +217,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             text-align: center;
             margin-bottom: 0;
         }
+        .profile-avatar {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 5px solid white;
+            margin: 0 auto 20px;
+            display: block;
+        }
+        .profile-picture-actions {
+            text-align: center;
+            margin-bottom: 20px;
+        }
     </style>
 </head>
 <body>
     <?php include '../navs/headNav.php'; ?>
     
-    <div class="container mt-4">
-        <div class="profile-container"></div>
+    <div class="container-fluid mt-4">
+        <div class="profile-container">
             <?php if ($error): ?>
                 <div class="alert alert-danger alert-dismissible fade show m-3" role="alert">
                     <i class="bi bi-exclamation-triangle"></i> <?php echo $error; ?>
@@ -181,7 +267,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="tab-content" id="pills-tabContent">
                 <!-- Profile Tab -->
                 <div class="tab-pane fade show active" id="pills-profile" role="tabpanel">
-                    <form method="POST" action="">
+                    <!-- Profile Picture Section -->
+                    <div class="text-center mb-4">
+                        <?php if ($profilePicturePath): ?>
+                            <img src="<?php echo htmlspecialchars($profilePicturePath); ?>" alt="Profile Picture" class="profile-avatar">
+                        <?php else: ?>
+                            <div class="profile-avatar bg-secondary d-flex align-items-center justify-content-center text-white">
+                                <i class="bi bi-person" style="font-size: 3rem;"></i>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <div class="profile-picture-actions">
+                            <?php if ($profilePicturePath && $profilePicturePath !== '../img/default.jpg'): ?>
+                                <form method="POST" action="" class="d-inline">
+                                    <input type="hidden" name="remove_profile_picture" value="1">
+                                    <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#removePictureModal">
+                                        <i class="bi bi-trash"></i> Remove
+                                    </button>
+                                </form>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <form method="POST" action="" enctype="multipart/form-data">
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-bold">Full Name</label>
@@ -200,6 +308,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-bold">Position</label>
                                 <input type="text" class="form-control" value="<?php echo htmlspecialchars($principal_data['Position'] ?? 'Principal'); ?>" readonly>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-bold">Profile Picture</label>
+                                <input type="file" class="form-control" name="profile_picture" 
+                                       accept="image/jpeg,image/jpg,image/png,image/gif">
+                                <div class="form-text">Optional: JPEG, JPG, PNG, GIF. Max 5MB</div>
                             </div>
                         </div>
                         <div class="d-flex justify-content-between align-items-center">
@@ -245,6 +359,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
+    <!-- Remove Picture Confirmation Modal -->
+    <div class="modal fade" id="removePictureModal" tabindex="-1" aria-labelledby="removePictureModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="removePictureModalLabel">Remove Profile Picture</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    Are you sure you want to remove your profile picture?
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <form method="POST" action="" style="display: inline;">
+                        <input type="hidden" name="remove_profile_picture" value="1">
+                        <button type="submit" class="btn btn-danger">Yes, Remove Picture</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         // Real-time password validation
@@ -253,9 +389,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const confirmPassword = document.querySelector('input[name="confirm_password"]');
             
             function validatePasswords() {
-                if (newPassword.value !== confirmPassword.value) {
+                if (newPassword && confirmPassword && newPassword.value !== confirmPassword.value) {
                     confirmPassword.setCustomValidity('Passwords do not match');
-                } else {
+                } else if (confirmPassword) {
                     confirmPassword.setCustomValidity('');
                 }
             }
@@ -263,6 +399,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (newPassword && confirmPassword) {
                 newPassword.addEventListener('input', validatePasswords);
                 confirmPassword.addEventListener('input', validatePasswords);
+            }
+            
+            // File size validation
+            const profilePictureInput = document.querySelector('input[name="profile_picture"]');
+            if (profilePictureInput) {
+                profilePictureInput.addEventListener('change', function() {
+                    const file = this.files[0];
+                    if (file) {
+                        const maxSize = 5 * 1024 * 1024; // 5MB
+                        if (file.size > maxSize) {
+                            alert('File size exceeds 5MB. Please choose a smaller file.');
+                            this.value = '';
+                        }
+                    }
+                });
             }
             
             // Auto-dismiss alerts after 5 seconds

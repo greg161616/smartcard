@@ -1,3 +1,42 @@
+<?php
+
+// Get teacher profile picture if logged in
+$profilePicturePath = '../img/default.jpg'; // Default image
+
+if (isset($_SESSION['email']) && $_SESSION['role'] === 'teacher') {
+    $teacherEmail = $_SESSION['email'];
+    
+    // Get UserID first
+    $stmt = $conn->prepare("
+        SELECT u.UserID 
+        FROM user u 
+        JOIN teacher t ON u.UserID = t.UserID 
+        WHERE u.Email = ?
+    ");
+    $stmt->bind_param("s", $teacherEmail);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    if ($result->num_rows > 0) {
+        $user = $result->fetch_assoc();
+        $userID = $user['UserID'];
+        
+        // Get profile picture
+        $picStmt = $conn->prepare("SELECT path FROM profile_picture WHERE user_id = ? ORDER BY uploaded_at DESC LIMIT 1");
+        $picStmt->bind_param("i", $userID);
+        $picStmt->execute();
+        $picResult = $picStmt->get_result();
+        
+        if ($picResult->num_rows > 0) {
+            $profilePicture = $picResult->fetch_assoc();
+            $profilePicturePath = $profilePicture['path'];
+        }
+        
+        $picStmt->close();
+    }
+    $stmt->close();
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -30,6 +69,47 @@
     object-fit: cover;
     display: block;
     cursor: pointer;
+    position: relative;
+    transition: transform 0.2s ease;
+}
+
+.profile-circle:hover {
+    transform: scale(1.05);
+}
+
+.profile-tooltip {
+    visibility: hidden;
+    width: 180px;
+    background-color: #007b8a;
+    color: white;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px;
+    position: absolute;
+    z-index: 1102;
+    bottom: -45px;
+    right: 0;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.profile-tooltip::after {
+    content: "";
+    position: absolute;
+    top: -5px;
+    right: 10px;
+    border-width: 0 5px 5px 5px;
+    border-style: solid;
+    border-color: transparent transparent #007b8a transparent;
+}
+
+.profile-dropdown:hover .profile-tooltip {
+    visibility: visible;
+    opacity: 1;
 }
 .dropdown-item:hover {
     background: rgb(232, 234, 235);
@@ -92,13 +172,15 @@ a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active 
     width: 70px;
 }
 
-/* Profile dropdown styles */
+/* Profile dropdown styles - FIXED */
 .profile-dropdown {
     position: relative;
     display: inline-block;
+    height: 100%;
+    display: flex;
+    align-items: center;
 }
 .profile-dropdown-content {
-    display: none;
     position: absolute;
     background-color: white;
     min-width: 160px;
@@ -106,7 +188,11 @@ a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active 
     z-index: 1100;
     border-radius: 8px;
     right: 0;
-    top: 70px;
+    top: 100%; /* Changed from 70px to 100% */
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+    pointer-events: none;
 }
 .profile-dropdown-content a {
     color: black;
@@ -123,8 +209,21 @@ a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active 
 .profile-dropdown-content hr {
     margin: 5px 0;
 }
-.profile-dropdown.active .profile-dropdown-content {
-    display: block;
+.profile-dropdown:hover .profile-dropdown-content {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+/* Bridge element to prevent gap between profile and dropdown */
+.profile-dropdown::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 100%;
+    height: 10px; /* Creates a bridge between profile and dropdown */
+    background: transparent;
 }
 
 /* Sidebar layout */
@@ -259,7 +358,7 @@ html, body {
     
     .profile-dropdown-content {
         right: 10px;
-        top: 65px;
+        top: 100%;
     }
     
     /* Adjust the main content to account for fixed header */
@@ -277,7 +376,7 @@ html, body {
   </button>
   <div class="ms-auto">
     <div class="profile-dropdown" id="profileDropdown">
-      <img src="../img/default.jpg" alt="Profile Picture" class="profile-circle border border-secondary">
+      <img src="<?php echo htmlspecialchars($profilePicturePath); ?>" alt="Profile Picture" class="profile-circle border border-secondary">
       <div class="profile-dropdown-content">
         <a href="profile.php"><i class="bi bi-person" style="margin-right: 8px;"></i> Profile</a>
         <hr>
@@ -358,17 +457,15 @@ document.addEventListener('DOMContentLoaded', function () {
     sidebarToggle.addEventListener('click', toggleSidebar);
     sidebarOverlay.addEventListener('click', toggleSidebar);
     
-    // Profile dropdown functionality
+    // Profile dropdown functionality - hover behavior
     const profileDropdown = document.getElementById('profileDropdown');
-    
-    profileDropdown.addEventListener('click', function(e) {
-      e.stopPropagation();
-      this.classList.toggle('active');
+
+    profileDropdown.addEventListener('mouseenter', function() {
+      this.classList.add('active');
     });
     
-    // Close dropdown when clicking outside
-    document.addEventListener('click', function() {
-      profileDropdown.classList.remove('active');
+    profileDropdown.addEventListener('mouseleave', function() {
+      this.classList.remove('active');
     });
     
     // Close sidebar when clicking on a link (for mobile)

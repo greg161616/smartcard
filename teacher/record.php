@@ -1387,10 +1387,10 @@ function tableExists($conn, $table) {
 
                         <!-- Progress Report Card Title -->
                         <h4 class="text-center mt-0 mb-0" style="font-size: 12pt;"><strong>PROGRESS REPORT CARD</strong></h4>
-                        <h4 class="text-center mb-3" style="font-size: 11pt;">School Year <?php echo $current_year; ?></h4>
+                        <h4 class="text-center mb-4" style="font-size: 11pt;">School Year <?php echo $current_year; ?></h4>
 
                         <!-- Student Information -->
-                        <div class="student-info" style="font-size: 11pt;">
+                        <div class="student-info" style="font-size: 11pt; margin-top:30px">
                             <div class="student-info-row">
                                 <div class="student-info-label">Name:</div>
                                 <div class="student-info-value" style="flex: 0 0 72%;">
@@ -1480,12 +1480,12 @@ function tableExists($conn, $table) {
             <div class="report-card page-break">
                 <div class="row" style="margin-top: 0.15in;margin-bottom: 0.1in;margin-left: 0.15in;margin-right: 0.15in;">
                     <div class="col-md-6">
-                        <h5 style="font-size: 11pt;">GRADE 7 - 10</h5>
-                        <h6 class="mt-4 mb-1" style="font-size: 11pt;"><strong>REPORT ON LEARNING PROGRESS AND ACHIEVEMENT</strong></h6>
+                        <h5 style="font-size: 11pt; margin-top: 4px;">GRADE 7 - 10</h5>
+                        <h6 class="mt-4 mb-2" style="font-size: 11pt;"><strong>REPORT ON LEARNING PROGRESS AND ACHIEVEMENT</strong></h6>
 <table class="table table-bordered subject-table compact-table" style="font-size: 9pt; vertical-align: middle;">
     <thead>
         <tr>
-            <th style="width:24%;" rowspan="2" >Learning Areas</th>
+            <th style="width:28%;" rowspan="2" >Learning Areas</th>
             <th colspan="4" style="text-align:center;">Quarter</th>
             <th style="width:13%;">Final Grade</th>
             <th style="width:15%;">Remarks</th>
@@ -1552,9 +1552,9 @@ function tableExists($conn, $table) {
             // Apply different styling for MAPEH components
             $cell_style = '';
             if (strpos($subject['SubjectName'], '•') === 0) {
-                $cell_style = 'style="padding: 7px; font-size: 11pt;"';
+                $cell_style = 'style="padding: 7px; font-size: 10pt;"';
             } else {
-                $cell_style = 'style="font-size: 9pt; margin: 0px; padding: 0px; text-align: left; padding-left: 10px; padding-right: 30px; vertical-align: middle;"';
+                $cell_style = 'style="font-size: 9pt; margin: 0px; padding: 0px; text-align: left; padding-left: 10px; padding-right: 25px; vertical-align: middle;"';
             }
             
             echo "<tr>
@@ -1590,7 +1590,7 @@ function tableExists($conn, $table) {
         </tr>
         <tr>
             <td></td>
-            <td colspan="4" class="static-cell"><Strong>General Average</Strong></td>
+            <td colspan="4" class="static-cel"><Strong>General Average</Strong></td>
             <td><?php echo $gen_avg; ?></td>
             <td><?php echo $gen_remarks; ?></td>
         </tr>
@@ -1633,7 +1633,7 @@ function tableExists($conn, $table) {
                         <table class="table table-bordered values-table" style=" font-size: 10pt; vertical-align: middle;">
                             <thead>
                                 <tr>
-                                    <th style="width:17%; height: 30px;">Core Values</th>
+                                    <th style="width:22%; height: 30px;">Core Values</th>
                                     <th style="width:35%;">Behavior Statements</th>
                                     <th style="width:7%; text-align:center;">Q1</th>
                                     <th style="width:7%; text-align:center;">Q2</th>

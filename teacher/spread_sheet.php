@@ -1,6 +1,64 @@
 <?php
 session_start();
 include '../config.php'; 
+
+// Include logging helper
+require_once __DIR__ . '/../api/log_helper.php';
+
+function getTeacherDisplayName($conn, $teacher_id) {
+    if (empty($teacher_id)) return 'Unknown Teacher';
+    try {
+        // Query teacher table using TeacherID
+        $q = $conn->prepare("SELECT COALESCE(fName, '') AS fname, COALESCE(lName, '') AS lname FROM teacher WHERE TeacherID = ? LIMIT 1");
+        if ($q) {
+            $q->bind_param('i', $teacher_id);
+            $q->execute();
+            $r = $q->get_result();
+            if ($r && $r->num_rows > 0) {
+                $row = $r->fetch_assoc();
+                $q->close();
+                $name = trim($row['fname'] . ' ' . $row['lname']);
+                if ($name !== '') return $name . " (ID: $teacher_id)";
+            }
+            $q->close();
+        }
+
+        // If not found by TeacherID, try user table via UserID
+        $q2 = $conn->prepare("SELECT t.TeacherID, COALESCE(t.fName, '') AS fname, COALESCE(t.lName, '') AS lname 
+                             FROM teacher t 
+                             WHERE t.UserID = ? LIMIT 1");
+        if ($q2) {
+            $q2->bind_param('i', $teacher_id);
+            $q2->execute();
+            $r2 = $q2->get_result();
+            if ($r2 && $r2->num_rows > 0) {
+                $row2 = $r2->fetch_assoc();
+                $q2->close();
+                $name2 = trim($row2['fname'] . ' ' . $row2['lname']);
+                if ($name2 !== '') return $name2 . " (ID: {$row2['TeacherID']})";
+            }
+            $q2->close();
+        }
+
+        // Try user table as last resort
+        $q3 = $conn->prepare("SELECT COALESCE(Email, '') AS email FROM user WHERE UserID = ? LIMIT 1");
+        if ($q3) {
+            $q3->bind_param('i', $teacher_id);
+            $q3->execute();
+            $r3 = $q3->get_result();
+            if ($r3 && $r3->num_rows > 0) {
+                $row3 = $r3->fetch_assoc();
+                $q3->close();
+                if (!empty($row3['email'])) return $row3['email'] . " (ID: $teacher_id)";
+            }
+            $q3->close();
+        }
+    } catch (Exception $ex) {
+        // ignore and fall back
+    }
+    return "Teacher #$teacher_id";
+}
+
 $userId = $_SESSION['user_id'];
 $stmt = $conn->prepare("SELECT TeacherID, fName, lName FROM teacher WHERE UserID = ?");
 $stmt->bind_param('i', $userId);
@@ -13,6 +71,35 @@ if (!$res->num_rows) {
 $teacherData = $res->fetch_assoc();
 $teacherId = $teacherData['TeacherID'];
 $stmt->close();
+
+// Log page access
+try {
+    $teacher_display = getTeacherDisplayName($conn, $teacherId);
+    $subjectId = isset($_GET['subject_id']) ? (int)$_GET['subject_id'] : 0;
+    $sectionId = isset($_GET['section_id']) ? (int)$_GET['section_id'] : 0;
+    
+    $accessMessage = "Accessed class record page";
+    if ($subjectId) {
+        // Get subject name for logging
+        $subjectStmt = $conn->prepare("SELECT SubjectName FROM subject WHERE SubjectID = ?");
+        $subjectStmt->bind_param('i', $subjectId);
+        $subjectStmt->execute();
+        $subjectStmt->bind_result($subjectName);
+        $subjectStmt->fetch();
+        $subjectStmt->close();
+        $accessMessage .= " for {$subjectName}";
+    }
+    
+    log_system_action($conn, 'Class Record Access', $teacherId, [
+        'teacher' => $teacher_display,
+        'message' => $accessMessage,
+        'subject_id' => $subjectId,
+        'section_id' => $sectionId,
+        'page' => 'class_record.php'
+    ], 'info');
+} catch (Exception $logEx) {
+    error_log('Logging failed (page access): ' . $logEx->getMessage());
+}
 
 $schoolyear_query = "SELECT * FROM school_year WHERE status = 'active' LIMIT 1";
 $schoolyear_result = mysqli_query($conn, $schoolyear_query);
@@ -304,7 +391,7 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         .table-container {
-            max-height: 400px;
+            max-height: 100vh;
             overflow: auto;
             border: 1px solid #dee2e6;
             border-radius: 0.375rem;
@@ -594,6 +681,9 @@ function transmuteGrade(initialGrade) {
     transmuted = Math.floor(transmuted);
     if (transmuted < 0) transmuted = 0;
     if (transmuted > 100) transmuted = 100;
+    if (transmuted <= 37) {
+        transmuted = 0;
+    }
     return transmuted;
 }
 

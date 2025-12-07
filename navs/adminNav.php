@@ -1,3 +1,19 @@
+<?php
+// Get profile picture path
+$profilePicturePath = '../img/default.jpg';
+if (isset($_SESSION['user_id'])) {
+    $userID = $_SESSION['user_id'];
+    $stmt = $conn->prepare("SELECT path FROM profile_picture WHERE user_id = ? ORDER BY uploaded_at DESC LIMIT 1");
+    $stmt->bind_param("i", $userID);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    if ($result->num_rows > 0) {
+        $profilePicture = $result->fetch_assoc();
+        $profilePicturePath = $profilePicture['path'];
+    }
+    $stmt->close();
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -30,7 +46,14 @@
         object-fit: cover;
         display: block;
         cursor: pointer;
+        position: relative;
+        transition: transform 0.2s ease;
     }
+
+    .profile-circle:hover {
+        transform: scale(1.05);
+    }
+    
     .dropdown-item:hover {
         background: rgb(232, 234, 235);
         color: #007b8a;
@@ -101,13 +124,15 @@
         border-radius: 8px;
     }
     
-    /* Profile dropdown styles */
+    /* Profile dropdown styles - FIXED VERSION */
     .profile-dropdown {
         position: relative;
         display: inline-block;
+        height: 100%;
+        display: flex;
+        align-items: center;
     }
     .profile-dropdown-content {
-        display: none;
         position: absolute;
         background-color: white;
         min-width: 160px;
@@ -115,7 +140,12 @@
         z-index: 1100;
         border-radius: 8px;
         right: 0;
-        top: 70px;
+        top: 100%; /* Changed from 70px to 100% */
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.3s ease, visibility 0.3s ease;
+        pointer-events: none;
+        padding: 5px 0;
     }
     .profile-dropdown-content a {
         color: black;
@@ -132,8 +162,23 @@
     .profile-dropdown-content hr {
         margin: 5px 0;
     }
-    .profile-dropdown.active .profile-dropdown-content {
-        display: block;
+    
+    /* Hover functionality for desktop */
+    @media (min-width: 769px) {
+        .profile-dropdown:hover .profile-dropdown-content {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+        }
+    }
+    
+    /* Click functionality for mobile */
+    @media (max-width: 768px) {
+        .profile-dropdown.active .profile-dropdown-content {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+        }
     }
     
     /* Logo styles */
@@ -240,7 +285,7 @@
         
         .profile-dropdown-content {
             right: 10px;
-            top: 65px;
+            top: 100%;
         }
         
         /* Make sidebar content scrollable on mobile */
@@ -259,7 +304,7 @@
   </button>
   <div class="ms-auto">
     <div class="profile-dropdown" id="profileDropdown">
-      <img src="../img/default.jpg" alt="Profile Picture" class="profile-circle border border-secondary">
+      <img src="<?php echo htmlspecialchars($profilePicturePath); ?>" alt="Profile Picture" class="profile-circle border border-secondary">
       <div class="profile-dropdown-content">
         <a href="profile.php"><i class="bi bi-person" style="margin-right: 8px;"></i> Profile</a>
         <hr>
@@ -335,15 +380,18 @@ document.addEventListener('DOMContentLoaded', function () {
     // Profile dropdown functionality
     const profileDropdown = document.getElementById('profileDropdown');
     
-    profileDropdown.addEventListener('click', function(e) {
-      e.stopPropagation();
-      this.classList.toggle('active');
-    });
-    
-    // Close dropdown when clicking outside
-    document.addEventListener('click', function() {
-      profileDropdown.classList.remove('active');
-    });
+    // Only add click functionality for mobile devices
+    if (window.innerWidth <= 768) {
+        profileDropdown.addEventListener('click', function(e) {
+            e.stopPropagation();
+            this.classList.toggle('active');
+        });
+        
+        // Close dropdown when clicking outside (for mobile)
+        document.addEventListener('click', function() {
+            profileDropdown.classList.remove('active');
+        });
+    }
     
     // Close sidebar when clicking on a link (for mobile)
     if (window.innerWidth <= 768) {

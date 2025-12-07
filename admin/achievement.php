@@ -66,13 +66,13 @@ if ($selected_sy && $selected_grade) {
                     AND gd.quarter = ?
                     AND gd.school_year = ?
                     AND gd.subjectID = ?
-                    AND gd.quarterly_grade >= 90
+                    AND gd.quarterly_grade >= ?
                     ORDER BY gd.quarterly_grade DESC";
 
             $stmt = $conn->prepare($sql);
-            $stmt->bind_param('ssisi', $selected_sy, $selected_sy, $selected_quarter, $selected_sy, $selected_subject);
+            $stmt->bind_param('ssisid', $selected_sy, $selected_sy, $selected_quarter, $selected_sy, $selected_subject, $threshold_honor);
         } else {
-            // All subjects - get average per student
+            // All subjects - get average per student (FIXED)
             $sql = "SELECT 
                         st.StudentID, st.LRN, st.FirstName, st.LastName, st.Middlename,
                         se.SectionID, gd.quarter,
@@ -89,10 +89,10 @@ if ($selected_sy && $selected_grade) {
                     AND gd.quarter = ?
                     AND gd.school_year = ?
                     GROUP BY st.StudentID, gd.quarter
-                    HAVING min_grade >= 90";
+                    HAVING avg_grade >= ?";  // CHANGED: min_grade to avg_grade
 
             $stmt = $conn->prepare($sql);
-            $stmt->bind_param('sssis', $selected_sy, $selected_sy, $selected_grade, $selected_quarter, $selected_sy);
+            $stmt->bind_param('sssisd', $selected_sy, $selected_sy, $selected_grade, $selected_quarter, $selected_sy, $threshold_honor);
         }
         
         $stmt->execute();
@@ -101,7 +101,7 @@ if ($selected_sy && $selected_grade) {
         while ($row = $res->fetch_assoc()) {
             if ($selected_subject) {
                 $grade = round(floatval($row['grade']), 2);
-                $avg = $grade; // For single subject, use the actual grade
+                $avg = $grade;
             } else {
                 $grade = round(floatval($row['avg_grade']), 2);
                 $avg = $grade;
@@ -153,13 +153,13 @@ if ($selected_sy && $selected_grade) {
                     AND sec.GradeLevel = ?
                     AND g.subject = ?
                     AND g.uploaded = 1
-                    AND g.Final >= 90
+                    AND g.Final >= ?
                     ORDER BY g.Final DESC";
 
             $stmt = $conn->prepare($sql);
-            $stmt->bind_param('sssi', $selected_sy, $selected_sy, $selected_grade, $selected_subject);
+            $stmt->bind_param('sssid', $selected_sy, $selected_sy, $selected_grade, $selected_subject, $threshold_honor);
         } else {
-            // All subjects - get average per student
+            // All subjects - get average per student (FIXED)
             $sql = "SELECT 
                         st.StudentID, st.LRN, st.FirstName, st.LastName, st.Middlename,
                         se.SectionID,
@@ -175,10 +175,10 @@ if ($selected_sy && $selected_grade) {
                     AND sec.GradeLevel = ?
                     AND g.uploaded = 1
                     GROUP BY st.StudentID
-                    HAVING min_final >= 90";
+                    HAVING avg_final >= ?";  // CHANGED: min_final to avg_final
 
             $stmt = $conn->prepare($sql);
-            $stmt->bind_param('sss', $selected_sy, $selected_sy, $selected_grade);
+            $stmt->bind_param('sssd', $selected_sy, $selected_sy, $selected_grade, $threshold_honor);
         }
         
         $stmt->execute();
@@ -187,7 +187,7 @@ if ($selected_sy && $selected_grade) {
         while ($row = $res->fetch_assoc()) {
             if ($selected_subject) {
                 $grade = round(floatval($row['grade']), 2);
-                $avg = $grade; // For single subject, use the actual grade
+                $avg = $grade;
             } else {
                 $grade = round(floatval($row['avg_final']), 2);
                 $avg = $grade;
@@ -238,31 +238,31 @@ function render_results_fragment($all_honor_students, $selected_grade, $report_t
     <!-- Summary Statistics -->
     <div class="row mb-4">
         <div class="col-md-3">
-            <div class="card">
+            <div class="card highest-honor-card">
                 <div class="card-body text-center">
                     <h4 class="card-title"><?= count(array_filter($all_honor_students, fn($s) => $s['honor_category'] === 'With Highest Honors')) ?></h4>
-                    <p class="card-text mb-0">With Highest Honors</p>
+                    <p class="card-text text-info mb-0">With Highest Honors</p>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card">
+            <div class="card high-honor-card">
                 <div class="card-body text-center">
                     <h4 class="card-title"><?= count(array_filter($all_honor_students, fn($s) => $s['honor_category'] === 'With High Honors')) ?></h4>
-                    <p class="card-text mb-0">With High Honors</p>
+                    <p class="card-text text-warning mb-0">With High Honors</p>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card">
+            <div class="card honor-card">
                 <div class="card-body text-center">
                     <h4 class="card-title"><?= count(array_filter($all_honor_students, fn($s) => $s['honor_category'] === 'With Honors')) ?></h4>
-                    <p class="card-text mb-0"> With Honors</p>
+                    <p class="card-text text-success mb-0"> With Honors</p>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card">
+            <div class="card total-honor-card">
                 <div class="card-body text-center">
                     <h4 class="card-title"><?= count($all_honor_students) ?></h4>
                     <p class="card-text">Total Honor Students</p>
@@ -357,7 +357,7 @@ if ($selected_sy && $selected_grade) {
             border-radius: 4px;
             font-size: 0.85em;
         }
-        .highest-honor { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .highest-honor { background-color: #d7f6f8ff; color: #1c726eff; border: 1px solid #c6f5f4ff; }
         .high-honor { background-color: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
         .honor { background-color: #d1e7dd; color: #155724; border: 1px solid #c3e6cb; }
         .table-hover tbody tr:hover { background-color: rgba(0,0,0,.075); }
@@ -366,13 +366,38 @@ if ($selected_sy && $selected_grade) {
             text-align: center;
             padding: 20px;
         }
+        
+        .card {
+            transition: transform 0.2s ease-in-out;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+        }
     </style>
 </head>
 <body>
     <?php include '../navs/adminNav.php'; ?>
-    <div class="container mt-4">
-        <h3>Academic Honors Report</h3>
-
+    <div class="container-fluid mt-4">
+            <!-- Welcome Header with School Year Badge -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow position-relative">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col">
+                            <h4 class="card-title mb-1">
+                            <h3>Academic Honors Report</h3>
+                            </h4>
+                        </div>
+                        <div class="col-auto">
+                            <i class="bi bi-calendar-check me-1"></i>School Year: <?php echo $selected_sy; ?>
+                            <span class="badge bg-light text-secondary fs-6"><?php echo date('l, F j, Y'); ?></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
         <form method="GET" class="row g-3 mb-4 p-3 border rounded" id="filterForm">
             <div class="col-md-2">
                 <label class="form-label">School Year</label>

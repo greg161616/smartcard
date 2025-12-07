@@ -32,6 +32,7 @@ $selected_sy = isset($_GET['school_year']) ? $_GET['school_year'] : ($school_yea
 $selected_grade = isset($_GET['grade_level']) ? $_GET['grade_level'] : 'all';
 $selected_section = isset($_GET['section_filter']) && $_GET['section_filter'] != 'all' ? $_GET['section_filter'] : '';
 $selected_quarter = isset($_GET['quarter_filter']) && $_GET['quarter_filter'] != 'all' ? $_GET['quarter_filter'] : '';
+$selected_upload_quarter = isset($_GET['upload_quarter']) ? $_GET['upload_quarter'] : 1;
 
 // Fetch statistics data with school year filtering
 $students_count = 0;
@@ -78,7 +79,7 @@ if ($result) {
 }
 
 // Get total teachers (not tied to school year)
-$sql = "SELECT COUNT(*) as count FROM teacher";
+$sql = "SELECT COUNT(*) as count FROM teacher WHERE status = 'Active'";
 $result = mysqli_query($conn, $sql);
 if ($result) {
     $row = mysqli_fetch_assoc($result);
@@ -233,26 +234,106 @@ if ($result) {
     }
 }
 
-// Get total teachers who uploaded grades per quarter and those who did not
-$teachers_uploaded_per_quarter = [1 => 0, 2 => 0, 3 => 0, 4 => 0];
-$teachers_not_uploaded_per_quarter = [1 => 0, 2 => 0, 3 => 0, 4 => 0];
-$sql = "SELECT quarter, COUNT(DISTINCT uploadedby) as teacher_count FROM (
-    SELECT 1 as quarter, uploadedby FROM grades WHERE Q1 IS NOT NULL AND school_year = '" . mysqli_real_escape_string($conn, $selected_sy) . "' AND uploadedby IS NOT NULL
-    UNION ALL
-    SELECT 2 as quarter, uploadedby FROM grades WHERE Q2 IS NOT NULL AND school_year = '" . mysqli_real_escape_string($conn, $selected_sy) . "' AND uploadedby IS NOT NULL
-    UNION ALL
-    SELECT 3 as quarter, uploadedby FROM grades WHERE Q3 IS NOT NULL AND school_year = '" . mysqli_real_escape_string($conn, $selected_sy) . "' AND uploadedby IS NOT NULL
-    UNION ALL
-    SELECT 4 as quarter, uploadedby FROM grades WHERE Q4 IS NOT NULL AND school_year = '" . mysqli_real_escape_string($conn, $selected_sy) . "' AND uploadedby IS NOT NULL
-) t GROUP BY quarter ORDER BY quarter";
-$result = mysqli_query($conn, $sql);
-if ($result) {
-    while ($row = mysqli_fetch_assoc($result)) {
-        $teachers_uploaded_per_quarter[$row['quarter']] = $row['teacher_count'];
+// NEW: Get teacher upload statistics - More comprehensive approach
+$teachers_upload_stats = [];
+
+// Get all active teachers
+$sql_teachers = "SELECT t.TeacherID, t.fName, t.lName, u.Email 
+                 FROM teacher t 
+                 JOIN user u ON t.UserID = u.UserID 
+                 WHERE t.status = 'Active'";
+$result_teachers = mysqli_query($conn, $sql_teachers);
+$all_teachers = [];
+if ($result_teachers) {
+    while ($row = mysqli_fetch_assoc($result_teachers)) {
+        $all_teachers[$row['TeacherID']] = $row;
     }
 }
-foreach ([1,2,3,4] as $q) {
-    $teachers_not_uploaded_per_quarter[$q] = $teachers_count - $teachers_uploaded_per_quarter[$q];
+
+// Initialize stats for each quarter
+foreach ([1, 2, 3, 4] as $quarter) {
+    $teachers_upload_stats[$quarter] = [
+        'uploaded' => 0,
+        'not_uploaded' => 0,
+        'teachers_uploaded' => [],
+        'teachers_not_uploaded' => []
+    ];
+}
+
+// Check for grade uploads in grades table (manual entry or spreadsheet upload)
+foreach ([1, 2, 3, 4] as $quarter) {
+    $quarter_field = 'Q' . $quarter;
+    
+    $sql = "SELECT DISTINCT uploadedby 
+            FROM grades 
+            WHERE $quarter_field IS NOT NULL 
+            AND school_year = '" . mysqli_real_escape_string($conn, $selected_sy) . "'
+            AND uploadedby IS NOT NULL";
+    
+    $result = mysqli_query($conn, $sql);
+    if ($result) {
+        while ($row = mysqli_fetch_assoc($result)) {
+            $teacher_id = $row['uploadedby'];
+            if (isset($all_teachers[$teacher_id])) {
+                $teachers_upload_stats[$quarter]['uploaded']++;
+                $teachers_upload_stats[$quarter]['teachers_uploaded'][$teacher_id] = $all_teachers[$teacher_id];
+            }
+        }
+    }
+    
+    // Calculate not uploaded
+    $teachers_upload_stats[$quarter]['not_uploaded'] = $teachers_count - $teachers_upload_stats[$quarter]['uploaded'];
+    
+    // Populate not uploaded teachers list
+    foreach ($all_teachers as $teacher_id => $teacher) {
+        if (!isset($teachers_upload_stats[$quarter]['teachers_uploaded'][$teacher_id])) {
+            $teachers_upload_stats[$quarter]['teachers_not_uploaded'][$teacher_id] = $teacher;
+        }
+    }
+}
+
+// NEW: Get recent grade upload activities from logs - ONLY SUCCESSFUL ONES
+$recent_uploads = [];
+$sql_logs = "SELECT sl.*, 
+             COALESCE(CONCAT(t.fName, ' ', t.lName), a.FullName, u.Email) AS user_name
+             FROM system_logs sl
+             LEFT JOIN teacher t ON t.TeacherID = sl.user_id
+             LEFT JOIN admin a ON a.UserID = sl.user_id
+             LEFT JOIN user u ON u.UserID = sl.user_id
+             WHERE (sl.action LIKE '%Grade Upload%' OR sl.action LIKE '%grade%')
+             AND (sl.action LIKE '%Completed%' OR sl.action LIKE '%Success%' OR sl.action LIKE '%successful%')
+             AND sl.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+             ORDER BY sl.created_at DESC
+             LIMIT 10";
+$result_logs = mysqli_query($conn, $sql_logs);
+if ($result_logs) {
+    while ($row = mysqli_fetch_assoc($result_logs)) {
+        $recent_uploads[] = $row;
+    }
+}
+
+// NEW: Get subjects with grades vs without grades
+$subjects_with_grades = [];
+$subjects_without_grades = [];
+
+$sql_subjects = "SELECT s.SubjectID, s.SubjectName, 
+                COUNT(DISTINCT g.grade_id) as grade_count,
+                COUNT(DISTINCT t.TeacherID) as assigned_teachers
+                FROM subject s
+                LEFT JOIN grades g ON s.SubjectID = g.subject AND g.school_year = '" . mysqli_real_escape_string($conn, $selected_sy) . "'
+                LEFT JOIN assigned_subject a ON s.SubjectID = a.subject_id AND a.school_year = '" . mysqli_real_escape_string($conn, $selected_sy) . "'
+                LEFT JOIN teacher t ON a.teacher_id = t.TeacherID
+                GROUP BY s.SubjectID, s.SubjectName
+                ORDER BY s.SubjectName";
+$result_subjects = mysqli_query($conn, $sql_subjects);
+if ($result_subjects) {
+    while ($row = mysqli_fetch_assoc($result_subjects)) {
+        if ($row['grade_count'] > 0) {
+            $subjects_with_grades[] = $row;
+        } else {
+            $subjects_without_grades[] = $row;
+        }
+    }
 }
 ?>
 
@@ -301,6 +382,9 @@ foreach ([1,2,3,4] as $q) {
         }
         .events-card {
             border-left-color: #e74a3b;
+        }
+        .upload-card {
+            border-left-color: #6f42c1;
         }
         .stat-number {
             font-size: 2rem;
@@ -374,6 +458,23 @@ foreach ([1,2,3,4] as $q) {
             padding: 15px;
             margin-bottom: 15px;
         }
+        .teacher-list {
+            max-height: 150px;
+            overflow-y: auto;
+            font-size: 0.85rem;
+        }
+        .upload-status-badge {
+            font-size: 0.75rem;
+        }
+        .progress {
+            height: 8px;
+        }
+        .upload-quarter-selector {
+            max-width: 200px;
+        }
+        .combined-upload-section {
+            min-height: 400px;
+        }
     </style>
 </head>
 <body>
@@ -407,8 +508,8 @@ foreach ([1,2,3,4] as $q) {
         <div class="col-12">
             <div class="filter-form">
                 <form method="GET" class="row g-3 align-items-end">
-                    <div class="col-md-6">
-                        <label for="school_year" class="form-label fw-bold">School Year</label>
+                    <div class="col-md-8 text-end"><label for="school_year" class="form-label fw-bold">School Year</label></div>
+                    <div class="col-md-2">
                         <select class="form-select" id="school_year" name="school_year" onchange="this.form.submit()">
                             <?php foreach ($school_years as $year): ?>
                                 <option value="<?php echo $year; ?>" <?php echo $selected_sy == $year ? 'selected' : ''; ?>>
@@ -417,7 +518,7 @@ foreach ([1,2,3,4] as $q) {
                             <?php endforeach; ?>
                         </select>
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-2">
                         <div class="d-grid">
                             <a href="?school_year=<?php echo $selected_sy; ?>" class="btn btn-outline-secondary">
                                 <i class="bi bi-arrow-clockwise"></i> Reset Filters
@@ -481,14 +582,20 @@ foreach ([1,2,3,4] as $q) {
         </div>
         
         <div class="col-xl-3 col-md-6 mb-4">
-            <div class="stat-card activities-card">
-                <div class="d-flex justify-content-between align-items-start mb-2">
+            <div class="stat-card upload-card">
+                <div class="d-flex justify-content-between align-items-start">
                     <div>
-                        <div class="stat-label">Total Logs Today</div>
-                        <div class="stat-number"><?php echo count($todays_activities); ?></div>
+                        <div class="stat-label">Subjects with Grades</div>
+                        <div class="stat-number"><?php echo count($subjects_with_grades); ?>/<?php echo count($subjects_with_grades) + count($subjects_without_grades); ?></div>
+                        <div class="progress mt-2">
+                            <div class="progress-bar bg-purple" role="progressbar" 
+                                 style="width: <?php echo (count($subjects_with_grades) / (count($subjects_with_grades) + count($subjects_without_grades))) * 100; ?>%">
+                            </div>
+                        </div>
+                        <small class="text-muted">Grade completion rate</small>
                     </div>
-                    <div class="bg-warning bg-opacity-10 p-3 rounded">
-                        <i class="bi bi-activity text-warning fs-4"></i>
+                    <div class="bg-purple bg-opacity-10 p-3 rounded">
+                        <i class="bi bi-clipboard-data text-purple fs-4"></i>
                     </div>
                 </div>
             </div>
@@ -551,27 +658,144 @@ foreach ([1,2,3,4] as $q) {
         </div>
     </div>
 
-    <!-- Teachers Upload Pie Charts Row -->
+    <!-- Combined Upload Statistics and Recent Activities -->
     <div class="row mb-4">
-        <div class="col-12">
-            <div class="chart-container h-100">
-                <div class="chart-title mb-3">
-                    <i class="bi bi-pie-chart-fill me-2 text-success"></i>Teachers Upload Status Per Quarter
+        <!-- Teacher Upload Statistics -->
+        <div class="col-xl-6 col-lg-6 mb-4">
+            <div class="chart-container combined-upload-section">
+                <div class="chart-title">
+                    <i class="bi bi-cloud-upload-fill me-2 text-purple"></i>Teacher Grade Upload Status
                     <small class="text-muted ms-2">(SY: <?php echo $selected_sy; ?>)</small>
                 </div>
-                <div class="row">
-                    <?php foreach ([1,2,3,4] as $q): ?>
-                    <div class="col-md-3 mb-3">
-                        <div class="chart-wrapper">
-                            <canvas id="teachersUploadPieQ<?php echo $q; ?>"></canvas>
+                
+                <!-- Quarter Selector -->
+                <div class="mb-3">
+                    <form method="GET" class="row g-3 align-items-center">
+                        <input type="hidden" name="school_year" value="<?php echo $selected_sy; ?>">
+                        <div class="col-md-6">
+                            <label for="upload_quarter" class="form-label fw-bold">Select Quarter:</label>
+                            <select class="form-select upload-quarter-selector" id="upload_quarter" name="upload_quarter" onchange="this.form.submit()">
+                                <option value="1" <?php echo $selected_upload_quarter == 1 ? 'selected' : ''; ?>>Quarter 1</option>
+                                <option value="2" <?php echo $selected_upload_quarter == 2 ? 'selected' : ''; ?>>Quarter 2</option>
+                                <option value="3" <?php echo $selected_upload_quarter == 3 ? 'selected' : ''; ?>>Quarter 3</option>
+                                <option value="4" <?php echo $selected_upload_quarter == 4 ? 'selected' : ''; ?>>Quarter 4</option>
+                            </select>
                         </div>
-                        <div class="text-center">
-                            <span class="badge bg-success">Uploaded: <?php echo $teachers_uploaded_per_quarter[$q]; ?></span>
-                            <span class="badge bg-secondary">Not Uploaded: <?php echo $teachers_not_uploaded_per_quarter[$q]; ?></span>
-                            <div class="fw-bold">Quarter <?php echo $q; ?></div>
+                    </form>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="chart-wrapper">
+                            <canvas id="teachersUploadPie"></canvas>
+                        </div>
+                        <div class="text-center mt-2">
+                            <span class="badge bg-success upload-status-badge">Uploaded: <?php echo $teachers_upload_stats[$selected_upload_quarter]['uploaded']; ?></span>
+                            <span class="badge bg-secondary upload-status-badge">Not Uploaded: <?php echo $teachers_upload_stats[$selected_upload_quarter]['not_uploaded']; ?></span>
                         </div>
                     </div>
-                    <?php endforeach; ?>
+                    <div class="col-md-6">
+                        <!-- Teacher Lists -->
+                        <div class="mb-3">
+                            <small class="text-muted d-block mb-1 fw-bold">Teachers who uploaded (Q<?php echo $selected_upload_quarter; ?>):</small>
+                            <div class="teacher-list">
+                                <?php if (!empty($teachers_upload_stats[$selected_upload_quarter]['teachers_uploaded'])): ?>
+                                    <?php foreach (array_slice($teachers_upload_stats[$selected_upload_quarter]['teachers_uploaded'], 0, 5) as $teacher): ?>
+                                        <div class="text-success mb-1">✓ <?php echo $teacher['fName'] . ' ' . $teacher['lName']; ?></div>
+                                    <?php endforeach; ?>
+                                    <?php if (count($teachers_upload_stats[$selected_upload_quarter]['teachers_uploaded']) > 5): ?>
+                                        <small class="text-muted">+<?php echo count($teachers_upload_stats[$selected_upload_quarter]['teachers_uploaded']) - 5; ?> more</small>
+                                    <?php endif; ?>
+                                <?php else: ?>
+                                    <small class="text-muted">No teachers uploaded for this quarter</small>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <small class="text-muted d-block mb-1 fw-bold">Teachers who haven't uploaded (Q<?php echo $selected_upload_quarter; ?>):</small>
+                            <div class="teacher-list">
+                                <?php if (!empty($teachers_upload_stats[$selected_upload_quarter]['teachers_not_uploaded'])): ?>
+                                    <?php foreach (array_slice($teachers_upload_stats[$selected_upload_quarter]['teachers_not_uploaded'], 0, 5) as $teacher): ?>
+                                        <div class="text-danger mb-1">✗ <?php echo $teacher['fName'] . ' ' . $teacher['lName']; ?></div>
+                                    <?php endforeach; ?>
+                                    <?php if (count($teachers_upload_stats[$selected_upload_quarter]['teachers_not_uploaded']) > 5): ?>
+                                        <small class="text-muted">+<?php echo count($teachers_upload_stats[$selected_upload_quarter]['teachers_not_uploaded']) - 5; ?> more</small>
+                                    <?php endif; ?>
+                                <?php else: ?>
+                                    <small class="text-success">All teachers have uploaded for this quarter!</small>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Recent Upload Activities -->
+        <div class="col-xl-6 col-lg-6 mb-4">
+            <div class="table-container combined-upload-section">
+                <div class="chart-title">
+                    <i class="bi bi-clock-history me-2 text-warning"></i>Recent Grade Upload Activities
+                    <small class="text-muted ms-2">(Last 30 days)</small>
+                </div>
+                <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>Date & Time</th>
+                                <th>Teacher</th>
+                                <th>Action</th>
+                                <th>Details</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (!empty($recent_uploads)): ?>
+                                <?php foreach ($recent_uploads as $upload): ?>
+                                    <tr>
+                                        <td><?php echo date('M j, Y g:i A', strtotime($upload['created_at'])); ?></td>
+                                        <td><?php echo $upload['user_name'] ?: 'Unknown User'; ?></td>
+                                        <td>
+                                            <span class="badge 
+                                                <?php echo strpos($upload['action'], 'Completed') !== false ? 'bg-success' : 
+                                                       (strpos($upload['action'], 'Failed') !== false ? 'bg-danger' : 'bg-info'); ?>">
+                                                <?php echo $upload['action']; ?>
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <small class="text-muted">
+                                                <?php 
+                                                $details = json_decode($upload['details'], true);
+                                                if ($details && isset($details['message'])) {
+                                                    echo $details['message'];
+                                                } else {
+                                                    echo $upload['details'] ?: 'No details';
+                                                }
+                                                ?>
+                                            </small>
+                                        </td>
+                                        <td>
+                                            <?php if (strpos($upload['action'], 'Completed') !== false): ?>
+                                                <i class="bi bi-check-circle-fill text-success"></i>
+                                            <?php elseif (strpos($upload['action'], 'Failed') !== false): ?>
+                                                <i class="bi bi-x-circle-fill text-danger"></i>
+                                            <?php else: ?>
+                                                <i class="bi bi-info-circle-fill text-info"></i>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted py-3">
+                                        <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                                        No recent upload activities found
+                                    </td>
+                                </tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -593,8 +817,9 @@ foreach ([1,2,3,4] as $q) {
                 <div class="grade-filter-form mb-3">
                     <form method="GET" class="row g-3 align-items-end">
                         <input type="hidden" name="school_year" value="<?php echo $selected_sy; ?>">
+                        <input type="hidden" name="upload_quarter" value="<?php echo $selected_upload_quarter; ?>">
                         
-                        <div class="col-md-4">
+                        <div class="col-md-2">
                             <label for="grade_level" class="form-label fw-bold">Grade Level</label>
                             <select class="form-select" id="grade_level" name="grade_level">
                                 <option value="all" <?php echo $selected_grade == 'all' ? 'selected' : ''; ?>>All Grades</option>
@@ -606,7 +831,7 @@ foreach ([1,2,3,4] as $q) {
                             </select>
                         </div>
                         
-                        <div class="col-md-4">
+                        <div class="col-md-2">
                             <label for="section_filter" class="form-label fw-bold">Section</label>
                             <select class="form-select" id="section_filter" name="section_filter">
                                 <option value="all" <?php echo ($_GET['section_filter'] ?? 'all') == 'all' ? 'selected' : ''; ?>>All Sections</option>
@@ -621,7 +846,7 @@ foreach ([1,2,3,4] as $q) {
                             </select>
                         </div>
                         
-                        <div class="col-md-4">
+                        <div class="col-md-2">
                             <label for="quarter_filter" class="form-label fw-bold">Quarter</label>
                             <select class="form-select" id="quarter_filter" name="quarter_filter">
                                 <option value="all" <?php echo ($_GET['quarter_filter'] ?? 'all') == 'all' ? 'selected' : ''; ?>>All Quarters</option>
@@ -632,14 +857,14 @@ foreach ([1,2,3,4] as $q) {
                             </select>
                         </div>
                         
-                        <div class="col-md-6">
+                        <div class="col-md-2">
                             <button type="submit" class="btn btn-primary w-100">
-                                <i class="bi bi-filter"></i> Apply Filters
+                                <i class="bi bi-filter"></i>Filters
                             </button>
                         </div>
-                        <div class="col-md-6">
-                            <a href="?school_year=<?php echo $selected_sy; ?>" class="btn btn-outline-secondary w-100">
-                                <i class="bi bi-arrow-clockwise"></i> Reset Filters
+                        <div class="col-md-2">
+                            <a href="?school_year=<?php echo $selected_sy; ?>&upload_quarter=<?php echo $selected_upload_quarter; ?>" class="btn btn-outline-secondary w-100">
+                                <i class="bi bi-arrow-clockwise"></i> Reset
                             </a>
                         </div>
                     </form>
@@ -698,14 +923,20 @@ foreach ([1,2,3,4] as $q) {
         }
     });
 
-    // Teachers Upload Pie Charts
-    <?php foreach ([1,2,3,4] as $q): ?>
-    new Chart(document.getElementById('teachersUploadPieQ<?php echo $q; ?>').getContext('2d'), {
+    // Teacher Upload Pie Chart (Single Chart with Dropdown)
+    const teachersUploadPieCtx = document.getElementById('teachersUploadPie').getContext('2d');
+    
+    // Get data for the selected quarter
+    const selectedQuarter = <?php echo $selected_upload_quarter; ?>;
+    const uploadedCount = <?php echo $teachers_upload_stats[$selected_upload_quarter]['uploaded']; ?>;
+    const notUploadedCount = <?php echo $teachers_upload_stats[$selected_upload_quarter]['not_uploaded']; ?>;
+    
+    new Chart(teachersUploadPieCtx, {
         type: 'pie',
         data: {
             labels: ['Uploaded', 'Not Uploaded'],
             datasets: [{
-                data: [<?php echo $teachers_uploaded_per_quarter[$q]; ?>, <?php echo $teachers_not_uploaded_per_quarter[$q]; ?>],
+                data: [uploadedCount, notUploadedCount],
                 backgroundColor: [
                     'rgba(28, 200, 138, 0.8)',
                     'rgba(231, 74, 59, 0.8)'
@@ -721,18 +952,28 @@ foreach ([1,2,3,4] as $q) {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { display: true, position: 'bottom' },
+                legend: { 
+                    display: true, 
+                    position: 'bottom',
+                    labels: {
+                        padding: 20,
+                        usePointStyle: true
+                    }
+                },
                 tooltip: {
                     callbacks: {
                         label: function(context) {
-                            return `${context.label}: ${context.parsed}`;
+                            const label = context.label || '';
+                            const value = context.parsed;
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = Math.round((value / total) * 100);
+                            return `${label}: ${value} (${percentage}%)`;
                         }
                     }
                 }
             }
         }
     });
-    <?php endforeach; ?>
 
     // Students Per Class Chart (Stacked Bar Chart)
     const studentsPerClassCtx = document.getElementById('studentsPerClassChart').getContext('2d');

@@ -281,7 +281,7 @@ $total_count = mysqli_fetch_assoc($total_result)['count'];
         }
         
         body {
-            background-color: #f8f9fc;
+            background-color: #d0d3dbff;
             color: var(--text-color);
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             padding-bottom: 20px;
@@ -538,6 +538,27 @@ $total_count = mysqli_fetch_assoc($total_result)['count'];
     <?php include '../navs/adminNav.php'; ?>
 
     <div class="container-fluid py-4">
+
+        <!-- Welcome Header with School Year Badge -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow position-relative">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col">
+                            <h4 class="card-title mb-1">
+                                <i class="bi bi-calendar me-2"></i>Calendar & Announcements
+                            </h4>
+                            <p class="card-text mb-0">Event and announcement management for the school community</p>
+                        </div>
+                        <div class="col-auto">
+                            <span class="badge bg-light text-secondary fs-6"><?php echo date('l, F j, Y'); ?></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
         <!-- Alerts -->
         <?php if (isset($_SESSION['success'])): ?>
             <div class="alert alert-success alert-dismissible fade show" role="alert">
@@ -617,7 +638,7 @@ $total_count = mysqli_fetch_assoc($total_result)['count'];
                     <div class="card-body">
                         <!-- Search and Filter -->
                         <form method="GET" class="row g-3 mb-4">
-                            <div class="col-md-6">
+                            <div class="col-md-5">
                                 <label for="search" class="form-label">Search</label>
                                 <input type="text" class="form-control" id="search" name="search" 
                                        placeholder="Search announcements..." value="<?php echo htmlspecialchars($search); ?>">
@@ -630,13 +651,13 @@ $total_count = mysqli_fetch_assoc($total_result)['count'];
                                     <option value="student" <?php echo $audience_filter === 'student' ? 'selected' : ''; ?>>Students</option>
                                 </select>
                             </div>
-                            <div class="col-md-2 d-flex align-items-end">
-                                <div class="d-grid gap-2 w-100">
+                            <div class="col-md-3 d-flex align-items-end">
+                                <div class="">
                                     <button type="submit" class="btn btn-primary">
-                                        <i class="fas fa-filter me-1"></i>Filter
+                                        <i class="fas fa-search me-1"></i>
                                     </button>
                                     <a href="<?php echo $_SERVER['PHP_SELF']; ?>" class="btn btn-outline-secondary">
-                                        <i class="fas fa-times me-1"></i>Clear
+                                        <i class="fas fa-times me-1"></i>
                                     </a>
                                 </div>
                             </div>

@@ -232,43 +232,51 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
 <body>
   <?php include '../navs/adminNav.php'; ?>
 
-  <div class="container">
+  <div class="container-fluid mt-4 mb-5">
     <!-- School Year Selector -->
-    <div class="school-year-selector">
-      <div class="row align-items-center">
-        <div class="col-md-8">
-          <h4 class="mb-1"><i class="fas fa-graduation-cap me-2"></i>View Grades by Section</h4>
-          <p class="mb-0">Select school year to view sections and grades</p>
+         <!-- Welcome Header with School Year Badge -->
+    <div class="row mb-4 mt-3">
+        <div class="col-12">
+            <div class="card border-0 shadow position-relative">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col">
+                            <h4 class="card-title mb-1">
+                                Student Overall Grades
+                            </h4>
+                            <p class="card-text mb-0">Overview of students grades</p>
+                        </div>
+                            <div class="school-year-selector">
+                        <div class="row align-items-center">
+                          <div class="col-md-10">
+                          </div>
+                          <div class="col-md-2 mb-2">
+                            <form method="GET" action="" id="schoolYearForm">
+                              <select name="school_year" id="schoolYear" class="form-select">
+                                <?php if (empty($available_school_years)): ?>
+                                  <option value="<?php echo date('Y') . '-' . (date('Y') + 1); ?>">
+                                    <?php echo date('Y') . '-' . (date('Y') + 1); ?>
+                                  </option>
+                                <?php else: ?>
+                                  <?php foreach ($available_school_years as $school_year): ?>
+                                    <option value="<?php echo htmlspecialchars($school_year); ?>" 
+                                      <?php echo ($school_year == $selected_school_year) ? 'selected' : ''; ?>>
+                                      <?php echo htmlspecialchars($school_year); ?>
+                                    </option>
+                                  <?php endforeach; ?>
+                                <?php endif; ?>
+                              </select>
+                            </form>
+                          </div>
+                        </div>
+    </div>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="col-md-4">
-          <form method="GET" action="" id="schoolYearForm">
-            <select name="school_year" id="schoolYear" class="form-select">
-              <?php if (empty($available_school_years)): ?>
-                <option value="<?php echo date('Y') . '-' . (date('Y') + 1); ?>">
-                  <?php echo date('Y') . '-' . (date('Y') + 1); ?>
-                </option>
-              <?php else: ?>
-                <?php foreach ($available_school_years as $school_year): ?>
-                  <option value="<?php echo htmlspecialchars($school_year); ?>" 
-                    <?php echo ($school_year == $selected_school_year) ? 'selected' : ''; ?>>
-                    <?php echo htmlspecialchars($school_year); ?>
-                  </option>
-                <?php endforeach; ?>
-              <?php endif; ?>
-            </select>
-          </form>
-        </div>
-      </div>
     </div>
 
-    <!-- Current School Year Badge -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-      <h5 class="mb-0">Showing data for school year:</h5>
-      <span class="school-year-badge bg-primary">
-        <i class="fas fa-calendar me-1"></i>
-        <span id="currentSchoolYear"><?php echo htmlspecialchars($selected_school_year); ?></span>
-      </span>
-    </div>
+
 
     <!-- Filter Section -->
     <div class="filter-section">
