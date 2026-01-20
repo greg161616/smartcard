@@ -7,7 +7,304 @@ if (!isset($_SESSION['email']) || $_SESSION['role'] !== 'principal') {
     exit();
 }
 
-// Get available school years from existing tables
+// AJAX Handler
+if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
+    header('Content-Type: application/json');
+    
+    // Get filters from AJAX request
+    $selected_sy = isset($_GET['school_year']) ? $_GET['school_year'] : '';
+    $selected_grade = isset($_GET['grade_level']) ? $_GET['grade_level'] : 'all';
+    $selected_section = isset($_GET['section_filter']) ? $_GET['section_filter'] : 'all';
+    $selected_quarter = isset($_GET['quarter_filter']) ? $_GET['quarter_filter'] : 'all';
+    $selected_upload_quarter = isset($_GET['upload_quarter']) ? intval($_GET['upload_quarter']) : 1;
+    
+    // Validate quarter values
+    if (!in_array($selected_upload_quarter, [1, 2, 3, 4])) {
+        $selected_upload_quarter = 1;
+    }
+    
+    // Collect all data in an array
+    $response = [];
+    
+    // Get statistics
+    $response['statistics'] = getStatistics($conn, $selected_sy);
+    $response['students_per_section'] = getStudentsPerSection($conn, $selected_sy);
+    $response['avg_grade_per_subject'] = getAvgGradePerSubject($conn, $selected_sy, $selected_grade, $selected_section, $selected_quarter);
+    $response['teachers_upload_stats'] = getTeacherUploadStats($conn, $selected_sy, $selected_upload_quarter);
+    $response['subjects_status'] = getSubjectsStatus($conn, $selected_sy);
+    $response['grade_levels'] = getGradeLevels($conn);
+    $response['sections'] = getSections($conn, $selected_grade);
+    
+    echo json_encode($response);
+    exit();
+}
+
+// Function to get statistics
+function getStatistics($conn, $school_year) {
+    $stats = [
+        'students_count' => 0,
+        'teachers_count' => 0,
+        'sections_count' => 0,
+        'male_students' => 0,
+        'female_students' => 0
+    ];
+    
+    // Total students
+    $sql = "SELECT COUNT(DISTINCT se.StudentID) as count 
+            FROM section_enrollment se 
+            WHERE se.SchoolYear = '" . mysqli_real_escape_string($conn, $school_year) . "' 
+            AND se.status = 'active'";
+    $result = mysqli_query($conn, $sql);
+    if ($result) {
+        $row = mysqli_fetch_assoc($result);
+        $stats['students_count'] = $row['count'];
+    }
+    
+    // Male students
+    $sql = "SELECT COUNT(DISTINCT se.StudentID) as count 
+            FROM section_enrollment se 
+            JOIN student st ON se.StudentID = st.StudentID 
+            WHERE se.SchoolYear = '" . mysqli_real_escape_string($conn, $school_year) . "' 
+            AND se.status = 'active' 
+            AND st.Sex = 'Male'";
+    $result = mysqli_query($conn, $sql);
+    if ($result) {
+        $row = mysqli_fetch_assoc($result);
+        $stats['male_students'] = $row['count'];
+    }
+    
+    // Female students
+    $sql = "SELECT COUNT(DISTINCT se.StudentID) as count 
+            FROM section_enrollment se 
+            JOIN student st ON se.StudentID = st.StudentID 
+            WHERE se.SchoolYear = '" . mysqli_real_escape_string($conn, $school_year) . "' 
+            AND se.status = 'active' 
+            AND st.Sex = 'Female'";
+    $result = mysqli_query($conn, $sql);
+    if ($result) {
+        $row = mysqli_fetch_assoc($result);
+        $stats['female_students'] = $row['count'];
+    }
+    
+    // Total teachers
+    $sql = "SELECT COUNT(*) as count FROM teacher WHERE status = 'Active'";
+    $result = mysqli_query($conn, $sql);
+    if ($result) {
+        $row = mysqli_fetch_assoc($result);
+        $stats['teachers_count'] = $row['count'];
+    }
+    
+    // Total sections
+    $sql = "SELECT COUNT(DISTINCT s.SectionID) as count 
+            FROM section s 
+            JOIN section_enrollment se ON s.SectionID = se.SectionID 
+            WHERE se.SchoolYear = '" . mysqli_real_escape_string($conn, $school_year) . "' 
+            AND se.status = 'active'";
+    $result = mysqli_query($conn, $sql);
+    if ($result) {
+        $row = mysqli_fetch_assoc($result);
+        $stats['sections_count'] = $row['count'];
+    }
+    
+    return $stats;
+}
+
+// Function to get students per section
+function getStudentsPerSection($conn, $school_year) {
+    $sections = [];
+    $sql = "SELECT s.SectionID, s.SectionName, s.GradeLevel, 
+                   COUNT(CASE WHEN st.Sex = 'Male' THEN 1 END) as male_count,
+                   COUNT(CASE WHEN st.Sex = 'Female' THEN 1 END) as female_count,
+                   COUNT(se.StudentID) as total_count
+            FROM section s 
+            LEFT JOIN section_enrollment se ON s.SectionID = se.SectionID 
+                AND se.SchoolYear = '" . mysqli_real_escape_string($conn, $school_year) . "' 
+                AND se.status = 'active'
+            LEFT JOIN student st ON se.StudentID = st.StudentID
+            GROUP BY s.SectionID 
+            ORDER BY s.GradeLevel, s.SectionName";
+    $result = mysqli_query($conn, $sql);
+    if ($result) {
+        while ($row = mysqli_fetch_assoc($result)) {
+            $sections[] = $row;
+        }
+    }
+    return $sections;
+}
+
+// Function to get average grade per subject
+function getAvgGradePerSubject($conn, $school_year, $grade_level, $section_id, $quarter) {
+    $avg_grades = [];
+    $quarters_to_query = [];
+    
+    if ($quarter && $quarter != 'all') {
+        $quarters_to_query = [$quarter];
+    } else {
+        $quarters_to_query = [1, 2, 3, 4];
+    }
+    
+    $sql_parts = [];
+    foreach ($quarters_to_query as $q) {
+        $quarter_field = 'Q' . $q;
+        
+        $sql = "SELECT sub.SubjectName, $q AS quarter, AVG(g.$quarter_field) AS avg_grade
+                FROM grades g
+                JOIN subject sub ON g.subject = sub.SubjectID
+                JOIN section_enrollment se ON g.student_id = se.StudentID
+                JOIN section sec ON se.SectionID = sec.SectionID
+                WHERE g.$quarter_field IS NOT NULL
+                AND g.school_year = '" . mysqli_real_escape_string($conn, $school_year) . "'
+                AND se.SchoolYear = '" . mysqli_real_escape_string($conn, $school_year) . "'";
+        
+        if ($grade_level != 'all') {
+            $sql .= " AND sec.GradeLevel = " . intval($grade_level);
+        }
+        
+        if ($section_id != 'all') {
+            $sql .= " AND sec.SectionID = '" . mysqli_real_escape_string($conn, $section_id) . "'";
+        }
+        
+        $sql .= " GROUP BY sub.SubjectID, sub.SubjectName";
+        $sql_parts[] = $sql;
+    }
+    
+    if (!empty($sql_parts)) {
+        $final_sql = implode(" UNION ALL ", $sql_parts) . " ORDER BY quarter, avg_grade DESC";
+        $result = mysqli_query($conn, $final_sql);
+        if ($result) {
+            while ($row = mysqli_fetch_assoc($result)) {
+                $avg_grades[] = $row;
+            }
+        }
+    }
+    
+    return $avg_grades;
+}
+
+// Function to get teacher upload stats
+function getTeacherUploadStats($conn, $school_year, $quarter) {
+    $stats = [
+        'uploaded' => 0,
+        'not_uploaded' => 0,
+        'teachers_uploaded' => [],
+        'teachers_not_uploaded' => []
+    ];
+    
+    // Get all active teachers
+    $sql_teachers = "SELECT t.TeacherID, t.fName, t.lName, u.Email 
+                     FROM teacher t 
+                     JOIN user u ON t.UserID = u.UserID 
+                     WHERE t.status = 'Active'";
+    $result_teachers = mysqli_query($conn, $sql_teachers);
+    $all_teachers = [];
+    if ($result_teachers) {
+        while ($row = mysqli_fetch_assoc($result_teachers)) {
+            $all_teachers[$row['TeacherID']] = $row;
+        }
+    }
+    
+    // Check for grade uploads
+    $quarter_field = 'Q' . $quarter;
+    $sql = "SELECT DISTINCT uploadedby 
+            FROM grades 
+            WHERE $quarter_field IS NOT NULL 
+            AND school_year = '" . mysqli_real_escape_string($conn, $school_year) . "'
+            AND uploadedby IS NOT NULL";
+    
+    $result = mysqli_query($conn, $sql);
+    if ($result) {
+        while ($row = mysqli_fetch_assoc($result)) {
+            $teacher_id = $row['uploadedby'];
+            if (isset($all_teachers[$teacher_id])) {
+                $stats['uploaded']++;
+                $stats['teachers_uploaded'][$teacher_id] = $all_teachers[$teacher_id];
+            }
+        }
+    }
+    
+    // Get total teachers count
+    $sql = "SELECT COUNT(*) as count FROM teacher WHERE status = 'Active'";
+    $result = mysqli_query($conn, $sql);
+    $total_teachers = 0;
+    if ($result) {
+        $row = mysqli_fetch_assoc($result);
+        $total_teachers = $row['count'];
+    }
+    
+    $stats['not_uploaded'] = $total_teachers - $stats['uploaded'];
+    
+    // Populate not uploaded teachers list
+    foreach ($all_teachers as $teacher_id => $teacher) {
+        if (!isset($stats['teachers_uploaded'][$teacher_id])) {
+            $stats['teachers_not_uploaded'][$teacher_id] = $teacher;
+        }
+    }
+    
+    return $stats;
+}
+
+// Function to get subjects status
+function getSubjectsStatus($conn, $school_year) {
+    $subjects_with_grades = [];
+    $subjects_without_grades = [];
+    
+    $sql = "SELECT s.SubjectID, s.SubjectName, 
+            COUNT(DISTINCT g.grade_id) as grade_count,
+            COUNT(DISTINCT t.TeacherID) as assigned_teachers
+            FROM subject s
+            LEFT JOIN grades g ON s.SubjectID = g.subject AND g.school_year = '" . mysqli_real_escape_string($conn, $school_year) . "'
+            LEFT JOIN assigned_subject a ON s.SubjectID = a.subject_id AND a.school_year = '" . mysqli_real_escape_string($conn, $school_year) . "'
+            LEFT JOIN teacher t ON a.teacher_id = t.TeacherID
+            GROUP BY s.SubjectID, s.SubjectName
+            ORDER BY s.SubjectName";
+    
+    $result = mysqli_query($conn, $sql);
+    if ($result) {
+        while ($row = mysqli_fetch_assoc($result)) {
+            if ($row['grade_count'] > 0) {
+                $subjects_with_grades[] = $row;
+            } else {
+                $subjects_without_grades[] = $row;
+            }
+        }
+    }
+    
+    return [
+        'with_grades' => $subjects_with_grades,
+        'without_grades' => $subjects_without_grades
+    ];
+}
+
+// Function to get grade levels
+function getGradeLevels($conn) {
+    $levels = [];
+    $sql = "SELECT DISTINCT GradeLevel FROM section ORDER BY GradeLevel";
+    $result = mysqli_query($conn, $sql);
+    if ($result) {
+        while ($row = mysqli_fetch_assoc($result)) {
+            $levels[] = $row['GradeLevel'];
+        }
+    }
+    return $levels;
+}
+
+// Function to get sections based on grade level
+function getSections($conn, $grade_level) {
+    $sections = [];
+    $sql = "SELECT SectionID, SectionName, GradeLevel 
+            FROM section 
+            WHERE " . ($grade_level != 'all' ? "GradeLevel = " . intval($grade_level) : "1=1") . "
+            ORDER BY GradeLevel, SectionName";
+    $result = mysqli_query($conn, $sql);
+    if ($result) {
+        while ($row = mysqli_fetch_assoc($result)) {
+            $sections[] = $row;
+        }
+    }
+    return $sections;
+}
+
+// Get initial data for page load
 $school_years = [];
 $sql = "SELECT DISTINCT school_year FROM grades 
         UNION 
@@ -19,7 +316,6 @@ if ($result && mysqli_num_rows($result) > 0) {
         $school_years[] = $row['school_year'];
     }
 } else {
-    // If no school years in database, use current and previous year as default
     $current_year = date('Y');
     $school_years = [
         $current_year . '-' . ($current_year + 1),
@@ -27,119 +323,28 @@ if ($result && mysqli_num_rows($result) > 0) {
     ];
 }
 
-// Get selected filters with defaults
+// Get initial filters
 $selected_sy = isset($_GET['school_year']) ? $_GET['school_year'] : ($school_years[0] ?? '');
 $selected_grade = isset($_GET['grade_level']) ? $_GET['grade_level'] : 'all';
-$selected_section = isset($_GET['section_filter']) && $_GET['section_filter'] != 'all' ? $_GET['section_filter'] : '';
-$selected_quarter = isset($_GET['quarter_filter']) && $_GET['quarter_filter'] != 'all' ? $_GET['quarter_filter'] : '';
-$selected_upload_quarter = isset($_GET['upload_quarter']) ? $_GET['upload_quarter'] : 1;
+$selected_section = isset($_GET['section_filter']) ? $_GET['section_filter'] : 'all';
+$selected_quarter = isset($_GET['quarter_filter']) ? $_GET['quarter_filter'] : 'all';
+$selected_upload_quarter = isset($_GET['upload_quarter']) ? intval($_GET['upload_quarter']) : 1;
 
-// Fetch statistics data with school year filtering
-$students_count = 0;
-$teachers_count = 0;
-$sections_count = 0;
-$male_students = 0;
-$female_students = 0;
-
-// Get total students for selected school year
-$sql = "SELECT COUNT(DISTINCT se.StudentID) as count 
-        FROM section_enrollment se 
-        WHERE se.SchoolYear = '" . mysqli_real_escape_string($conn, $selected_sy) . "' 
-        AND se.status = 'active'";
-$result = mysqli_query($conn, $sql);
-if ($result) {
-    $row = mysqli_fetch_assoc($result);
-    $students_count = $row['count'];
+// Validate quarter values
+if (!in_array($selected_upload_quarter, [1, 2, 3, 4])) {
+    $selected_upload_quarter = 1;
 }
 
-// Get male students for selected school year
-$sql = "SELECT COUNT(DISTINCT se.StudentID) as count 
-        FROM section_enrollment se 
-        JOIN student st ON se.StudentID = st.StudentID 
-        WHERE se.SchoolYear = '" . mysqli_real_escape_string($conn, $selected_sy) . "' 
-        AND se.status = 'active' 
-        AND st.Sex = 'Male'";
-$result = mysqli_query($conn, $sql);
-if ($result) {
-    $row = mysqli_fetch_assoc($result);
-    $male_students = $row['count'];
-}
+// Get initial data
+$statistics = getStatistics($conn, $selected_sy);
+$students_per_section = getStudentsPerSection($conn, $selected_sy);
+$avg_grade_per_subject = getAvgGradePerSubject($conn, $selected_sy, $selected_grade, $selected_section, $selected_quarter);
+$teachers_upload_stats = getTeacherUploadStats($conn, $selected_sy, $selected_upload_quarter);
+$subjects_status = getSubjectsStatus($conn, $selected_sy);
+$grade_levels = getGradeLevels($conn);
+$sections = getSections($conn, $selected_grade);
 
-// Get female students for selected school year
-$sql = "SELECT COUNT(DISTINCT se.StudentID) as count 
-        FROM section_enrollment se 
-        JOIN student st ON se.StudentID = st.StudentID 
-        WHERE se.SchoolYear = '" . mysqli_real_escape_string($conn, $selected_sy) . "' 
-        AND se.status = 'active' 
-        AND st.Sex = 'Female'";
-$result = mysqli_query($conn, $sql);
-if ($result) {
-    $row = mysqli_fetch_assoc($result);
-    $female_students = $row['count'];
-}
-
-// Get total teachers (not tied to school year)
-$sql = "SELECT COUNT(*) as count FROM teacher WHERE status = 'Active'";
-$result = mysqli_query($conn, $sql);
-if ($result) {
-    $row = mysqli_fetch_assoc($result);
-    $teachers_count = $row['count'];
-}
-
-// Get total sections with active enrollments in selected school year
-$sql = "SELECT COUNT(DISTINCT s.SectionID) as count 
-        FROM section s 
-        JOIN section_enrollment se ON s.SectionID = se.SectionID 
-        WHERE se.SchoolYear = '" . mysqli_real_escape_string($conn, $selected_sy) . "' 
-        AND se.status = 'active'";
-$result = mysqli_query($conn, $sql);
-if ($result) {
-    $row = mysqli_fetch_assoc($result);
-    $sections_count = $row['count'];
-}
-
-// Get students per section with gender breakdown for selected school year
-$students_per_section = [];
-$sql = "SELECT s.SectionID, s.SectionName, s.GradeLevel, 
-               COUNT(CASE WHEN st.Sex = 'Male' THEN 1 END) as male_count,
-               COUNT(CASE WHEN st.Sex = 'Female' THEN 1 END) as female_count,
-               COUNT(se.StudentID) as total_count
-        FROM section s 
-        LEFT JOIN section_enrollment se ON s.SectionID = se.SectionID 
-            AND se.SchoolYear = '" . mysqli_real_escape_string($conn, $selected_sy) . "' 
-            AND se.status = 'active'
-        LEFT JOIN student st ON se.StudentID = st.StudentID
-        GROUP BY s.SectionID 
-        ORDER BY s.GradeLevel, s.SectionName";
-$result = mysqli_query($conn, $sql);
-if ($result) {
-    while ($row = mysqli_fetch_assoc($result)) {
-        $students_per_section[] = $row;
-    }
-}
-
-// Get top 5 students by average grade for selected school year
-$top_students = [];
-$sql = "SELECT st.StudentID, st.FirstName, st.LastName, sec.GradeLevel, sec.SectionName, 
-               AVG(g.Final) as avg_grade 
-        FROM student st 
-        JOIN grades g ON st.StudentID = g.student_id 
-        JOIN section_enrollment se ON st.StudentID = se.StudentID 
-        JOIN section sec ON se.SectionID = sec.SectionID 
-        WHERE g.Final IS NOT NULL 
-        AND g.school_year = '" . mysqli_real_escape_string($conn, $selected_sy) . "'
-        AND se.SchoolYear = '" . mysqli_real_escape_string($conn, $selected_sy) . "'
-        GROUP BY st.StudentID 
-        ORDER BY avg_grade DESC 
-        LIMIT 5";
-$result = mysqli_query($conn, $sql);
-if ($result) {
-    while ($row = mysqli_fetch_assoc($result)) {
-        $top_students[] = $row;
-    }
-}
-
-// Get today's activities from system logs (not tied to school year)
+// Get other data (non-AJAX)
 $todays_activities = [];
 $sql = "SELECT sl.action, sl.created_at, sl.details,
          COALESCE(CONCAT(t.fName, ' ', t.lName), a.FullName, CONCAT(s.FirstName, ' ', s.LastName), u.Email, sl.user_id) AS user_display
@@ -158,7 +363,6 @@ if ($result) {
     }
 }
 
-// Get upcoming events (next 7 days) - not tied to school year
 $upcoming_events = [];
 $sql = "SELECT title, event_date, description, category 
         FROM events 
@@ -172,127 +376,6 @@ if ($result) {
     }
 }
 
-// Get average grade per subject per quarter with filters
-$avg_grade_per_subject = [];
-
-// Build the SQL query dynamically based on filters
-$sql_parts = [];
-$quarters_to_query = [];
-
-if ($selected_quarter && $selected_quarter != 'all') {
-    $quarters_to_query = [$selected_quarter];
-} else {
-    $quarters_to_query = [1, 2, 3, 4];
-}
-
-foreach ($quarters_to_query as $quarter) {
-    $quarter_field = 'Q' . $quarter;
-    
-    $sql = "SELECT sub.SubjectName, $quarter AS quarter, AVG(g.$quarter_field) AS avg_grade
-            FROM grades g
-            JOIN subject sub ON g.subject = sub.SubjectID
-            JOIN section_enrollment se ON g.student_id = se.StudentID
-            JOIN section sec ON se.SectionID = sec.SectionID
-            WHERE g.$quarter_field IS NOT NULL
-            AND g.school_year = '" . mysqli_real_escape_string($conn, $selected_sy) . "'
-            AND se.SchoolYear = '" . mysqli_real_escape_string($conn, $selected_sy) . "'";
-    
-    // Apply grade level filter
-    if ($selected_grade != 'all') {
-        $sql .= " AND sec.GradeLevel = " . intval($selected_grade);
-    }
-    
-    // Apply section filter
-    if ($selected_section) {
-        $sql .= " AND sec.SectionID = '" . mysqli_real_escape_string($conn, $selected_section) . "'";
-    }
-    
-    $sql .= " GROUP BY sub.SubjectID, sub.SubjectName";
-    
-    $sql_parts[] = $sql;
-}
-
-// Combine all quarter queries
-if (!empty($sql_parts)) {
-    $final_sql = implode(" UNION ALL ", $sql_parts) . " ORDER BY quarter, avg_grade DESC";
-    
-    $result = mysqli_query($conn, $final_sql);
-    if ($result) {
-        while ($row = mysqli_fetch_assoc($result)) {
-            $avg_grade_per_subject[] = $row;
-        }
-    }
-}
-
-// Get unique grade levels for filter dropdown
-$grade_levels = [];
-$sql = "SELECT DISTINCT GradeLevel FROM section ORDER BY GradeLevel";
-$result = mysqli_query($conn, $sql);
-if ($result) {
-    while ($row = mysqli_fetch_assoc($result)) {
-        $grade_levels[] = $row['GradeLevel'];
-    }
-}
-
-// NEW: Get teacher upload statistics - More comprehensive approach
-$teachers_upload_stats = [];
-
-// Get all active teachers
-$sql_teachers = "SELECT t.TeacherID, t.fName, t.lName, u.Email 
-                 FROM teacher t 
-                 JOIN user u ON t.UserID = u.UserID 
-                 WHERE t.status = 'Active'";
-$result_teachers = mysqli_query($conn, $sql_teachers);
-$all_teachers = [];
-if ($result_teachers) {
-    while ($row = mysqli_fetch_assoc($result_teachers)) {
-        $all_teachers[$row['TeacherID']] = $row;
-    }
-}
-
-// Initialize stats for each quarter
-foreach ([1, 2, 3, 4] as $quarter) {
-    $teachers_upload_stats[$quarter] = [
-        'uploaded' => 0,
-        'not_uploaded' => 0,
-        'teachers_uploaded' => [],
-        'teachers_not_uploaded' => []
-    ];
-}
-
-// Check for grade uploads in grades table (manual entry or spreadsheet upload)
-foreach ([1, 2, 3, 4] as $quarter) {
-    $quarter_field = 'Q' . $quarter;
-    
-    $sql = "SELECT DISTINCT uploadedby 
-            FROM grades 
-            WHERE $quarter_field IS NOT NULL 
-            AND school_year = '" . mysqli_real_escape_string($conn, $selected_sy) . "'
-            AND uploadedby IS NOT NULL";
-    
-    $result = mysqli_query($conn, $sql);
-    if ($result) {
-        while ($row = mysqli_fetch_assoc($result)) {
-            $teacher_id = $row['uploadedby'];
-            if (isset($all_teachers[$teacher_id])) {
-                $teachers_upload_stats[$quarter]['uploaded']++;
-                $teachers_upload_stats[$quarter]['teachers_uploaded'][$teacher_id] = $all_teachers[$teacher_id];
-            }
-        }
-    }
-    
-    // Calculate not uploaded
-    $teachers_upload_stats[$quarter]['not_uploaded'] = $teachers_count - $teachers_upload_stats[$quarter]['uploaded'];
-    
-    // Populate not uploaded teachers list
-    foreach ($all_teachers as $teacher_id => $teacher) {
-        if (!isset($teachers_upload_stats[$quarter]['teachers_uploaded'][$teacher_id])) {
-            $teachers_upload_stats[$quarter]['teachers_not_uploaded'][$teacher_id] = $teacher;
-        }
-    }
-}
-
-// NEW: Get recent grade upload activities from logs - ONLY SUCCESSFUL ONES
 $recent_uploads = [];
 $sql_logs = "SELECT sl.*, 
              COALESCE(CONCAT(t.fName, ' ', t.lName), a.FullName, u.Email) AS user_name
@@ -311,32 +394,7 @@ if ($result_logs) {
         $recent_uploads[] = $row;
     }
 }
-
-// NEW: Get subjects with grades vs without grades
-$subjects_with_grades = [];
-$subjects_without_grades = [];
-
-$sql_subjects = "SELECT s.SubjectID, s.SubjectName, 
-                COUNT(DISTINCT g.grade_id) as grade_count,
-                COUNT(DISTINCT t.TeacherID) as assigned_teachers
-                FROM subject s
-                LEFT JOIN grades g ON s.SubjectID = g.subject AND g.school_year = '" . mysqli_real_escape_string($conn, $selected_sy) . "'
-                LEFT JOIN assigned_subject a ON s.SubjectID = a.subject_id AND a.school_year = '" . mysqli_real_escape_string($conn, $selected_sy) . "'
-                LEFT JOIN teacher t ON a.teacher_id = t.TeacherID
-                GROUP BY s.SubjectID, s.SubjectName
-                ORDER BY s.SubjectName";
-$result_subjects = mysqli_query($conn, $sql_subjects);
-if ($result_subjects) {
-    while ($row = mysqli_fetch_assoc($result_subjects)) {
-        if ($row['grade_count'] > 0) {
-            $subjects_with_grades[] = $row;
-        } else {
-            $subjects_without_grades[] = $row;
-        }
-    }
-}
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -407,6 +465,7 @@ if ($result_subjects) {
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             margin-bottom: 20px;
             height: 100%;
+            position: relative;
         }
         .table-container {
             background: white;
@@ -434,8 +493,17 @@ if ($result_subjects) {
         }
         .chart-wrapper {
             position: relative;
-            height: 250px;
             width: 100%;
+            min-height: 200px;
+        }
+        .students-chart-wrapper {
+            height: 350px;
+        }
+        .grades-chart-wrapper {
+            height: 400px;
+        }
+        .pie-chart-wrapper {
+            height: 300px;
         }
         .badge-quarter {
             font-size: 0.7em;
@@ -445,12 +513,6 @@ if ($result_subjects) {
             border-radius: 8px;
             padding: 15px;
             margin-bottom: 15px;
-        }
-        .school-year-badge {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            z-index: 100;
         }
         .grade-filter-form {
             background: #f8f9fa;
@@ -475,6 +537,97 @@ if ($result_subjects) {
         .combined-upload-section {
             min-height: 400px;
         }
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            border-radius: 10px;
+        }
+        
+        /* Chart tooltip improvements */
+        .chartjs-tooltip {
+            background: rgba(0, 0, 0, 0.8) !important;
+            border-radius: 4px !important;
+            padding: 10px !important;
+            color: white !important;
+            border: none !important;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2) !important;
+            max-width: 300px !important;
+        }
+        
+        /* Responsive chart adjustments */
+        @media (max-width: 1400px) {
+            .students-chart-wrapper {
+                height: 300px;
+            }
+            .grades-chart-wrapper {
+                height: 350px;
+            }
+            .pie-chart-wrapper {
+                height: 250px;
+            }
+        }
+        
+        @media (max-width: 1200px) {
+            .students-chart-wrapper {
+                height: 280px;
+            }
+            .grades-chart-wrapper {
+                height: 320px;
+            }
+            .pie-chart-wrapper {
+                height: 220px;
+            }
+        }
+        
+        @media (max-width: 992px) {
+            .students-chart-wrapper {
+                height: 250px;
+            }
+            .grades-chart-wrapper {
+                height: 300px;
+            }
+            .pie-chart-wrapper {
+                height: 200px;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .students-chart-wrapper {
+                height: 220px;
+            }
+            .grades-chart-wrapper {
+                height: 270px;
+            }
+            .pie-chart-wrapper {
+                height: 180px;
+            }
+            .chart-title {
+                font-size: 1rem;
+            }
+        }
+        
+        @media (max-width: 576px) {
+            .students-chart-wrapper {
+                height: 200px;
+            }
+            .grades-chart-wrapper {
+                height: 250px;
+            }
+            .pie-chart-wrapper {
+                height: 170px;
+            }
+            .stat-number {
+                font-size: 1.5rem;
+            }
+        }
     </style>
 </head>
 <body>
@@ -494,7 +647,7 @@ if ($result_subjects) {
                             <p class="card-text mb-0">Overview of school statistics and performance metrics</p>
                         </div>
                         <div class="col-auto">
-                            <i class="bi bi-calendar-check me-1"></i>School Year: <?php echo $selected_sy; ?>
+                            <i class="bi bi-calendar-check me-1"></i>School Year: <span id="school-year-display"><?php echo $selected_sy; ?></span>
                             <span class="badge bg-light text-secondary fs-6"><?php echo date('l, F j, Y'); ?></span>
                         </div>
                     </div>
@@ -507,10 +660,10 @@ if ($result_subjects) {
     <div class="row mb-4">
         <div class="col-12">
             <div class="filter-form">
-                <form method="GET" class="row g-3 align-items-end">
+                <form id="school-year-form" class="row g-3 align-items-end">
                     <div class="col-md-8 text-end"><label for="school_year" class="form-label fw-bold">School Year</label></div>
                     <div class="col-md-2">
-                        <select class="form-select" id="school_year" name="school_year" onchange="this.form.submit()">
+                        <select class="form-select" id="school_year" name="school_year">
                             <?php foreach ($school_years as $year): ?>
                                 <option value="<?php echo $year; ?>" <?php echo $selected_sy == $year ? 'selected' : ''; ?>>
                                     <?php echo $year; ?>
@@ -520,9 +673,9 @@ if ($result_subjects) {
                     </div>
                     <div class="col-md-2">
                         <div class="d-grid">
-                            <a href="?school_year=<?php echo $selected_sy; ?>" class="btn btn-outline-secondary">
+                            <button type="button" id="reset-filters" class="btn btn-outline-secondary">
                                 <i class="bi bi-arrow-clockwise"></i> Reset Filters
-                            </a>
+                            </button>
                         </div>
                     </div>
                 </form>
@@ -537,10 +690,10 @@ if ($result_subjects) {
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
                         <div class="stat-label">Total Students</div>
-                        <div class="stat-number"><?php echo $students_count; ?></div>
+                        <div class="stat-number" id="students-count"><?php echo $statistics['students_count']; ?></div>
                         <div class="gender-breakdown">
-                            <span class="badge bg-primary me-1"><i class="bi bi-gender-male"></i> <?php echo $male_students; ?></span>
-                            <span class="badge bg-danger"><i class="bi bi-gender-female"></i> <?php echo $female_students; ?></span>
+                            <span class="badge bg-primary me-1"><i class="bi bi-gender-male"></i> <span id="male-students"><?php echo $statistics['male_students']; ?></span></span>
+                            <span class="badge bg-danger"><i class="bi bi-gender-female"></i> <span id="female-students"><?php echo $statistics['female_students']; ?></span></span>
                         </div>
                         <small class="text-muted">SY: <?php echo $selected_sy; ?></small>
                     </div>
@@ -556,7 +709,7 @@ if ($result_subjects) {
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
                         <div class="stat-label">Teachers</div>
-                        <div class="stat-number"><?php echo $teachers_count; ?></div>
+                        <div class="stat-number" id="teachers-count"><?php echo $statistics['teachers_count']; ?></div>
                         <div class="gender-breakdown">Active faculty members</div>
                     </div>
                     <div class="bg-success bg-opacity-10 p-3 rounded">
@@ -571,7 +724,7 @@ if ($result_subjects) {
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
                         <div class="stat-label">Active Sections</div>
-                        <div class="stat-number"><?php echo $sections_count; ?></div>
+                        <div class="stat-number" id="sections-count"><?php echo $statistics['sections_count']; ?></div>
                         <div class="gender-breakdown">SY: <?php echo $selected_sy; ?></div>
                     </div>
                     <div class="bg-info bg-opacity-10 p-3 rounded">
@@ -586,10 +739,11 @@ if ($result_subjects) {
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
                         <div class="stat-label">Subjects with Grades</div>
-                        <div class="stat-number"><?php echo count($subjects_with_grades); ?>/<?php echo count($subjects_with_grades) + count($subjects_without_grades); ?></div>
+                        <div class="stat-number" id="subjects-with-grades"><?php echo count($subjects_status['with_grades']); ?>/<?php echo count($subjects_status['with_grades']) + count($subjects_status['without_grades']); ?></div>
                         <div class="progress mt-2">
                             <div class="progress-bar bg-purple" role="progressbar" 
-                                 style="width: <?php echo (count($subjects_with_grades) / (count($subjects_with_grades) + count($subjects_without_grades))) * 100; ?>%">
+                                 id="subjects-progress-bar"
+                                 style="width: <?php echo (count($subjects_status['with_grades']) / (count($subjects_status['with_grades']) + count($subjects_status['without_grades']))) * 100; ?>%">
                             </div>
                         </div>
                         <small class="text-muted">Grade completion rate</small>
@@ -610,11 +764,16 @@ if ($result_subjects) {
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <div class="chart-title">
                         <i class="bi bi-bar-chart-fill me-2 text-primary"></i>Students Distribution by Class
-                        <small class="text-muted ms-2">(SY: <?php echo $selected_sy; ?>)</small>
+                        <small class="text-muted ms-2">(SY: <span id="chart-school-year"><?php echo $selected_sy; ?></span>)</small>
                     </div>
                 </div>
-                <div class="chart-wrapper">
+                <div class="chart-wrapper students-chart-wrapper">
                     <canvas id="studentsPerClassChart"></canvas>
+                </div>
+                <div class="mt-3 text-center">
+                    <small class="text-muted">
+                        <i class="bi bi-info-circle me-1"></i>Hover over bars to see detailed breakdown
+                    </small>
                 </div>
             </div>
         </div>
@@ -670,41 +829,40 @@ if ($result_subjects) {
                 
                 <!-- Quarter Selector -->
                 <div class="mb-3">
-                    <form method="GET" class="row g-3 align-items-center">
-                        <input type="hidden" name="school_year" value="<?php echo $selected_sy; ?>">
+                    <div class="row g-3 align-items-center">
                         <div class="col-md-6">
                             <label for="upload_quarter" class="form-label fw-bold">Select Quarter:</label>
-                            <select class="form-select upload-quarter-selector" id="upload_quarter" name="upload_quarter" onchange="this.form.submit()">
+                            <select class="form-select upload-quarter-selector" id="upload_quarter" name="upload_quarter">
                                 <option value="1" <?php echo $selected_upload_quarter == 1 ? 'selected' : ''; ?>>Quarter 1</option>
                                 <option value="2" <?php echo $selected_upload_quarter == 2 ? 'selected' : ''; ?>>Quarter 2</option>
                                 <option value="3" <?php echo $selected_upload_quarter == 3 ? 'selected' : ''; ?>>Quarter 3</option>
                                 <option value="4" <?php echo $selected_upload_quarter == 4 ? 'selected' : ''; ?>>Quarter 4</option>
                             </select>
                         </div>
-                    </form>
+                    </div>
                 </div>
                 
                 <div class="row">
                     <div class="col-md-6">
-                        <div class="chart-wrapper">
+                        <div class="chart-wrapper pie-chart-wrapper">
                             <canvas id="teachersUploadPie"></canvas>
                         </div>
                         <div class="text-center mt-2">
-                            <span class="badge bg-success upload-status-badge">Uploaded: <?php echo $teachers_upload_stats[$selected_upload_quarter]['uploaded']; ?></span>
-                            <span class="badge bg-secondary upload-status-badge">Not Uploaded: <?php echo $teachers_upload_stats[$selected_upload_quarter]['not_uploaded']; ?></span>
+                            <span class="badge bg-success upload-status-badge" id="uploaded-count">Uploaded: <?php echo $teachers_upload_stats['uploaded']; ?></span>
+                            <span class="badge bg-secondary upload-status-badge" id="not-uploaded-count">Not Uploaded: <?php echo $teachers_upload_stats['not_uploaded']; ?></span>
                         </div>
                     </div>
                     <div class="col-md-6">
                         <!-- Teacher Lists -->
                         <div class="mb-3">
                             <small class="text-muted d-block mb-1 fw-bold">Teachers who uploaded (Q<?php echo $selected_upload_quarter; ?>):</small>
-                            <div class="teacher-list">
-                                <?php if (!empty($teachers_upload_stats[$selected_upload_quarter]['teachers_uploaded'])): ?>
-                                    <?php foreach (array_slice($teachers_upload_stats[$selected_upload_quarter]['teachers_uploaded'], 0, 5) as $teacher): ?>
+                            <div class="teacher-list" id="uploaded-teachers-list">
+                                <?php if (!empty($teachers_upload_stats['teachers_uploaded'])): ?>
+                                    <?php foreach (array_slice($teachers_upload_stats['teachers_uploaded'], 0, 5) as $teacher): ?>
                                         <div class="text-success mb-1">✓ <?php echo $teacher['fName'] . ' ' . $teacher['lName']; ?></div>
                                     <?php endforeach; ?>
-                                    <?php if (count($teachers_upload_stats[$selected_upload_quarter]['teachers_uploaded']) > 5): ?>
-                                        <small class="text-muted">+<?php echo count($teachers_upload_stats[$selected_upload_quarter]['teachers_uploaded']) - 5; ?> more</small>
+                                    <?php if (count($teachers_upload_stats['teachers_uploaded']) > 5): ?>
+                                        <small class="text-muted">+<?php echo count($teachers_upload_stats['teachers_uploaded']) - 5; ?> more</small>
                                     <?php endif; ?>
                                 <?php else: ?>
                                     <small class="text-muted">No teachers uploaded for this quarter</small>
@@ -714,13 +872,13 @@ if ($result_subjects) {
                         
                         <div>
                             <small class="text-muted d-block mb-1 fw-bold">Teachers who haven't uploaded (Q<?php echo $selected_upload_quarter; ?>):</small>
-                            <div class="teacher-list">
-                                <?php if (!empty($teachers_upload_stats[$selected_upload_quarter]['teachers_not_uploaded'])): ?>
-                                    <?php foreach (array_slice($teachers_upload_stats[$selected_upload_quarter]['teachers_not_uploaded'], 0, 5) as $teacher): ?>
+                            <div class="teacher-list" id="not-uploaded-teachers-list">
+                                <?php if (!empty($teachers_upload_stats['teachers_not_uploaded'])): ?>
+                                    <?php foreach (array_slice($teachers_upload_stats['teachers_not_uploaded'], 0, 5) as $teacher): ?>
                                         <div class="text-danger mb-1">✗ <?php echo $teacher['fName'] . ' ' . $teacher['lName']; ?></div>
                                     <?php endforeach; ?>
-                                    <?php if (count($teachers_upload_stats[$selected_upload_quarter]['teachers_not_uploaded']) > 5): ?>
-                                        <small class="text-muted">+<?php echo count($teachers_upload_stats[$selected_upload_quarter]['teachers_not_uploaded']) - 5; ?> more</small>
+                                    <?php if (count($teachers_upload_stats['teachers_not_uploaded']) > 5): ?>
+                                        <small class="text-muted">+<?php echo count($teachers_upload_stats['teachers_not_uploaded']) - 5; ?> more</small>
                                     <?php endif; ?>
                                 <?php else: ?>
                                     <small class="text-success">All teachers have uploaded for this quarter!</small>
@@ -815,11 +973,8 @@ if ($result_subjects) {
 
                 <!-- Filter Form for Average Grade Section -->
                 <div class="grade-filter-form mb-3">
-                    <form method="GET" class="row g-3 align-items-end">
-                        <input type="hidden" name="school_year" value="<?php echo $selected_sy; ?>">
-                        <input type="hidden" name="upload_quarter" value="<?php echo $selected_upload_quarter; ?>">
-                        
-                        <div class="col-md-2">
+                    <form id="grade-filter-form" class="row g-3 align-items-end">
+                        <div class="col-md-3">
                             <label for="grade_level" class="form-label fw-bold">Grade Level</label>
                             <select class="form-select" id="grade_level" name="grade_level">
                                 <option value="all" <?php echo $selected_grade == 'all' ? 'selected' : ''; ?>>All Grades</option>
@@ -831,160 +986,288 @@ if ($result_subjects) {
                             </select>
                         </div>
                         
-                        <div class="col-md-2">
+                        <div class="col-md-3">
                             <label for="section_filter" class="form-label fw-bold">Section</label>
                             <select class="form-select" id="section_filter" name="section_filter">
-                                <option value="all" <?php echo ($_GET['section_filter'] ?? 'all') == 'all' ? 'selected' : ''; ?>>All Sections</option>
-                                <?php foreach ($students_per_section as $section): ?>
-                                    <?php if ($selected_grade == 'all' || $section['GradeLevel'] == $selected_grade): ?>
-                                        <option value="<?php echo $section['SectionID']; ?>" 
-                                            <?php echo ($_GET['section_filter'] ?? '') == $section['SectionID'] ? 'selected' : ''; ?>>
-                                            <?php echo $section['SectionName']; ?> (G<?php echo $section['GradeLevel']; ?>)
-                                        </option>
-                                    <?php endif; ?>
+                                <option value="all" <?php echo $selected_section == 'all' ? 'selected' : ''; ?>>All Sections</option>
+                                <?php foreach ($sections as $section): ?>
+                                    <option value="<?php echo $section['SectionID']; ?>" 
+                                        <?php echo $selected_section == $section['SectionID'] ? 'selected' : ''; ?>>
+                                        <?php echo $section['SectionName']; ?> (G<?php echo $section['GradeLevel']; ?>)
+                                    </option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
                         
-                        <div class="col-md-2">
+                        <div class="col-md-3">
                             <label for="quarter_filter" class="form-label fw-bold">Quarter</label>
                             <select class="form-select" id="quarter_filter" name="quarter_filter">
-                                <option value="all" <?php echo ($_GET['quarter_filter'] ?? 'all') == 'all' ? 'selected' : ''; ?>>All Quarters</option>
-                                <option value="1" <?php echo ($_GET['quarter_filter'] ?? '') == '1' ? 'selected' : ''; ?>>Quarter 1</option>
-                                <option value="2" <?php echo ($_GET['quarter_filter'] ?? '') == '2' ? 'selected' : ''; ?>>Quarter 2</option>
-                                <option value="3" <?php echo ($_GET['quarter_filter'] ?? '') == '3' ? 'selected' : ''; ?>>Quarter 3</option>
-                                <option value="4" <?php echo ($_GET['quarter_filter'] ?? '') == '4' ? 'selected' : ''; ?>>Quarter 4</option>
+                                <option value="all" <?php echo $selected_quarter == 'all' ? 'selected' : ''; ?>>All Quarters</option>
+                                <option value="1" <?php echo $selected_quarter == '1' ? 'selected' : ''; ?>>Quarter 1</option>
+                                <option value="2" <?php echo $selected_quarter == '2' ? 'selected' : ''; ?>>Quarter 2</option>
+                                <option value="3" <?php echo $selected_quarter == '3' ? 'selected' : ''; ?>>Quarter 3</option>
+                                <option value="4" <?php echo $selected_quarter == '4' ? 'selected' : ''; ?>>Quarter 4</option>
                             </select>
                         </div>
                         
-                        <div class="col-md-2">
-                            <button type="submit" class="btn btn-primary w-100">
-                                <i class="bi bi-filter"></i>Filters
+                        <div class="col-md-3">
+                            <button type="button" id="reset-grade-filters" class="btn btn-outline-secondary w-100">
+                                <i class="bi bi-arrow-clockwise"></i> Reset Filters
                             </button>
-                        </div>
-                        <div class="col-md-2">
-                            <a href="?school_year=<?php echo $selected_sy; ?>&upload_quarter=<?php echo $selected_upload_quarter; ?>" class="btn btn-outline-secondary w-100">
-                                <i class="bi bi-arrow-clockwise"></i> Reset
-                            </a>
                         </div>
                     </form>
                 </div>
 
-                <?php if (!empty($avg_grade_per_subject)): ?>
-                    <div class="chart-wrapper">
-                        <canvas id="avgGradePerSubjectChart"></canvas>
-                    </div>
-                <?php else: ?>
-                    <div class="text-center text-muted py-5">
-                        <i class="bi bi-clipboard-x fs-1 d-block mb-2"></i>
-                        No grade data available for selected filters
-                    </div>
-                <?php endif; ?>
+                <div class="chart-wrapper grades-chart-wrapper">
+                    <canvas id="avgGradePerSubjectChart"></canvas>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
+<!-- Loading Overlay -->
+<div id="loading-overlay" class="loading-overlay" style="display: none;">
+    <div class="text-center">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2">Loading data...</p>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    // Dynamic section filtering based on grade level
-    document.addEventListener('DOMContentLoaded', function() {
-        const gradeLevelSelect = document.getElementById('grade_level');
-        const sectionSelect = document.getElementById('section_filter');
+// Global chart instances
+let studentsPerClassChart = null;
+let teachersUploadPie = null;
+let avgGradePerSubjectChart = null;
+
+// Debounce function to prevent too many API calls
+let debounceTimer;
+function debounce(func, delay) {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(func, delay);
+}
+
+// Initialize with PHP data
+document.addEventListener('DOMContentLoaded', function() {
+    // Initial data from PHP
+    const initialData = {
+        statistics: <?php echo json_encode($statistics); ?>,
+        students_per_section: <?php echo json_encode($students_per_section); ?>,
+        avg_grade_per_subject: <?php echo json_encode($avg_grade_per_subject); ?>,
+        teachers_upload_stats: <?php echo json_encode($teachers_upload_stats); ?>,
+        subjects_status: <?php echo json_encode($subjects_status); ?>,
+        grade_levels: <?php echo json_encode($grade_levels); ?>,
+        sections: <?php echo json_encode($sections); ?>
+    };
+    
+    initializeCharts(initialData);
+    setupEventListeners();
+});
+
+// Setup event listeners for AJAX filtering
+function setupEventListeners() {
+    // School year filter - automatic update
+    document.getElementById('school_year').addEventListener('change', function() {
+        debounce(() => updateDashboard(), 300);
+    });
+    
+    // Upload quarter filter - automatic update
+    document.getElementById('upload_quarter').addEventListener('change', function() {
+        debounce(() => updateDashboard(), 300);
+    });
+    
+    // Grade level filter - automatic update
+    document.getElementById('grade_level').addEventListener('change', function() {
+        updateSectionDropdownAutomatically();
+        debounce(() => updateDashboard(), 300);
+    });
+    
+    // Section filter - automatic update
+    document.getElementById('section_filter').addEventListener('change', function() {
+        debounce(() => updateDashboard(), 300);
+    });
+    
+    // Quarter filter - automatic update
+    document.getElementById('quarter_filter').addEventListener('change', function() {
+        debounce(() => updateDashboard(), 300);
+    });
+    
+    // Reset filters
+    document.getElementById('reset-filters').addEventListener('click', function() {
+        resetFilters();
+    });
+    
+    document.getElementById('reset-grade-filters').addEventListener('click', function() {
+        resetGradeFilters();
+    });
+}
+
+// Update section dropdown automatically when grade level changes
+function updateSectionDropdownAutomatically() {
+    const gradeLevel = document.getElementById('grade_level').value;
+    const sectionSelect = document.getElementById('section_filter');
+    
+    // Get sections from server for the selected grade level
+    fetchSectionsForGradeLevel(gradeLevel).then(sections => {
+        // Save current selection
+        const currentSection = sectionSelect.value;
         
-        if (gradeLevelSelect && sectionSelect) {
-            gradeLevelSelect.addEventListener('change', function() {
-                const selectedGrade = this.value;
-                const currentSection = sectionSelect.value;
-                
-                // Reset section options
-                sectionSelect.innerHTML = '<option value="all">All Sections</option>';
-                
-                // Get all available sections from PHP data
-                const allSections = <?php echo json_encode($students_per_section); ?>;
-                
-                // Filter sections by selected grade level
-                const filteredSections = selectedGrade === 'all' 
-                    ? allSections 
-                    : allSections.filter(section => section.GradeLevel == selectedGrade);
-                
-                // Populate section dropdown
-                filteredSections.forEach(section => {
-                    const option = document.createElement('option');
-                    option.value = section.SectionID;
-                    option.textContent = `${section.SectionName} (G${section.GradeLevel})`;
-                    option.selected = (currentSection == section.SectionID);
-                    sectionSelect.appendChild(option);
-                });
-            });
+        // Clear existing options
+        sectionSelect.innerHTML = '<option value="all">All Sections</option>';
+        
+        // Add new options
+        sections.forEach(section => {
+            const option = document.createElement('option');
+            option.value = section.SectionID;
+            option.textContent = `${section.SectionName} (G${section.GradeLevel})`;
             
-            // Trigger change on page load to set initial state
-            gradeLevelSelect.dispatchEvent(new Event('change'));
-        }
-    });
-
-    // Teacher Upload Pie Chart (Single Chart with Dropdown)
-    const teachersUploadPieCtx = document.getElementById('teachersUploadPie').getContext('2d');
-    
-    // Get data for the selected quarter
-    const selectedQuarter = <?php echo $selected_upload_quarter; ?>;
-    const uploadedCount = <?php echo $teachers_upload_stats[$selected_upload_quarter]['uploaded']; ?>;
-    const notUploadedCount = <?php echo $teachers_upload_stats[$selected_upload_quarter]['not_uploaded']; ?>;
-    
-    new Chart(teachersUploadPieCtx, {
-        type: 'pie',
-        data: {
-            labels: ['Uploaded', 'Not Uploaded'],
-            datasets: [{
-                data: [uploadedCount, notUploadedCount],
-                backgroundColor: [
-                    'rgba(28, 200, 138, 0.8)',
-                    'rgba(231, 74, 59, 0.8)'
-                ],
-                borderColor: [
-                    'rgba(28, 200, 138, 1)',
-                    'rgba(231, 74, 59, 1)'
-                ],
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { 
-                    display: true, 
-                    position: 'bottom',
-                    labels: {
-                        padding: 20,
-                        usePointStyle: true
-                    }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const label = context.label || '';
-                            const value = context.parsed;
-                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                            const percentage = Math.round((value / total) * 100);
-                            return `${label}: ${value} (${percentage}%)`;
-                        }
-                    }
-                }
+            // Try to keep the same section selected if it exists in the new list
+            if (section.SectionID === currentSection) {
+                option.selected = true;
             }
-        }
+            
+            sectionSelect.appendChild(option);
+        });
     });
+}
 
-    // Students Per Class Chart (Stacked Bar Chart)
-    const studentsPerClassCtx = document.getElementById('studentsPerClassChart').getContext('2d');
-    const sectionLabels = <?php echo json_encode(array_map(function($item) { 
-        return $item['SectionName'] . ' (G' . $item['GradeLevel'] . ')'; 
-    }, $students_per_section)); ?>;
+// Fetch sections for a specific grade level
+async function fetchSectionsForGradeLevel(gradeLevel) {
+    try {
+        const schoolYear = document.getElementById('school_year').value;
+        const response = await fetch(`?ajax=1&school_year=${encodeURIComponent(schoolYear)}&grade_level=${encodeURIComponent(gradeLevel)}`);
+        
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        
+        const data = await response.json();
+        return data.sections || [];
+    } catch (error) {
+        console.error('Error fetching sections:', error);
+        return [];
+    }
+}
+
+// AJAX function to update dashboard
+function updateDashboard() {
+    showLoading();
     
-    const maleData = <?php echo json_encode(array_column($students_per_section, 'male_count')); ?>;
-    const femaleData = <?php echo json_encode(array_column($students_per_section, 'female_count')); ?>;
+    // Collect all filter values
+    const filters = {
+        school_year: document.getElementById('school_year').value,
+        grade_level: document.getElementById('grade_level').value,
+        section_filter: document.getElementById('section_filter').value,
+        quarter_filter: document.getElementById('quarter_filter').value,
+        upload_quarter: document.getElementById('upload_quarter').value,
+        ajax: 1
+    };
     
-    new Chart(studentsPerClassCtx, {
+    // Update URL without page reload
+    updateURL(filters);
+    
+    // AJAX request
+    fetch(`?${new URLSearchParams(filters).toString()}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            updateDashboardData(data);
+            hideLoading();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            hideLoading();
+            showError('Error loading data. Please try again.');
+        });
+}
+
+// Update dashboard with new data
+function updateDashboardData(data) {
+    try {
+        // Update statistics
+        document.getElementById('students-count').textContent = data.statistics.students_count || 0;
+        document.getElementById('male-students').textContent = data.statistics.male_students || 0;
+        document.getElementById('female-students').textContent = data.statistics.female_students || 0;
+        document.getElementById('teachers-count').textContent = data.statistics.teachers_count || 0;
+        document.getElementById('sections-count').textContent = data.statistics.sections_count || 0;
+        
+        // Update subjects progress
+        const withGrades = data.subjects_status?.with_grades?.length || 0;
+        const withoutGrades = data.subjects_status?.without_grades?.length || 0;
+        const totalSubjects = withGrades + withoutGrades;
+        document.getElementById('subjects-with-grades').textContent = `${withGrades}/${totalSubjects}`;
+        
+        const percentage = totalSubjects > 0 ? (withGrades / totalSubjects) * 100 : 0;
+        document.getElementById('subjects-progress-bar').style.width = `${percentage}%`;
+        
+        // Update school year displays
+        const schoolYear = document.getElementById('school_year').value;
+        document.getElementById('school-year-display').textContent = schoolYear;
+        document.getElementById('chart-school-year').textContent = schoolYear;
+        
+        // Update charts
+        updateCharts(data);
+        
+        // Update teacher upload stats
+        updateTeacherUploadStats(data.teachers_upload_stats);
+        
+        // Update section dropdown if grade level changed
+        updateSectionsDropdown(data.sections);
+    } catch (error) {
+        console.error('Error updating dashboard:', error);
+        showError('Error updating dashboard data.');
+    }
+}
+
+// Update charts with new data
+function updateCharts(data) {
+    // Students per class chart
+    updateStudentsChart(data.students_per_section);
+    
+    // Average grade per subject chart
+    updateAvgGradeChart(data.avg_grade_per_subject);
+    
+    // Teacher upload pie chart
+    updateTeacherPieChart(data.teachers_upload_stats);
+}
+
+// Update students chart
+function updateStudentsChart(sectionsData) {
+    const ctx = document.getElementById('studentsPerClassChart').getContext('2d');
+    
+    // Destroy old chart if exists
+    if (studentsPerClassChart) {
+        studentsPerClassChart.destroy();
+    }
+    
+    // Check if we have data
+    if (!sectionsData || sectionsData.length === 0) {
+        // Show message when no data
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        ctx.font = '16px Arial';
+        ctx.fillStyle = '#6c757d';
+        ctx.textAlign = 'center';
+        ctx.fillText('No student data available for selected school year', 
+                     ctx.canvas.width / 2, ctx.canvas.height / 2);
+        return;
+    }
+    
+    // Prepare data
+    const sectionLabels = sectionsData.map(item => 
+        `${item.SectionName} (G${item.GradeLevel})`
+    );
+    const maleData = sectionsData.map(item => item.male_count || 0);
+    const femaleData = sectionsData.map(item => item.female_count || 0);
+    
+    // Create new chart
+    studentsPerClassChart = new Chart(ctx, {
         type: 'bar',
         data: {
             labels: sectionLabels,
@@ -992,75 +1275,51 @@ if ($result_subjects) {
                 {
                     label: 'Male Students',
                     data: maleData,
-                    backgroundColor: 'rgba(54, 162, 235, 0.8)',
-                    borderColor: 'rgba(54, 162, 235, 1)',
-                    borderWidth: 1
+                    backgroundColor: 'rgba(52, 152, 219, 0.9)',
+                    borderColor: 'rgba(41, 128, 185, 1)',
+                    borderWidth: 1,
+                    stack: 'Stack 0'
                 },
                 {
                     label: 'Female Students',
                     data: femaleData,
                     backgroundColor: 'rgba(255, 182, 193, 0.8)',
                     borderColor: 'rgba(255, 182, 193, 1)',
-                    borderWidth: 1
+                    borderWidth: 1,
+                    stack: 'Stack 0'
                 }
             ]
         },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        stepSize: 5
-                    },
-                    grid: {
-                        drawBorder: false
-                    },
-                    title: {
-                        display: true,
-                        text: 'Number of Students'
-                    }
-                },
-                x: {
-                    grid: {
-                        display: false
-                    }
-                }
-            },
-            plugins: {
-                legend: {
-                    display: true,
-                    position: 'top',
-                },
-                tooltip: {
-                    callbacks: {
-                        afterBody: function(context) {
-                            const datasetIndex = context[0].datasetIndex;
-                            const dataIndex = context[0].dataIndex;
-                            const maleCount = maleData[dataIndex];
-                            const femaleCount = femaleData[dataIndex];
-                            const total = maleCount + femaleCount;
-                            return `Total: ${total} students`;
-                        }
-                    }
-                }
-            }
-        }
+        options: getStudentsChartOptions()
     });
+}
+
+// Update average grade chart
+function updateAvgGradeChart(gradeData) {
+    const ctx = document.getElementById('avgGradePerSubjectChart').getContext('2d');
     
-    <?php if (!empty($avg_grade_per_subject)): ?>
-    // Average Grade Per Subject Chart (Grouped by Quarter)
-    const avgGradePerSubjectCtx = document.getElementById('avgGradePerSubjectChart').getContext('2d');
+    if (avgGradePerSubjectChart) {
+        avgGradePerSubjectChart.destroy();
+    }
+    
+    if (!gradeData || gradeData.length === 0) {
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        ctx.font = '16px Arial';
+        ctx.fillStyle = '#6c757d';
+        ctx.textAlign = 'center';
+        ctx.fillText('No grade data available for selected filters', 
+                     ctx.canvas.width / 2, ctx.canvas.height / 2);
+        return;
+    }
     
     // Group data by quarter
-    const quarters = [...new Set(<?php echo json_encode(array_column($avg_grade_per_subject, 'quarter')); ?>)].sort();
-    const subjects = [...new Set(<?php echo json_encode(array_column($avg_grade_per_subject, 'SubjectName')); ?>)].sort();
+    const quarters = [...new Set(gradeData.map(item => item.quarter))].sort((a, b) => a - b);
+    const subjects = [...new Set(gradeData.map(item => item.SubjectName))].sort();
     
     // Create dataset for each quarter
     const quarterDatasets = quarters.map(quarter => {
         const quarterData = subjects.map(subject => {
-            const record = <?php echo json_encode($avg_grade_per_subject); ?>.find(
+            const record = gradeData.find(
                 item => item.quarter == quarter && item.SubjectName === subject
             );
             return record ? parseFloat(record.avg_grade).toFixed(2) : null;
@@ -1082,49 +1341,485 @@ if ($result_subjects) {
         };
     });
     
-    new Chart(avgGradePerSubjectCtx, {
+    avgGradePerSubjectChart = new Chart(ctx, {
         type: 'bar',
         data: {
             labels: subjects,
             datasets: quarterDatasets
         },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    max: 100,
-                    grid: {
-                        drawBorder: false
-                    },
-                    title: {
-                        display: true,
-                        text: 'Average Grade'
-                    }
-                },
-                x: {
-                    grid: {
-                        display: false
+        options: getAvgGradeChartOptions()
+    });
+}
+
+// Update teacher pie chart
+function updateTeacherPieChart(uploadStats) {
+    const ctx = document.getElementById('teachersUploadPie').getContext('2d');
+    const quarter = document.getElementById('upload_quarter').value;
+    
+    if (teachersUploadPie) {
+        teachersUploadPie.destroy();
+    }
+    
+    const uploadedCount = uploadStats?.uploaded || 0;
+    const notUploadedCount = uploadStats?.not_uploaded || 0;
+    
+    // Update badges
+    document.getElementById('uploaded-count').textContent = `Uploaded: ${uploadedCount}`;
+    document.getElementById('not-uploaded-count').textContent = `Not Uploaded: ${notUploadedCount}`;
+    
+    // Update teacher lists
+    updateTeacherLists(uploadStats);
+    
+    // Create new pie chart
+    teachersUploadPie = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: ['Uploaded', 'Not Uploaded'],
+            datasets: [{
+                data: [uploadedCount, notUploadedCount],
+                backgroundColor: [
+                    'rgba(28, 200, 138, 0.8)',
+                    'rgba(231, 74, 59, 0.8)'
+                ],
+                borderColor: [
+                    'rgba(28, 200, 138, 1)',
+                    'rgba(231, 74, 59, 1)'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: getPieChartOptions()
+    });
+}
+
+// Update teacher lists
+function updateTeacherLists(uploadStats) {
+    const uploadedList = document.getElementById('uploaded-teachers-list');
+    const notUploadedList = document.getElementById('not-uploaded-teachers-list');
+    const quarter = document.getElementById('upload_quarter').value;
+    
+    // Update uploaded teachers list
+    uploadedList.innerHTML = '';
+    if (uploadStats?.teachers_uploaded && Object.keys(uploadStats.teachers_uploaded).length > 0) {
+        const teachers = Object.values(uploadStats.teachers_uploaded);
+        teachers.slice(0, 5).forEach(teacher => {
+            const div = document.createElement('div');
+            div.className = 'text-success mb-1';
+            div.innerHTML = `✓ ${teacher.fName} ${teacher.lName}`;
+            uploadedList.appendChild(div);
+        });
+        
+        if (teachers.length > 5) {
+            const more = document.createElement('small');
+            more.className = 'text-muted';
+            more.textContent = `+${teachers.length - 5} more`;
+            uploadedList.appendChild(more);
+        }
+    } else {
+        uploadedList.innerHTML = '<small class="text-muted">No teachers uploaded for this quarter</small>';
+    }
+    
+    // Update not uploaded teachers list
+    notUploadedList.innerHTML = '';
+    if (uploadStats?.teachers_not_uploaded && Object.keys(uploadStats.teachers_not_uploaded).length > 0) {
+        const teachers = Object.values(uploadStats.teachers_not_uploaded);
+        teachers.slice(0, 5).forEach(teacher => {
+            const div = document.createElement('div');
+            div.className = 'text-danger mb-1';
+            div.innerHTML = `✗ ${teacher.fName} ${teacher.lName}`;
+            notUploadedList.appendChild(div);
+        });
+        
+        if (teachers.length > 5) {
+            const more = document.createElement('small');
+            more.className = 'text-muted';
+            more.textContent = `+${teachers.length - 5} more`;
+            notUploadedList.appendChild(more);
+        }
+    } else {
+        notUploadedList.innerHTML = '<small class="text-success">All teachers have uploaded for this quarter!</small>';
+    }
+}
+
+// Update section dropdown
+function updateSectionsDropdown(sections) {
+    const sectionSelect = document.getElementById('section_filter');
+    const currentSection = sectionSelect.value;
+    
+    // Clear existing options except "All Sections"
+    sectionSelect.innerHTML = '<option value="all">All Sections</option>';
+    
+    if (sections && sections.length > 0) {
+        sections.forEach(section => {
+            const option = document.createElement('option');
+            option.value = section.SectionID;
+            option.textContent = `${section.SectionName} (G${section.GradeLevel})`;
+            if (section.SectionID === currentSection) {
+                option.selected = true;
+            }
+            sectionSelect.appendChild(option);
+        });
+    }
+}
+
+// Chart options configuration
+function getStudentsChartOptions() {
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                display: true,
+                position: 'top',
+                labels: {
+                    padding: 15,
+                    usePointStyle: true,
+                    pointStyle: 'circle',
+                    font: {
+                        size: 11
                     }
                 }
             },
-            plugins: {
-                legend: {
-                    display: quarters.length > 1,
-                    position: 'top',
+            tooltip: {
+                mode: 'index',
+                intersect: false,
+                backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                titleColor: '#fff',
+                bodyColor: '#fff',
+                borderColor: '#3498db',
+                borderWidth: 1,
+                padding: 12,
+                cornerRadius: 6,
+                titleFont: {
+                    size: 13,
+                    weight: 'bold'
                 },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return `${context.dataset.label}: ${context.parsed.y}`;
-                        }
+                bodyFont: {
+                    size: 12
+                },
+                footerFont: {
+                    size: 11
+                },
+callbacks: {
+    label: function(context) {
+        return `${context.dataset.label}: ${context.parsed.y} students`;
+    },
+    footer: function(tooltipItems) {
+        let total = 0;
+        tooltipItems.forEach(function(item) {
+            total += item.parsed.y;
+        });
+        return `Total Students: ${total}`;
+    }
+}
+            }
+        },
+        scales: {
+            x: {
+                stacked: true,
+                grid: {
+                    display: false,
+                    drawBorder: false
+                },
+                ticks: {
+                    font: {
+                        size: 10
+                    },
+                    maxRotation: 45,
+                    minRotation: 45
+                }
+            },
+            y: {
+                stacked: true,
+                beginAtZero: true,
+                ticks: {
+                    font: {
+                        size: 10
+                    },
+                    stepSize: 10
+                },
+                grid: {
+                    color: 'rgba(0, 0, 0, 0.05)',
+                    drawBorder: false
+                },
+                title: {
+                    display: true,
+                    text: 'Number of Students',
+                    font: {
+                        size: 11,
+                        weight: '600'
+                    }
+                }
+            }
+        },
+        interaction: {
+            intersect: false,
+            mode: 'index'
+        },
+        animation: {
+            duration: 500,
+            easing: 'easeOutQuart'
+        }
+    };
+}
+
+function getAvgGradeChartOptions() {
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                display: true,
+                position: 'top',
+                labels: {
+                    font: {
+                        size: 11
+                    }
+                }
+            },
+            tooltip: {
+                backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                titleColor: '#fff',
+                bodyColor: '#fff',
+                borderColor: '#1cc88a',
+                borderWidth: 1,
+                padding: 12,
+                cornerRadius: 6,
+                titleFont: {
+                    size: 13,
+                    weight: 'bold'
+                },
+                bodyFont: {
+                    size: 12
+                },
+                callbacks: {
+                    label: function(context) {
+                        return `${context.dataset.label}: ${context.parsed.y}`;
+                    }
+                }
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                max: 100,
+                grid: {
+                    drawBorder: false
+                },
+                title: {
+                    display: true,
+                    text: 'Average Grade',
+                    font: {
+                        size: 11,
+                        weight: '600'
+                    }
+                },
+                ticks: {
+                    font: {
+                        size: 10
+                    }
+                }
+            },
+            x: {
+                grid: {
+                    display: false
+                },
+                ticks: {
+                    font: {
+                        size: 10
+                    },
+                    maxRotation: 45,
+                    minRotation: 45
+                }
+            }
+        }
+    };
+}
+
+function getPieChartOptions() {
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { 
+                display: true, 
+                position: 'bottom',
+                labels: {
+                    padding: 20,
+                    usePointStyle: true,
+                    font: {
+                        size: 11
+                    }
+                }
+            },
+            tooltip: {
+                backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                titleColor: '#fff',
+                bodyColor: '#fff',
+                borderColor: '#6f42c1',
+                borderWidth: 1,
+                padding: 12,
+                cornerRadius: 6,
+                titleFont: {
+                    size: 13,
+                    weight: 'bold'
+                },
+                bodyFont: {
+                    size: 12
+                },
+                callbacks: {
+                    label: function(context) {
+                        const label = context.label || '';
+                        const value = context.parsed;
+                        const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                        const percentage = Math.round((value / total) * 100);
+                        return `${label}: ${value} (${percentage}%)`;
                     }
                 }
             }
         }
+    };
+}
+
+// Initialize all charts
+function initializeCharts(data) {
+    // Students per class chart
+    const studentsCtx = document.getElementById('studentsPerClassChart').getContext('2d');
+    
+    if (data.students_per_section && data.students_per_section.length > 0) {
+        const sectionLabels = data.students_per_section.map(item => 
+            `${item.SectionName} (G${item.GradeLevel})`
+        );
+        const maleData = data.students_per_section.map(item => item.male_count || 0);
+        const femaleData = data.students_per_section.map(item => item.female_count || 0);
+        
+        studentsPerClassChart = new Chart(studentsCtx, {
+            type: 'bar',
+            data: {
+                labels: sectionLabels,
+                datasets: [
+                    {
+                        label: 'Male Students',
+                        data: maleData,
+                        backgroundColor: 'rgba(52, 152, 219, 0.9)',
+                        borderColor: 'rgba(41, 128, 185, 1)',
+                        borderWidth: 1,
+                        stack: 'Stack 0'
+                    },
+                    {
+                        label: 'Female Students',
+                        data: femaleData,
+                    backgroundColor: 'rgba(255, 182, 193, 0.8)',
+                    borderColor: 'rgba(255, 182, 193, 1)',
+                        borderWidth: 1,
+                        stack: 'Stack 0'
+                    }
+                ]
+            },
+            options: getStudentsChartOptions()
+        });
+    }
+    
+    // Teacher upload pie chart
+    const pieCtx = document.getElementById('teachersUploadPie').getContext('2d');
+    const uploadedCount = data.teachers_upload_stats?.uploaded || 0;
+    const notUploadedCount = data.teachers_upload_stats?.not_uploaded || 0;
+    
+    teachersUploadPie = new Chart(pieCtx, {
+        type: 'pie',
+        data: {
+            labels: ['Uploaded', 'Not Uploaded'],
+            datasets: [{
+                data: [uploadedCount, notUploadedCount],
+                backgroundColor: [
+                    'rgba(28, 200, 138, 0.8)',
+                    'rgba(231, 74, 59, 0.8)'
+                ],
+                borderColor: [
+                    'rgba(28, 200, 138, 1)',
+                    'rgba(231, 74, 59, 1)'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: getPieChartOptions()
     });
-    <?php endif; ?>
+    
+    // Average grade chart
+    const avgCtx = document.getElementById('avgGradePerSubjectChart').getContext('2d');
+    if (data.avg_grade_per_subject && data.avg_grade_per_subject.length > 0) {
+        avgGradePerSubjectChart = new Chart(avgCtx, {
+            type: 'bar',
+            data: {
+                labels: [...new Set(data.avg_grade_per_subject.map(item => item.SubjectName))].sort(),
+                datasets: [{
+                    label: 'Average Grade',
+                    data: data.avg_grade_per_subject.map(item => parseFloat(item.avg_grade).toFixed(2)),
+                    backgroundColor: 'rgba(28, 200, 138, 0.8)',
+                    borderColor: 'rgba(28, 200, 138, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: getAvgGradeChartOptions()
+        });
+    }
+}
+
+// Utility functions
+function showLoading() {
+    document.getElementById('loading-overlay').style.display = 'flex';
+}
+
+function hideLoading() {
+    document.getElementById('loading-overlay').style.display = 'none';
+}
+
+function updateURL(filters) {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(filters)) {
+        if (key !== 'ajax' && value && value !== 'all') {
+            params.set(key, value);
+        }
+    }
+    const newURL = `${window.location.pathname}?${params.toString()}`;
+    window.history.pushState({}, '', newURL);
+}
+
+function resetFilters() {
+    // Reset all filters to default
+    const schoolYearSelect = document.getElementById('school_year');
+    schoolYearSelect.selectedIndex = 0;
+    
+    document.getElementById('upload_quarter').value = 1;
+    document.getElementById('grade_level').value = 'all';
+    document.getElementById('section_filter').value = 'all';
+    document.getElementById('quarter_filter').value = 'all';
+    
+    // Trigger update
+    updateDashboard();
+}
+
+function resetGradeFilters() {
+    document.getElementById('grade_level').value = 'all';
+    document.getElementById('section_filter').value = 'all';
+    document.getElementById('quarter_filter').value = 'all';
+    
+    // Trigger update
+    updateDashboard();
+}
+
+// Make charts responsive on window resize
+window.addEventListener('resize', function() {
+    if (studentsPerClassChart) {
+        studentsPerClassChart.resize();
+    }
+    if (teachersUploadPie) {
+        teachersUploadPie.resize();
+    }
+    if (avgGradePerSubjectChart) {
+        avgGradePerSubjectChart.resize();
+    }
+});
 </script>
 </body>
 </html>

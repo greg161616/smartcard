@@ -415,11 +415,14 @@ html, body {
             <a class="nav-link" href="../teacher/grading_sheet.php" style="font-size: 14px; text-decoration:none;">
                 <i class="bi bi-book" style="font-size:20px;margin-right:12px;"></i> Grades
             </a>
-            <a class="nav-link" href="../teacher/achievement.php" style="font-size: 14px; text-decoration:none;">
-                <i class="bi bi-award" style="font-size:20px;margin-right:12px;"></i> Achievements
+            <a class="nav-link" href="../teacher/values.php" style="font-size: 14px; text-decoration:none;">
+                <i class="bi bi-card-list" style="font-size:20px;margin-right:12px;"></i> Values
             </a>
             <a class="nav-link" href="../teacher/record.php" style="font-size: 14px; text-decoration:none;">
                 <i class="bi bi-folder" style="font-size:20px;margin-right:12px;"></i> Card
+            </a>
+            <a class="nav-link" href="../teacher/achievement.php" style="font-size: 14px; text-decoration:none;">
+                <i class="bi bi-award" style="font-size:20px;margin-right:12px;"></i> Achievements
             </a>
             <a class="nav-link" href="../teacher/announcement.php" style="font-size: 14px; text-decoration:none;">
                 <i class="bi bi-bell" style="font-size:20px;margin-right:12px;"></i> Announcements

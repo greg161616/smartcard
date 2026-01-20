@@ -9,8 +9,137 @@ if (!isset($_SESSION['email']) || $_SESSION['role'] !== 'head') {
 }
 
 // Handle AJAX requests
-if (isset($_GET['action'])) {
-    $action = $_GET['action'];
+$action = isset($_GET['action']) ? $_GET['action'] : (isset($_POST['action']) ? $_POST['action'] : null);
+if ($action) {
+    
+    // Deactivate student
+    if ($action == 'deactivateStudent') {
+        header('Content-Type: application/json');
+        
+        $studentId = isset($_POST['studentId']) ? (int)$_POST['studentId'] : 0;
+        $reason = isset($_POST['reason']) ? trim($_POST['reason']) : '';
+        
+        if (!$studentId) {
+          echo json_encode(['success' => false, 'message' => 'Missing student ID']);
+          exit;
+        }
+        
+        // Map common reasons to normalized statuses
+        $mappedStatus = 'inactive';
+        $r = strtolower($reason);
+        if (strpos($r, 'transfer') !== false || strpos($r, 'moved') !== false) {
+          $mappedStatus = 'transferred';
+        } elseif (strpos($r, 'withdraw') !== false || strpos($r, 'financial') !== false) {
+          $mappedStatus = 'withdrawn';
+        } elseif (strpos($r, 'non-compliance') !== false || strpos($r, 'no longer') !== false) {
+          $mappedStatus = 'inactive';
+        } elseif (strpos($r, 'personal') !== false || strpos($r, 'medical') !== false) {
+          $mappedStatus = 'inactive';
+        } elseif (strpos($r, 'other') !== false) {
+          $mappedStatus = 'inactive';
+        }
+
+        // Update the section_enrollment status
+        $sql = "UPDATE section_enrollment SET status = ? WHERE StudentID = ? AND status = 'active' LIMIT 1";
+        $stmt = $conn->prepare($sql);
+        
+        if (!$stmt) {
+          echo json_encode(['success' => false, 'message' => 'Database error: ' . $conn->error]);
+          exit;
+        }
+        
+        // Bind parameters with correct types: si = string, integer
+        $stmt->bind_param("si", $mappedStatus, $studentId);
+        
+        if ($stmt->execute()) {
+          // Record action in system_logs
+          $actorId = null;
+          if (isset($_SESSION['email'])) {
+            $q = $conn->prepare("SELECT UserID FROM `user` WHERE Email = ? LIMIT 1");
+            if ($q) {
+              $q->bind_param("s", $_SESSION['email']);
+              $q->execute();
+              $q->bind_result($actorId);
+              $q->fetch();
+              $q->close();
+            }
+          }
+
+          $actionName = 'deactivate_student';
+          $details = json_encode(['studentId' => $studentId, 'mappedStatus' => $mappedStatus, 'reason' => $reason]);
+          $logLevel = 'info';
+          $logStmt = $conn->prepare("INSERT INTO system_logs (`action`, user_id, details, log_level, created_at) VALUES (?, ?, ?, ?, NOW())");
+          if ($logStmt) {
+            $logStmt->bind_param("siss", $actionName, $actorId, $details, $logLevel);
+            if (!$logStmt->execute()) {
+              error_log("Failed to log deactivation: " . $logStmt->error);
+            }
+            $logStmt->close();
+          }
+
+          echo json_encode(['success' => true, 'message' => 'Student deactivated successfully']);
+        } else {
+          echo json_encode(['success' => false, 'message' => 'Error deactivating student: ' . $stmt->error]);
+        }
+        $stmt->close();
+        exit;
+    }
+
+      // Reactivate student
+      if ($action == 'reactivateStudent') {
+        header('Content-Type: application/json');
+        
+        $studentId = isset($_POST['studentId']) ? (int)$_POST['studentId'] : 0;
+
+        if (!$studentId) {
+          echo json_encode(['success' => false, 'message' => 'Missing student ID']);
+          exit;
+        }
+
+        // Set any non-active enrollments for this student back to active
+        $sql = "UPDATE section_enrollment SET status = 'active' WHERE StudentID = ? AND status != 'active'";
+        $stmt = $conn->prepare($sql);
+        
+        if (!$stmt) {
+          echo json_encode(['success' => false, 'message' => 'Database error: ' . $conn->error]);
+          exit;
+        }
+        
+        $stmt->bind_param("i", $studentId);
+
+        if ($stmt->execute()) {
+          // Log the reactivation
+          $actorId = null;
+          if (isset($_SESSION['email'])) {
+            $q = $conn->prepare("SELECT UserID FROM `user` WHERE Email = ? LIMIT 1");
+            if ($q) {
+              $q->bind_param("s", $_SESSION['email']);
+              $q->execute();
+              $q->bind_result($actorId);
+              $q->fetch();
+              $q->close();
+            }
+          }
+
+          $actionName = 'reactivate_student';
+          $details = json_encode(['studentId' => $studentId]);
+          $logLevel = 'info';
+          $logStmt = $conn->prepare("INSERT INTO system_logs (`action`, user_id, details, log_level, created_at) VALUES (?, ?, ?, ?, NOW())");
+          if ($logStmt) {
+            $logStmt->bind_param("siss", $actionName, $actorId, $details, $logLevel);
+            if (!$logStmt->execute()) {
+              error_log("Failed to log reactivation: " . $logStmt->error);
+            }
+            $logStmt->close();
+          }
+
+          echo json_encode(['success' => true, 'message' => 'Student reactivated successfully, Please refresh the page.']);
+        } else {
+          echo json_encode(['success' => false, 'message' => 'Error reactivating student: ' . $stmt->error]);
+        }
+        $stmt->close();
+        exit;
+      }
     
     // Get filtered students based on criteria
     if ($action == 'getFilteredStudents') {
@@ -26,10 +155,11 @@ if (isset($_GET['action'])) {
               u.Email,
               sec.GradeLevel,
               sec.SectionName,
-              se.SchoolYear
+              se.SchoolYear,
+              se.status AS EnrollmentStatus
             FROM student AS s
             JOIN `user` AS u ON u.UserID = s.userID
-            JOIN section_enrollment AS se ON se.StudentID = s.StudentID AND se.status = 'active'
+            JOIN section_enrollment AS se ON se.StudentID = s.StudentID
             JOIN section AS sec ON sec.SectionID = se.SectionID
             WHERE 1=1
         ";
@@ -50,17 +180,60 @@ if (isset($_GET['action'])) {
         }
         
         if (!empty($sectionId)) {
-            $sql .= " AND sec.SectionID = ?";
-            $params[] = $sectionId;
-            $types .= 'i';
+          $sql .= " AND sec.SectionID = ?";
+          $params[] = $sectionId;
+          $types .= 'i';
         }
-        
+
+        // If status provided, filter; otherwise default to active to match initial view
+        if (!empty($status)) {
+          $sql .= " AND se.status = ?";
+          $params[] = $status;
+          $types .= 's';
+        } else {
+          $sql .= " AND se.status = 'active'";
+        }
+
         $sql .= " ORDER BY s.LastName, s.FirstName";
         
         $stmt = $conn->prepare($sql);
         if (!empty($params)) {
             $stmt->bind_param($types, ...$params);
         }
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        $students = [];
+        while ($row = $result->fetch_assoc()) {
+            $students[] = $row;
+        }
+        
+        header('Content-Type: application/json');
+        echo json_encode($students);
+        exit;
+    }
+    
+    // Get inactive students
+    if ($action == 'getInactiveStudents') {
+        $sql = "
+            SELECT
+              s.StudentID,
+              s.LRN,
+              CONCAT_WS(' ',s.LastName,',', s.FirstName, s.MiddleName ) AS FullName,
+              u.Email,
+              sec.GradeLevel,
+              sec.SectionName,
+              se.SchoolYear,
+              se.status AS EnrollmentStatus
+            FROM student AS s
+            JOIN `user` AS u ON u.UserID = s.userID
+            JOIN section_enrollment AS se ON se.StudentID = s.StudentID
+            JOIN section AS sec ON sec.SectionID = se.SectionID
+            WHERE se.status != 'active'
+            ORDER BY s.LastName, s.FirstName
+        ";
+        
+        $stmt = $conn->prepare($sql);
         $stmt->execute();
         $result = $stmt->get_result();
         
@@ -106,6 +279,8 @@ if (isset($_GET['action'])) {
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" rel="stylesheet">
   <link href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.dataTables.min.css" rel="stylesheet">
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     .required:after {
       content: " *";
@@ -130,13 +305,16 @@ if (isset($_GET['action'])) {
 
   <div class="container mt-5">
     <div class="d-flex justify-content-between align-items-center mb-3">
-      <h2 class="mb-0">Student List</h2>
+            <h2 class="mb-0">Student List</h2>
       <div>
         <button class="btn btn-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#addModal">
           Add Students
         </button>
         <button class="btn btn-light border-dark btn-sm ms-2" data-bs-toggle="modal" data-bs-target="#importModal">
           Import
+        </button>
+        <button class="btn btn-outline-danger btn-sm ms-2" id="showInactiveBtn" title="Show inactive students">
+          <i class="fas fa-user-slash"></i> Inactive
         </button>
       </div>
     </div>
@@ -200,6 +378,7 @@ if (isset($_GET['action'])) {
             </select>
           </div>
           <div class="col-md-6 d-flex align-items-end">
+            <input type="hidden" id="statusFilter" value="">
             <button type="button" id="resetFilter" class="btn btn-sm btn-outline-secondary ">Reset Filters</button>
           </div>
         </div>
@@ -215,6 +394,7 @@ if (isset($_GET['action'])) {
             <th>Email</th>
             <th>Grade Level</th>
             <th>Section</th>
+            <th>Status</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -244,9 +424,15 @@ if (isset($_GET['action'])) {
               <td><?= htmlspecialchars($row['Email']) ?></td>
               <td><?= htmlspecialchars($row['GradeLevel']) ?></td>
               <td><?= htmlspecialchars($row['SectionName']) ?></td>
+              <td><?= htmlspecialchars($row['EnrollmentStatus'] ?? 'active') ?></td>
               <td>
-                <button class="btn btn-sm btn-outline-primary view-btn" data-id="<?= $row['StudentID'] ?>">View</button>
-                <button class="btn btn-sm btn-outline-warning edit-btn" data-id="<?= $row['StudentID'] ?>">Edit</button>
+                <button class="btn btn-sm btn-outline-primary view-btn" data-id="<?= $row['StudentID'] ?>" title="View"><i class="fas fa-eye"></i></button>
+                <button class="btn btn-sm btn-outline-warning edit-btn" data-id="<?= $row['StudentID'] ?>" title="Edit"><i class="fas fa-edit"></i></button>
+                <?php if (($row['EnrollmentStatus'] ?? 'active') === 'active'): ?>
+                  <button class="btn btn-sm btn-outline-danger trash-btn" data-id="<?= $row['StudentID'] ?>" data-name="<?= htmlspecialchars($row['FullName']) ?>" title="Deactivate"><i class="fas fa-trash"></i></button>
+                <?php else: ?>
+                  <button class="btn btn-sm btn-outline-success restore-btn" data-id="<?= $row['StudentID'] ?>" data-name="<?= htmlspecialchars($row['FullName']) ?>" title="Restore"><i class="fas fa-undo"></i></button>
+                <?php endif; ?>
               </td>
             </tr>
           <?php
@@ -276,7 +462,7 @@ if (isset($_GET['action'])) {
           <input class="form-control" type="file" id="students_file" name="students_file" accept=".csv, .xls, .xlsx" required>
         </div>
         <div class="border p-3 mb-3 rounded">
-          <small>File should contain these columns: <strong>LRN, FirstName, MiddleName, LastName, Sex, Email, SectionName, GradeLevel</strong></small>
+          <small>File should contain these columns: <strong>LRN, FirstName, MiddleName, LastName, Sex, Birth Date, Email, SectionName, GradeLevel</strong></small>
           <br>
           <small class="text-muted">Note: All columns are required except MiddleName</small>
         </div>
@@ -334,12 +520,12 @@ if (isset($_GET['action'])) {
               <h5>Basic Information</h5>
               <div class="mb-3">
                 <label class="form-label required">LRN</label>
-                <input type="text" name="LRN" class="form-control" required>
+                <input type="text" name="LRN" class="form-control" required maxlength="12" inputmode="numeric" pattern="\d{1,12}" title="Only numbers, up to 12 digits" oninput="this.value = this.value.replace(/\D/g, '').slice(0,12);">
               </div>
               <div class="row">
                 <div class="col-md-4 mb-3">
                   <label class="form-label required">First Name</label>
-                  <input type="text" name="FirstName" class="form-control" required>
+                  <input type="text" name="FirstName" class="form-control" maxlength="12" required>
                 </div>
                 <div class="col-md-4 mb-3">
                   <label class="form-label">Middle Name</label>
@@ -368,27 +554,7 @@ if (isset($_GET['action'])) {
                 <label class="form-label required">Email</label>
                 <input type="email" name="Email" class="form-control" required>
               </div>
-            </div>
-
-            <div class="col-md-6">
-              <h5>Contact Information</h5>
-              <div class="mb-3">
-                <label class="form-label">Address</label>
-                <input type="text" name="Address" class="form-control">
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Contact Number</label>
-                <input type="text" name="ContactNumber" class="form-control">
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Parent's Name</label>
-                <input type="text" name="ParentName" class="form-control">
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Parent's Contact</label>
-                <input type="text" name="ParentsContact" class="form-control">
-              </div>
-              <div class="row">
+                            <div class="row">
                 <div class="col-md-6 mb-3">
                   <label class="form-label">Civil Status</label>
                   <select name="CivilStatus" class="form-select">
@@ -405,9 +571,26 @@ if (isset($_GET['action'])) {
                 </div>
               </div>
             </div>
-          </div>
 
-          <div class="row mt-3">
+            <div class="col-md-6">
+              <h5>Contact Information</h5>
+              <div class="mb-3">
+                <label class="form-label">Address</label>
+                <input type="text" name="Address" class="form-control">
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Contact Number</label>
+                <input type="text" name="ContactNumber" class="form-control" id="ContactNumber" placeholder="09XXXXXXXXX" maxlength="11" inputmode="numeric" pattern="09\d{9}" title="Enter 11 digits starting with 09 (e.g. 09123456789)" oninput="(function(el){var v=el.value.replace(/\D/g,''); if(v.startsWith('9')) v='0'+v; el.value=v.slice(0,11);})(this)">
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Parent's Name</label>
+                <input type="text" name="ParentName" class="form-control">
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Parent's Contact</label>
+                <input type="text" name="ParentsContact" class="form-control" id="ParentsContact" placeholder="09XXXXXXXXX" maxlength="11" inputmode="numeric" pattern="09\d{9}" title="Enter 11 digits starting with 09 (e.g. 09123456789)" oninput="(function(el){var v=el.value.replace(/\D/g,''); if(v.startsWith('9')) v='0'+v; el.value=v.slice(0,11);})(this)">
+              </div>
+                        <div class="row mt-3">
             <div class="col-md-12">
               <h5>Enrollment Information</h5>
               <div class="mb-3">
@@ -430,6 +613,10 @@ if (isset($_GET['action'])) {
               </div>
             </div>
           </div>
+            </div>
+          </div>
+
+
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -462,11 +649,92 @@ if (isset($_GET['action'])) {
     <div class="modal-dialog modal-lg">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title" id="editModalLabel"></h5>
+          <h5 class="modal-title" id="editModalLabel">Update Student Details</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body" id="editStudentForm">
           <!-- Edit form will be loaded via AJAX -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Deactivate Student Modal -->
+  <div class="modal fade" id="deactivateModal" tabindex="-1" aria-labelledby="deactivateModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header bg-warning">
+          <h5 class="modal-title" id="deactivateModalLabel">Deactivate Student</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-warning" role="alert">
+            <strong>Warning!</strong> You are about to deactivate student: <span id="studentNameDisplay" class="fw-bold"></span>
+          </div>
+          
+          <div class="mb-3">
+            <label for="deactivationReason" class="form-label">Reason for Deactivation <span class="text-danger">*</span></label>
+            <select class="form-select" id="deactivationReason" required>
+              <option value="">— Select a reason —</option>
+              <option value="Transferred">Transferred to another school</option>
+              <option value="Withdrawn">Withdrawn by parents</option>
+              <option value="Expelled">Non-compliance with school policies</option>
+              <option value="Financial reasons">Financial reasons</option>
+              <option value="Personal/Medical reasons">Personal/Medical reasons</option>
+              <option value="Moved to different location">Moved to different location</option>
+              <option value="No longer interested in studies">No longer interested in studies</option>
+              <option value="Other">Other (please specify)</option>
+            </select>
+          </div>
+          
+          <div class="mb-3" id="otherReasonContainer" style="display: none;">
+            <label for="otherReason" class="form-label">Please specify the reason:</label>
+            <textarea class="form-control" id="otherReason" rows="3" placeholder="Enter the deactivation reason here..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-danger" id="confirmDeactivateBtn">Confirm Deactivation</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Inactive Students Modal -->
+  <div class="modal fade" id="inactiveStudentsModal" tabindex="-1" aria-labelledby="inactiveStudentsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header bg-danger">
+          <h5 class="modal-title" id="inactiveStudentsModalLabel">
+            <i class="fas fa-user-slash"></i> Inactive Students
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="table-responsive">
+            <table class="table table-bordered table-hover align-middle" id="inactiveStudentsTable">
+              <thead class="table-danger">
+                <tr>
+                  <th>LRN</th>
+                  <th>Full Name</th>
+                  <th>Email</th>
+                  <th>Grade Level</th>
+                  <th>Section</th>
+                  <th>Status</th>
+                  <th>School Year</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="inactiveStudentsTableBody">
+                <tr>
+                  <td colspan="8" class="text-center">Loading...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
         </div>
       </div>
     </div>
@@ -483,8 +751,8 @@ $(document).ready(function() {
   // Initialize DataTable with export options
   var table = $('#studentTable').DataTable();
   
-  // View Student Details
-  $('#studentTable').on('click', '.view-btn', function(e) {
+  // View Student Details (works for all view buttons)
+  $(document).on('click', '.view-btn', function(e) {
     e.stopPropagation();
     var studentId = $(this).data('id');
     $.ajax({
@@ -511,8 +779,8 @@ $(document).ready(function() {
     });
   });
 
-  // Edit Student
-  $('#studentTable').on('click', '.edit-btn', function(e) {
+  // Edit Student (works for all edit buttons)
+  $(document).on('click', '.edit-btn', function(e) {
     e.stopPropagation();
     var studentId = $(this).data('id');
     $.ajax({
@@ -535,6 +803,172 @@ $(document).ready(function() {
           var editModal = new bootstrap.Modal(editEl);
           editModal.show();
         }
+      }
+    });
+  });
+
+  // Deactivate Student (works for all trash buttons)
+  $(document).on('click', '.trash-btn', function(e) {
+    e.stopPropagation();
+    var studentId = $(this).data('id');
+    var studentName = $(this).data('name');
+    
+    // Populate modal with student name
+    $('#studentNameDisplay').text(studentName);
+    $('#deactivationReason').val('');
+    $('#otherReason').val('');
+    $('#otherReasonContainer').hide();
+    
+    // Store student ID in the confirm button
+    $('#confirmDeactivateBtn').data('studentId', studentId);
+    
+    // Show the modal
+    var deactivateEl = document.getElementById('deactivateModal');
+    if (deactivateEl) {
+      var deactivateModal = new bootstrap.Modal(deactivateEl);
+      deactivateModal.show();
+    }
+  });
+
+  // Toggle "Other" reason textarea
+  $('#deactivationReason').on('change', function() {
+    if ($(this).val() === 'Other') {
+      $('#otherReasonContainer').show();
+      $('#otherReason').focus();
+    } else {
+      $('#otherReasonContainer').hide();
+    }
+  });
+
+  // Confirm deactivation
+  $('#confirmDeactivateBtn').on('click', function() {
+    var studentId = $(this).data('studentId');
+    var reason = $('#deactivationReason').val();
+    var otherReason = $('#otherReason').val();
+    
+    // If "Other" is selected, use the custom text
+    if (reason === 'Other') {
+      if (!otherReason.trim()) {
+        alert('Please specify the deactivation reason.');
+        $('#otherReason').focus();
+        return;
+      }
+      reason = otherReason;
+    }
+    
+    if (!reason) {
+      alert('Please select a deactivation reason.');
+      return;
+    }
+
+    // Map reason to a status locally for confirmation
+    function mapReasonToStatus(r) {
+      if (!r) return 'inactive';
+      r = r.toLowerCase();
+      if (r.indexOf('transfer') !== -1 || r.indexOf('moved') !== -1) return 'transferred';
+      if (r.indexOf('withdraw') !== -1 || r.indexOf('financial') !== -1) return 'withdrawn';
+      return 'inactive';
+    }
+
+    var mappedStatus = mapReasonToStatus(reason);
+    if (!confirm('Are you sure you want to change this student\'s status to "' + mappedStatus + '"?')) {
+      return;
+    }
+    
+    // Send AJAX request to deactivate student
+    $.ajax({
+      url: '<?php echo $_SERVER['PHP_SELF']; ?>',
+      type: 'POST',
+      data: {
+        action: 'deactivateStudent',
+        studentId: studentId,
+        reason: reason,
+        mappedStatus: mappedStatus
+      },
+      dataType: 'json',
+      success: function(response) {
+        if (response.success) {
+          // Close the modal
+          var deactivateEl = document.getElementById('deactivateModal');
+          if (deactivateEl) {
+            var deactivateModal = bootstrap.Modal.getInstance(deactivateEl);
+            if (deactivateModal) {
+              deactivateModal.hide();
+            }
+          }
+          
+          // Show success message
+          $('body').append(
+            '<div class="alert alert-success alert-dismissible position-fixed top-0 end-0 m-3" style="z-index: 9999;">' +
+            '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>' +
+            response.message +
+            '</div>'
+          );
+          
+          // Auto-dismiss after 3 seconds
+          setTimeout(function() {
+            $('.alert-success').alert('close');
+          }, 3000);
+          
+          // Reload the table
+          setTimeout(function() {
+            applyFilters();
+          }, 500);
+        } else {
+          alert('Error: ' + response.message);
+        }
+      },
+      error: function(xhr, status, error) {
+        console.error('Deactivation error:', error);
+        alert('Error deactivating student. Please try again.');
+      }
+    });
+  });
+
+  // Restore / Reactivate Student (works for all restore buttons)
+  $(document).on('click', '.restore-btn', function(e) {
+    e.stopPropagation();
+    var studentId = $(this).data('id');
+    var studentName = $(this).data('name');
+
+    if (!confirm('Are you sure you want to restore ' + studentName + ' to active status?')) {
+      return;
+    }
+
+    $.ajax({
+      url: '<?php echo $_SERVER['PHP_SELF']; ?>',
+      type: 'POST',
+      data: {
+        action: 'reactivateStudent',
+        studentId: studentId
+      },
+      dataType: 'json',
+      success: function(response) {
+        if (response.success) {
+          // Show success message
+          $('body').append(
+            '<div class="alert alert-success alert-dismissible position-fixed top-0 end-0 m-3" style="z-index: 9999;">' +
+            '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>' +
+            response.message +
+            '</div>'
+          );
+          setTimeout(function() { $('.alert-success').alert('close'); }, 3000);
+
+          // Refresh list and modal
+          setTimeout(function() { 
+            applyFilters();
+            // Reload the inactive students modal if it's open
+            if ($('#inactiveStudentsModal').hasClass('show')) {
+              $('#showInactiveBtn').click();
+            }
+          }, 500);
+        } else {
+          alert('Error: ' + response.message);
+        }
+      },
+      error: function(xhr, status, error) {
+        console.error('Reactivation error:', error);
+        alert('Error restoring student. Please try again.');
       }
     });
   });
@@ -739,6 +1173,7 @@ $(document).ready(function() {
     var schoolYear = $('#schoolYearFilter').val();
     var gradeLevel = $('#gradeLevelFilter').val();
     var sectionId = $('#sectionFilter').val();
+    var status = $('#statusFilter').val();
     
     $.ajax({
       url: '<?php echo $_SERVER['PHP_SELF']; ?>',
@@ -747,7 +1182,8 @@ $(document).ready(function() {
         action: 'getFilteredStudents',
         schoolYear: schoolYear,
         gradeLevel: gradeLevel,
-        sectionId: sectionId
+        sectionId: sectionId,
+        status: status
       },
       dataType: 'json',
       success: function(students) {
@@ -757,19 +1193,28 @@ $(document).ready(function() {
         // Add filtered data
         if (students.length > 0) {
           students.forEach(function(student) {
+            var actions = '<button class="btn btn-sm btn-outline-primary view-btn" data-id="' + student.StudentID + '" title="View"><i class="fas fa-eye"></i></button> ' +
+                          '<button class="btn btn-sm btn-outline-warning edit-btn" data-id="' + student.StudentID + '" title="Edit"><i class="fas fa-edit"></i></button>';
+            if (student.EnrollmentStatus === 'active' || !student.EnrollmentStatus) {
+              actions += ' <button class="btn btn-sm btn-outline-danger trash-btn" data-id="' + student.StudentID + '" data-name="' + htmlEscape(student.FullName) + '" title="Deactivate"><i class="fas fa-trash"></i></button>';
+            } else {
+              actions += ' <button class="btn btn-sm btn-outline-success restore-btn" data-id="' + student.StudentID + '" data-name="' + htmlEscape(student.FullName) + '" title="Restore"><i class="fas fa-undo"></i></button>';
+            }
+
             table.row.add([
               htmlEscape(student.LRN),
               htmlEscape(student.FullName),
               htmlEscape(student.Email),
               htmlEscape(student.GradeLevel),
               htmlEscape(student.SectionName),
-              '<button class="btn btn-sm btn-outline-primary view-btn" data-id="' + student.StudentID + '">View</button> ' +
-              '<button class="btn btn-sm btn-outline-warning edit-btn" data-id="' + student.StudentID + '">Edit</button>'
+              htmlEscape(student.EnrollmentStatus || 'active'),
+              actions
             ]);
           });
         } else {
           table.row.add([
             'No students found.',
+            '',
             '',
             '',
             '',
@@ -793,6 +1238,8 @@ $(document).ready(function() {
   
   // Listen to filter changes
   $('#schoolYearFilter, #gradeLevelFilter, #sectionFilter').on('change', function() {
+    // clear any manual status filter when using the filter controls
+    $('#statusFilter').val('');
     applyFilters();
   });
   
@@ -801,7 +1248,121 @@ $(document).ready(function() {
     $('#schoolYearFilter').val('');
     $('#gradeLevelFilter').val('');
     $('#sectionFilter').html('<option value="">All Sections</option>');
+    $('#statusFilter').val('');
     applyFilters();
+  });
+
+  // Show inactive students button - Open modal with list
+  $('#showInactiveBtn').on('click', function() {
+    $.ajax({
+      url: '<?php echo $_SERVER['PHP_SELF']; ?>',
+      type: 'GET',
+      data: { action: 'getInactiveStudents' },
+      dataType: 'json',
+      success: function(students) {
+        const tbody = $('#inactiveStudentsTableBody');
+        tbody.empty();
+        
+        if (students.length > 0) {
+          students.forEach(function(student) {
+            const statusBadge = getStatusBadge(student.EnrollmentStatus);
+            const row = `
+              <tr>
+                <td>${htmlEscape(student.LRN)}</td>
+                <td>${htmlEscape(student.FullName)}</td>
+                <td>${htmlEscape(student.Email)}</td>
+                <td>${htmlEscape(student.GradeLevel)}</td>
+                <td>${htmlEscape(student.SectionName)}</td>
+                <td>${statusBadge}</td>
+                <td>${htmlEscape(student.SchoolYear)}</td>
+                <td>
+                  <button class="btn btn-sm btn-outline-success restore-btn" data-id="${student.StudentID}" data-name="${htmlEscape(student.FullName)}" title="Restore"><i class="fas fa-undo"></i></button>
+                </td>
+              </tr>
+            `;
+            tbody.append(row);
+          });
+        } else {
+          tbody.append('<tr><td colspan="8" class="text-center">No inactive students found.</td></tr>');
+        }
+        
+        var inactiveEl = document.getElementById('inactiveStudentsModal');
+        if (inactiveEl) {
+          var inactiveModal = new bootstrap.Modal(inactiveEl);
+          inactiveModal.show();
+        }
+      },
+      error: function() {
+        alert('Error loading inactive students. Please try again.');
+      }
+    });
+  });
+  
+  // Helper function to get status badge
+  function getStatusBadge(status) {
+    if (!status) return '<span class="badge bg-secondary">Unknown</span>';
+    
+    switch(status) {
+      case 'transferred':
+        return '<span class="badge bg-info">Transferred</span>';
+      case 'withdrawn':
+        return '<span class="badge bg-warning text-dark">Withdrawn</span>';
+      case 'inactive':
+        return '<span class="badge bg-danger">Inactive</span>';
+      case 'active':
+        return '<span class="badge bg-success">Active</span>';
+      default:
+        return '<span class="badge bg-secondary">' + htmlEscape(status) + '</span>';
+    }
+  }
+
+  // Live sanitization for contact inputs — only digits allowed, auto-prepend 0 if user types leading 9, limit to 11
+  $('#ContactNumber, #ParentsContact').on('input', function() {
+    var val = this.value.replace(/\D/g, '');
+    if (val.startsWith('9')) {
+      val = '0' + val;
+    }
+    this.value = val.slice(0, 11);
+  });
+
+  // Normalize phone numbers on add-student form submit: require 11 digits starting with 09 and convert to +63XXXXXXXXXX
+  $('form[action="addStudent.php"]').on('submit', function(e) {
+    function normalizePhone(input) {
+      if (!input) return '';
+      var v = input.replace(/\s|-/g, '');
+      // Must be 11 digits starting with 09 (e.g., 09123456789)
+      if (/^09\d{9}$/.test(v)) {
+        return '+63' + v.slice(1);
+      }
+      return null;
+    }
+
+    var contact = $('#ContactNumber').val().trim();
+    var parentContact = $('#ParentsContact').val().trim();
+
+    if (contact) {
+      var n = normalizePhone(contact);
+      if (!n) {
+        e.preventDefault();
+        alert('Contact number must be 11 digits starting with 09 (e.g. 09123456789).');
+        $('#ContactNumber').focus();
+        return false;
+      }
+      $('#ContactNumber').val(n);
+    }
+
+    if (parentContact) {
+      var np = normalizePhone(parentContact);
+      if (!np) {
+        e.preventDefault();
+        alert("Parent's contact must be 11 digits starting with 09 (e.g. 09123456789).");
+        $('#ParentsContact').focus();
+        return false;
+      }
+      $('#ParentsContact').val(np);
+    }
+
+    return true;
   });
 
 });

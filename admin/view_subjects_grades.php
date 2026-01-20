@@ -67,7 +67,7 @@ $subjectsQuery = "
     JOIN subject sub ON a.subject_id = sub.SubjectID
     LEFT JOIN teacher t ON a.teacher_id = t.TeacherID
     WHERE a.section_id = ? AND a.school_year = ?
-    ORDER BY sub.SubjectName
+    ORDER BY sub.SubjectID ASC
 ";
 
 $stmt = $conn->prepare($subjectsQuery);

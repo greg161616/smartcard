@@ -3,7 +3,6 @@ session_start();
 require_once 'config.php'; 
 
 $error = '';
-
 require_once 'api/log_helper.php';
 
 // Consistent session variable names
@@ -56,22 +55,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['user_id'] = $row['UserID'];
             $_SESSION['email'] = $row['Email'];
             $_SESSION['role'] = $row['Role'];
-      // Log successful login
-      log_system_action($conn, 'login_success', $row['UserID'], [
-        'email' => $row['Email'],
-        'role' => $row['Role'],
-        'ip' => $_SERVER['REMOTE_ADDR'] ?? null,
-        'ua' => $_SERVER['HTTP_USER_AGENT'] ?? null
-      ], 'info');
-            // Redirect based on role
+            
+            // Log successful login
+            log_system_action($conn, 'login_success', $row['UserID'], [
+                'email' => $row['Email'],
+                'role' => $row['Role'],
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? null,
+                'ua' => $_SERVER['HTTP_USER_AGENT'] ?? null
+            ], 'info');
+            
+            // Check if user has incomplete profile
+            $incompleteProfile = checkIncompleteProfile($conn, $row['UserID'], $row['Role']);
+            
+            // Redirect based on role and profile status
             if ($row['Role'] === 'teacher') {
-                header('Location: teacher/tdashboard.php');
+                if ($incompleteProfile) {
+                    header('Location: teacher/complete_profile.php');
+                } else {
+                    header('Location: teacher/tdashboard.php');
+                }
                 exit();
-            } elseif ($row['Role'] === 'principal') {
+            } elseif ($row['Role'] === 'principal' || $row['Role'] === 'staff') {
                 header('Location: admin/principalDash.php');
                 exit();
             } elseif ($row['Role'] === 'student') {
-                header('Location: student/studentPort.php');
+                if ($incompleteProfile) {
+                    header('Location: student/complete_profile.php');
+                } else {
+                    header('Location: student/studentPort.php');
+                }
                 exit();
             } elseif ($row['Role'] === 'head') {
                 header('Location: administration/dashboard.php');
@@ -80,23 +92,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'Unknown role for this account.';
             }
         } else {
-      // Log failed login - wrong password
-      log_system_action($conn, 'login_failed_password', $row['UserID'], [
-        'email' => $email,
-        'ip' => $_SERVER['REMOTE_ADDR'] ?? null,
-        'ua' => $_SERVER['HTTP_USER_AGENT'] ?? null
-      ], 'warning');
+            // Log failed login - wrong password
+            log_system_action($conn, 'login_failed_password', $row['UserID'], [
+                'email' => $email,
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? null,
+                'ua' => $_SERVER['HTTP_USER_AGENT'] ?? null
+            ], 'warning');
             $error = 'Incorrect password. Please try again.';
         }
     } else {
-    // Log failed login - no account found
-    log_system_action($conn, 'login_failed_no_account', null, [
-      'email' => $email,
-      'ip' => $_SERVER['REMOTE_ADDR'] ?? null,
-      'ua' => $_SERVER['HTTP_USER_AGENT'] ?? null
-    ], 'warning');
+        // Log failed login - no account found
+        log_system_action($conn, 'login_failed_no_account', null, [
+            'email' => $email,
+            'ip' => $_SERVER['REMOTE_ADDR'] ?? null,
+            'ua' => $_SERVER['HTTP_USER_AGENT'] ?? null
+        ], 'warning');
         $error = 'No account found with that email address.';
     }
+}
+
+/**
+ * Check if user has incomplete profile
+ */
+function checkIncompleteProfile($conn, $userID, $role) {
+    if ($role === 'student') {
+        // Check student table for required fields based on schema:
+        // (StudentID, userID, LRN, FirstName, Middlename, LastName, Sex, Birthdate, Address, contactNumber, parentname, ParentsContact, CivilStatus, Religion, Barangay)
+        $stmt = $conn->prepare('SELECT LRN, FirstName, Middlename, LastName, Sex, Birthdate, Address, contactNumber FROM student WHERE userID = ?');
+        $stmt->bind_param('i', $userID);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        if ($result && $student = $result->fetch_assoc()) {
+            // Check if any required field is empty or null
+            if (empty($student['LRN']) || empty($student['FirstName']) || 
+                empty($student['Middlename']) || empty($student['LastName']) ||
+                empty($student['Sex']) || empty($student['Birthdate']) ||
+                empty($student['Address']) || empty($student['contactNumber'])) {
+                return true; // Profile is incomplete
+            }
+        } else {
+            // No student record found - definitely incomplete
+            return true;
+        }
+        $stmt->close();
+    } elseif ($role === 'teacher') {
+        // Check teacher table for required fields based on schema:
+        // (TeacherID, UserID, fName, lName, mName, surfix, gender, birthdate, address, contact, status)
+        $stmt = $conn->prepare('SELECT fName, lName, mName, gender, birthdate, address, contact, status FROM teacher WHERE UserID = ?');
+        $stmt->bind_param('i', $userID);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        if ($result && $teacher = $result->fetch_assoc()) {
+            // Check if any required field is empty or null
+            if (empty($teacher['fName']) || empty($teacher['lName']) || 
+                empty($teacher['mName']) || empty($teacher['gender']) ||
+                empty($teacher['birthdate']) || empty($teacher['address']) ||
+                empty($teacher['contact']) || empty($teacher['status'])) {
+                return true; // Profile is incomplete
+            }
+        } else {
+            // No teacher record found - definitely incomplete
+            return true;
+        }
+        $stmt->close();
+    } 
+    
+    return false; // Profile is complete
 }
 ?>
 <!DOCTYPE html>
@@ -146,17 +209,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
       50% {
         transform: translateY(-10px);
-      }
-    }
-    
-    @keyframes slideInFromLeft {
-      from {
-        opacity: 0;
-        transform: translateX(-50px);
-      }
-      to {
-        opacity: 1;
-        transform: translateX(0);
       }
     }
     

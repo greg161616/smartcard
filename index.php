@@ -586,7 +586,7 @@
   <footer>
     <div class="container-fluid">
       <div class="text-center">
-        <small>&copy; 2025 Balaytigue National High School. All rights reserved.</small>
+        <small>&copy; 2025 SmartCard|Batstate-U ARASOF. All rights reserved.</small>
       </div>
     </div>
   </footer>

@@ -87,7 +87,7 @@ if (isset($_POST['add_teacher'])) {
             'lastName' => $lastName,
             'errors' => $errors
         ], 'warning');
-        header("Location: ../administration/teacher.php");
+        header("Location: teacher.php");
         exit;
     }
 
@@ -104,13 +104,17 @@ if (isset($_POST['add_teacher'])) {
             'email' => $email
         ], 'warning');
         $chk->close();
-        header("Location: ../administration/teacher.php");
+        header("Location: teacher.php");
         exit;
     }
     $chk->close();
 
     // Insert into user table
-    $defaultPass = strtolower($lastName); // Default password is last name in lowercase
+    // Generate secure default password: date (YYYYMMDD) + last 2 chars of first and last name
+    $dateCreated = date('Ymd');
+    $firstNameLastTwo = strtolower(substr($firstName, -2));
+    $lastNameLastTwo = strtolower(substr($lastName, -2));
+    $defaultPass = $dateCreated . $firstNameLastTwo . $lastNameLastTwo;
     $passwordHash = password_hash($defaultPass, PASSWORD_DEFAULT);
 
     $insU = $conn->prepare("INSERT INTO user (Email, Password, Role) VALUES (?, ?, 'teacher')");
@@ -123,7 +127,7 @@ if (isset($_POST['add_teacher'])) {
             'email' => $email,
             'error' => $conn->error
         ], 'error');
-        header("Location: ../administration/teacher.php");
+        header("Location: teacher.php");
         exit;
     }
     
@@ -140,9 +144,11 @@ if (isset($_POST['add_teacher'])) {
     $birthdate = empty($birthdate) ? null : $birthdate;
     $contact = empty($contact) ? null : $contact;
     $address = empty($address) ? null : $address;
-    $status = 'Active';
+    // use lowercase 'active' to match other parts of the app
+    $status = 'active';
     
-    $insT->bind_param("sssssssssi", 
+    // bind_param types: 8 strings, 1 integer (UserID), 1 string (status)
+    $insT->bind_param("ssssssssis", 
         $firstName, 
         $middleName, 
         $lastName, 
@@ -170,7 +176,7 @@ if (isset($_POST['add_teacher'])) {
         $delUser->execute();
         $delUser->close();
         
-        header("Location: ../administration/teacher.php");
+        header("Location: teacher.php");
         exit;
     }
     
@@ -180,7 +186,17 @@ if (isset($_POST['add_teacher'])) {
     // Send email credentials
     $emailSent = false;
     try {
-        $emailSent = sendTeacherCredentials($email, $defaultPass);
+        // Check if sendTeacherCredentials function exists
+        if (function_exists('sendTeacherCredentials')) {
+            $emailSent = sendTeacherCredentials($email, $defaultPass);
+        } else {
+            // Log that function doesn't exist
+            log_system_action($conn, 'add_teacher_email_failed', $_SESSION['user_id'] ?? null, [
+                'teacherId' => $teacherId,
+                'email' => $email,
+                'error' => 'sendTeacherCredentials function not found'
+            ], 'warning');
+        }
     } catch (Exception $e) {
         // Log email failure but don't stop the process
         log_system_action($conn, 'add_teacher_email_failed', $_SESSION['user_id'] ?? null, [
@@ -213,6 +229,6 @@ if (isset($_POST['add_teacher'])) {
     }
 }
 
-header("Location: ../administration/teacher.php");
+header("Location: teacher.php");
 exit;
 ?>

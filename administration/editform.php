@@ -145,78 +145,49 @@ if (!$isAjax) {
     
     <form action="editform.php" method="POST" id="editForm">
         <input type="hidden" name="StudentID" value="<?= htmlspecialchars($row['StudentID']) ?>">
-        
-        <!-- LRN -->
-        <div class="mb-3">
+        <div class="row">
+                <!-- LRN -->
+        <div class="col-md-6 mb-3">
             <label class="form-label">LRN</label>
             <input type="text" class="form-control" name="LRN" value="<?= htmlspecialchars($row['LRN']) ?>" required>
         </div>
-        
-        <!-- First Name -->
-        <div class="mb-3">
+                <!-- Email -->
+        <div class="col-md-6 mb-3">
+            <label class="form-label">Email</label>
+            <input type="email" class="form-control" name="Email" value="<?= htmlspecialchars($row['Email']) ?>" required>
+        </div>
+        </div>
+        <div class="row">
+            <!-- First Name -->
+        <div class="col-md-4 mb-3">
             <label class="form-label">First Name</label>
             <input type="text" class="form-control" name="FirstName" value="<?= htmlspecialchars($row['FirstName']) ?>" required>
         </div>
 
         <!-- Middle Name -->
-        <div class="mb-3">
+        <div class="col-md-4 mb-3">
             <label class="form-label">Middle Name</label>
             <input type="text" class="form-control" name="MiddleName" value="<?= htmlspecialchars($row['MiddleName']) ?>">
         </div>
 
         <!-- Last Name -->
-        <div class="mb-3">
+        <div class="col-md-4 mb-3">
             <label class="form-label">Last Name</label>
             <input type="text" class="form-control" name="LastName" value="<?= htmlspecialchars($row['LastName']) ?>" required>
         </div>
-
-        <!-- Sex -->
-        <div class="mb-3">
+        </div>
+        
+        <div class="row">
+                <!-- Sex -->
+        <div class="mb-3 col-md-2">
             <label class="form-label">Sex</label>
             <select class="form-select" name="Sex">
                 <option value="Male" <?= $row['Sex'] == 'Male' ? 'selected' : '' ?>>Male</option>
                 <option value="Female" <?= $row['Sex'] == 'Female' ? 'selected' : '' ?>>Female</option>
             </select>
         </div>
-
-        <!-- Birthdate -->
-        <div class="mb-3">
-            <label class="form-label">Birthdate</label>
-            <input type="date" class="form-control" name="Birthdate" value="<?= htmlspecialchars($row['Birthdate']) ?>">
-        </div>
-
-        <!-- Email -->
-        <div class="mb-3">
-            <label class="form-label">Email</label>
-            <input type="email" class="form-control" name="Email" value="<?= htmlspecialchars($row['Email']) ?>" required>
-        </div>
-
-        <!-- Address -->
-        <div class="mb-3">
-            <label class="form-label">Address</label>
-            <input type="text" class="form-control" name="Address" value="<?= htmlspecialchars($row['Address']) ?>">
-        </div>
-
-        <!-- Contact Number -->
-        <div class="mb-3">
-            <label class="form-label">Contact Number</label>
-            <input type="text" class="form-control" name="ContactNumber" value="<?= htmlspecialchars($row['ContactNumber']) ?>">
-        </div>
-
-        <!-- Parent's Name -->
-        <div class="mb-3">
-            <label class="form-label">Parent's Name</label>
-            <input type="text" class="form-control" name="ParentName" value="<?= htmlspecialchars($row['ParentName']) ?>">
-        </div>
-
-        <!-- Parent's Contact -->
-        <div class="mb-3">
-            <label class="form-label">Parent's Contact</label>
-            <input type="text" class="form-control" name="ParentsContact" value="<?= htmlspecialchars($row['ParentsContact']) ?>">
-        </div>
-
-        <!-- Civil Status -->
-        <div class="mb-3">
+                <!-- Civil Status -->
+        <div class="mb-3 col-md-2">
             <label class="form-label">Civil Status</label>
             <select class="form-select" name="CivilStatus">
                 <option value="Single" <?= $row['CivilStatus'] == 'Single' ? 'selected' : '' ?>>Single</option>
@@ -225,15 +196,20 @@ if (!$isAjax) {
                 <option value="Widowed" <?= $row['CivilStatus'] == 'Widowed' ? 'selected' : '' ?>>Widowed</option>
             </select>
         </div>
-
-        <!-- Religion -->
-        <div class="mb-3">
+                <!-- Religion -->
+        <div class="mb-3 col-md-4">
             <label class="form-label">Religion</label>
             <input type="text" class="form-control" name="Religion" value="<?= htmlspecialchars($row['Religion']) ?>">
         </div>
-
-        <!-- Section -->
-        <div class="mb-3">
+        <!-- Birthdate -->
+        <div class="mb-3 col-md-4">
+            <label class="form-label">Birthdate</label>
+            <input type="date" class="form-control" name="Birthdate" value="<?= htmlspecialchars($row['Birthdate']) ?>">
+        </div>
+        </div>
+        <div class="row">
+                    <!-- Section -->
+        <div class="mb-3 col-md-4">
             <label class="form-label">Section</label>
             <select name="SectionID" class="form-select" required>
                 <option value="">Select Section</option>
@@ -248,9 +224,34 @@ if (!$isAjax) {
                 <?php endwhile; ?>
             </select>
         </div>
+                        <!-- Contact Number -->
+        <div class="mb-3 col-md-4">
+            <label class="form-label">Contact Number</label>
+            <input type="text" class="form-control" name="ContactNumber" value="<?= htmlspecialchars($row['ContactNumber']) ?>">
+        </div>
+                <!-- Address -->
+        <div class="mb-3 col-md-4">
+            <label class="form-label">Address</label>
+            <input type="text" class="form-control" name="Address" value="<?= htmlspecialchars($row['Address']) ?>">
+        </div>
+
+        </div>
+        <div class="row">
+        <!-- Parent's Name -->
+        <div class="mb-3 col-md-6">
+            <label class="form-label">Parent's Name</label>
+            <input type="text" class="form-control" name="ParentName" value="<?= htmlspecialchars($row['ParentName']) ?>">
+        </div>
+
+        <!-- Parent's Contact -->
+        <div class="mb-3 col-md-6">
+            <label class="form-label">Parent's Contact</label>
+            <input type="text" class="form-control" name="ParentsContact" value="<?= htmlspecialchars($row['ParentsContact']) ?>">
+        </div>
+        </div>
 
         <!-- Save Button -->
-        <div class="mb-3">
+        <div class="mb-3 text-end">
             <button type="submit" class="btn btn-success" onclick="return confirmSave()">Save Changes</button>
         </div>
     </form>

@@ -188,9 +188,9 @@ $conn->close();
     <div class="header-cover" style="background-image: url(../img/bg.png);">
         <div class="py-4 bg-dark bg-opacity-50">
             <div class="container">
-                <p class="text-secondary mb-1">dashboard</p>
                 <div class="d-flex justify-content-between align-items-center">
-                    <h2 class="text-light">Announcements</h2>
+                    
+                <h5 class="text-white mb-1">Dashboard</h5>
                     <div>
                         <div class="text-light">
                             <div><i class="fas fa-calendar-alt me-2"></i><span id="current-date"></span></div>

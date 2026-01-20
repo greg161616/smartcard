@@ -68,7 +68,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <style>
         body {
             font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: url('img/bg.png') no-repeat center center fixed;
+            background-size: cover;
+            background-position: center;
             min-height: 100vh;
             display: flex;
             align-items: center;

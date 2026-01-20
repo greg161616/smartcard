@@ -424,8 +424,8 @@ $current_view = isset($_GET['view']) && $_GET['view'] === 'inactive' ? 'inactive
 
   <!-- Add Teacher Modal -->
   <div class="modal fade" id="addModal" tabindex="-1" aria-labelledby="addModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-      <form id="addTeacherForm" action="../administration/addTeacher.php" method="post" novalidate>
+    <div class="modal-dialog modal-lg">
+      <form id="addTeacherForm" action="addTeacher.php" method="post">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title" id="addModalLabel">Add Teacher</h5>
@@ -433,7 +433,7 @@ $current_view = isset($_GET['view']) && $_GET['view'] === 'inactive' ? 'inactive
           </div>
           <div class="modal-body">
             <div class="row">
-              <div class="col-md-6 mb-3">
+              <div class="col-md-4 mb-3">
                 <label for="firstName" class="form-label required-field">First Name</label>
                 <input type="text" name="first_name" id="firstName" class="form-control" required
                        pattern="[A-Za-z\s]{2,}" maxlength="50">
@@ -441,7 +441,7 @@ $current_view = isset($_GET['view']) && $_GET['view'] === 'inactive' ? 'inactive
                   Please provide a valid first name (letters and spaces only, minimum 2 characters).
                 </div>
               </div>
-              <div class="col-md-6 mb-3">
+              <div class="col-md-2 mb-3">
                 <label for="middleName" class="form-label">Middle Name</label>
                 <input type="text" name="middle_name" id="middleName" class="form-control"
                        pattern="[A-Za-z\s]*" maxlength="50">
@@ -449,9 +449,7 @@ $current_view = isset($_GET['view']) && $_GET['view'] === 'inactive' ? 'inactive
                   Middle name can only contain letters and spaces.
                 </div>
               </div>
-            </div>
-            <div class="row">
-              <div class="col-md-6 mb-3">
+              <div class="col-md-4 mb-3">
                 <label for="lastName" class="form-label required-field">Last Name</label>
                 <input type="text" name="last_name" id="lastName" class="form-control" required
                        pattern="[A-Za-z\s]{2,}" maxlength="50">
@@ -459,7 +457,7 @@ $current_view = isset($_GET['view']) && $_GET['view'] === 'inactive' ? 'inactive
                   Please provide a valid last name (letters and spaces only, minimum 2 characters).
                 </div>
               </div>
-              <div class="col-md-6 mb-3">
+              <div class="col-md-2 mb-3">
                 <label for="surfix" class="form-label">Suffix</label>
                 <input type="text" name="surfix" id="surfix" class="form-control" 
                        placeholder="Jr., Sr., III, etc." maxlength="10">
@@ -469,27 +467,26 @@ $current_view = isset($_GET['view']) && $_GET['view'] === 'inactive' ? 'inactive
               </div>
             </div>
             <div class="row">
-              <div class="col-md-6 mb-3">
-                <label for="gender" class="form-label required-field">Gender</label>
+              <div class="col-md-3 mb-3">
+                <label for="gender" class="form-label required-field">Sex</label>
                 <select name="gender" id="gender" class="form-select" required>
-                  <option value="">Select Gender</option>
+                  <option value="">Select</option>
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
                 </select>
                 <div class="invalid-feedback">
-                  Please select a gender.
+                  Please select a sex.
                 </div>
               </div>
-              <div class="col-md-6 mb-3">
-                <label for="birthdate" class="form-label">Birthdate</label>
+              <div class="col-md-3 mb-3">
+                <label for="birthdate" class="form-label required-field">Birthdate</label>
                 <input type="date" name="birthdate" id="birthdate" class="form-control" 
-                       max="<?php echo date('Y-m-d', strtotime('-23 years')); ?>">
+                       max="<?php echo date('Y-m-d', strtotime('-25 years')); ?>" required>
                 <div class="invalid-feedback">
-                  Birthdate cannot be in the future and teacher must be at least 23 years old.
+                  Birthdate cannot be in the future and teacher must be at least 25 years old.
                 </div>
               </div>
-            </div>
-            <div class="mb-3">
+              <div class="mb-3 col-md-3">
               <label for="emailAddress" class="form-label required-field">Email Address</label>
               <input type="email" name="email_address" id="emailAddress" class="form-control" required
                      pattern="[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$" maxlength="100">
@@ -497,7 +494,7 @@ $current_view = isset($_GET['view']) && $_GET['view'] === 'inactive' ? 'inactive
                 Please provide a valid email address.
               </div>
             </div>
-            <div class="mb-3">
+            <div class="mb-3 col-md-3">
               <label for="contact" class="form-label">Contact Number</label>
               <input type="text" name="contact" id="contact" class="form-control" 
                      pattern="[\+]?[0-9\s\-\(\)]{7,}" maxlength="20"
@@ -505,6 +502,7 @@ $current_view = isset($_GET['view']) && $_GET['view'] === 'inactive' ? 'inactive
               <div class="invalid-feedback">
                 Please provide a valid contact number (minimum 7 digits, can include +, spaces, hyphens, parentheses).
               </div>
+            </div>
             </div>
             <div class="mb-3">
               <label for="address" class="form-label">Address</label>
@@ -517,14 +515,14 @@ $current_view = isset($_GET['view']) && $_GET['view'] === 'inactive' ? 'inactive
             <div class="alert alert-info">
               <small>
                 <i class="fas fa-info-circle me-1"></i>
-                Default password will be the teacher's last name in lowercase. The teacher will be prompted to change it on first login.
+                Default password will be auto-generated by the system. The teacher will be prompted to change it on first login.
               </small>
             </div>
           </div>
           <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-            <button type="submit" name="add_teacher" class="btn btn-success">Save Teacher</button>
-          </div>
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" name="add_teacher" id="addTeacherBtn" class="btn btn-success">Add Teacher</button>
+            </div>
         </div>
       </form>
     </div>
@@ -557,7 +555,7 @@ $current_view = isset($_GET['view']) && $_GET['view'] === 'inactive' ? 'inactive
           </div>
           <div class="row">
             <div class="col-md-6">
-              <p><strong>Gender:</strong> <span id="detailGender"></span></p>
+              <p><strong>Sex:</strong> <span id="detailGender"></span></p>
             </div>
             <div class="col-md-6">
               <p><strong>Birthdate:</strong> <span id="detailBirthdate"></span></p>
@@ -623,34 +621,35 @@ $current_view = isset($_GET['view']) && $_GET['view'] === 'inactive' ? 'inactive
   </div>
 
   <!-- Loading Modal -->
-<div class="modal fade" id="loadingModal" tabindex="-1" aria-labelledby="loadingModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal fade" id="loadingModal" tabindex="-1" aria-labelledby="loadingModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header border-0">
-                <h5 class="modal-title" id="loadingModalLabel">Importing Teachers</h5>
+                <h5 class="modal-title" id="loadingModalTitle">Processing</h5>
             </div>
             <div class="modal-body text-center">
                 <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status">
                     <span class="visually-hidden">Loading...</span>
                 </div>
-                <p class="mb-0">Please wait while we import the teacher data...</p>
-                <p class="text-muted small mt-2">This may take a few moments depending on the file size.</p>
+                <p class="mb-0" id="loadingModalMessage">Please wait...</p>
             </div>
             <div class="modal-footer border-0">
                 <!-- No buttons - modal can't be closed manually -->
             </div>
         </div>
     </div>
-</div>
+  </div>
 
-  <!-- Scripts -->
-  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-  <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+ <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
 
 <script>
     $(document).ready(() => {
+        console.log('teacher.php script loaded');
+        
+        // Initialize DataTable
         const table = $('#teacherTable').DataTable({
             "pageLength": 25,
             "responsive": true
@@ -677,193 +676,92 @@ $current_view = isset($_GET['view']) && $_GET['view'] === 'inactive' ? 'inactive
 
         // Handle import form submission
         $('#importModal form').on('submit', function(e) {
+            // Set loading modal text for import
+            $('#loadingModalTitle').text('Importing Teachers');
+            $('#loadingModalMessage').text('Please wait while we import the teacher data...');
+            
             // Show loading modal
             const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
             loadingModal.show();
-            
-            // Hide the import modal
-            const importModal = bootstrap.Modal.getInstance(document.getElementById('importModal'));
-            importModal.hide();
-            
-            // The form will continue submitting in the background
         });
 
-        // Hide loading modal when page reloads (if it's still showing)
+        // Simple form validation for add teacher
+        const addTeacherForm = document.getElementById('addTeacherForm');
+        if (addTeacherForm) {
+            console.log('Add teacher form found');
+            
+            // Add validation feedback on submit
+            addTeacherForm.addEventListener('submit', function(e) {
+                let isValid = true;
+                const requiredFields = this.querySelectorAll('[required]');
+                
+                // Simple required field check
+                requiredFields.forEach(field => {
+                    field.classList.remove('is-invalid');
+                    
+                    if (!field.value.trim()) {
+                        isValid = false;
+                        field.classList.add('is-invalid');
+                        
+                        // Add focus to first invalid field
+                        if (isValid === false) {
+                            field.focus();
+                        }
+                    }
+                });
+                
+                // Email format validation
+                const emailField = document.getElementById('emailAddress');
+                if (emailField.value.trim()) {
+                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                    if (!emailRegex.test(emailField.value)) {
+                        isValid = false;
+                        emailField.classList.add('is-invalid');
+                        emailField.focus();
+                    }
+                }
+                
+                // If not valid, prevent submission and show error
+                if (!isValid) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    // Show general error message
+                    if (!document.querySelector('.general-form-error')) {
+                        const errorMsg = document.createElement('div');
+                        errorMsg.className = 'alert alert-danger mt-3 general-form-error';
+                        errorMsg.innerHTML = '<i class="fas fa-exclamation-triangle me-2"></i> Please fill in all required fields correctly.';
+                        addTeacherForm.querySelector('.modal-body').appendChild(errorMsg);
+                    }
+                }
+            });
+            
+            // Clear validation on input
+            addTeacherForm.querySelectorAll('input, select, textarea').forEach(field => {
+                field.addEventListener('input', function() {
+                    this.classList.remove('is-invalid');
+                    
+                    // Remove general error message
+                    const generalError = document.querySelector('.general-form-error');
+                    if (generalError) {
+                        generalError.remove();
+                    }
+                });
+            });
+        }
+        
+        // Hide loading modal when page reloads (for import or add)
         <?php if (isset($_SESSION['message']) || isset($_SESSION['error'])): ?>
-            $(document).ready(function() {
-                const loadingModal = document.getElementById('loadingModal');
-                const modalInstance = bootstrap.Modal.getInstance(loadingModal);
+            const loadingModalEl = document.getElementById('loadingModal');
+            if (loadingModalEl) {
+                const modalInstance = bootstrap.Modal.getInstance(loadingModalEl);
                 if (modalInstance) {
                     modalInstance.hide();
                 }
-            });
+            }
         <?php endif; ?>
-
-        // Form validation for add teacher
-        const addTeacherForm = document.getElementById('addTeacherForm');
-        
-        // Real-time validation
-        const fields = addTeacherForm.querySelectorAll('input, select, textarea');
-        fields.forEach(field => {
-            field.addEventListener('input', function() {
-                validateField(this);
-            });
-            
-            field.addEventListener('blur', function() {
-                validateField(this);
-            });
-        });
-
-        // Form submission validation
-        addTeacherForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            let isValid = true;
-            fields.forEach(field => {
-                if (!validateField(field)) {
-                    isValid = false;
-                }
-            });
-
-            if (isValid) {
-                // Check if email already exists
-                checkEmailExists().then(emailExists => {
-                    if (emailExists) {
-                        showEmailError();
-                        return;
-                    }
-                    
-                    // If all validations pass, submit the form
-                    addTeacherForm.submit();
-                }).catch(error => {
-                    console.error('Error checking email:', error);
-                    // If email check fails, still submit the form (server will handle duplicate check)
-                    addTeacherForm.submit();
-                });
-            }
-        });
-
-        function validateField(field) {
-            const value = field.value.trim();
-            const isRequired = field.hasAttribute('required');
-            const pattern = field.getAttribute('pattern');
-            const maxLength = field.getAttribute('maxlength');
-            
-            // Clear previous validation states
-            field.classList.remove('is-valid', 'is-invalid');
-            
-            // Check required fields
-            if (isRequired && !value) {
-                field.classList.add('is-invalid');
-                return false;
-            }
-            
-            // Skip validation for empty non-required fields
-            if (!isRequired && !value) {
-                return true;
-            }
-            
-            // Check pattern if exists
-            if (pattern && value) {
-                const regex = new RegExp(pattern);
-                if (!regex.test(value)) {
-                    field.classList.add('is-invalid');
-                    return false;
-                }
-            }
-            
-            // Check max length
-            if (maxLength && value.length > parseInt(maxLength)) {
-                field.classList.add('is-invalid');
-                return false;
-            }
-            
-            // Special validations for specific fields
-            if (field.id === 'birthdate' && value) {
-                const birthDate = new Date(value);
-                const today = new Date();
-                const minAgeDate = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate());
-                
-                if (birthDate > minAgeDate) {
-                    field.classList.add('is-invalid');
-                    return false;
-                }
-            }
-            
-            if (field.id === 'emailAddress' && value) {
-                const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-                if (!emailRegex.test(value)) {
-                    field.classList.add('is-invalid');
-                    return false;
-                }
-            }
-            
-            if (field.id === 'contact' && value) {
-                const contactRegex = /^[\+]?[0-9\s\-\(\)]{7,}$/;
-                if (!contactRegex.test(value.replace(/\s/g, ''))) {
-                    field.classList.add('is-invalid');
-                    return false;
-                }
-            }
-            
-            // If all validations pass
-            field.classList.add('is-valid');
-            return true;
-        }
-
-        function checkEmailExists() {
-            const email = document.getElementById('emailAddress').value.trim();
-            
-            return new Promise((resolve, reject) => {
-                if (!email) {
-                    resolve(false);
-                    return;
-                }
-                
-                $.ajax({
-                    url: '../administration/check_email.php',
-                    type: 'POST',
-                    data: {
-                        email: email,
-                        check_type: 'teacher'
-                    },
-                    success: function(response) {
-                        resolve(response.exists === true);
-                    },
-                    error: function(xhr, status, error) {
-                        reject(error);
-                    }
-                });
-            });
-        }
-
-        function showEmailError() {
-            const emailField = document.getElementById('emailAddress');
-            emailField.classList.remove('is-valid');
-            emailField.classList.add('is-invalid');
-            
-            // Create or update custom error message
-            let customError = emailField.parentNode.querySelector('.email-exists-error');
-            if (!customError) {
-                customError = document.createElement('div');
-                customError.className = 'invalid-feedback email-exists-error';
-                emailField.parentNode.appendChild(customError);
-            }
-            customError.textContent = 'This email address is already registered. Please use a different email.';
-            
-            // Focus on the email field
-            emailField.focus();
-        }
-
-        // Reset form when modal is closed
-        $('#addModal').on('hidden.bs.modal', function() {
-            addTeacherForm.reset();
-            // Remove validation classes
-            fields.forEach(field => {
-                field.classList.remove('is-valid', 'is-invalid');
-            });
-        });
     });
+    
 </script>
 </body>
 </html>

@@ -351,10 +351,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               Edit
             </button>
             <!-- Delete -->
-            <form method="post" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this section? This action cannot be undone.');">
-              <input type="hidden" name="section_id" value="<?= $r['SectionID'] ?>">
-              <button type="submit" name="delete_section" class="btn btn-sm btn-danger">Delete</button>
-            </form>
+            <button class="btn btn-sm btn-danger"
+              data-bs-toggle="modal"
+              data-bs-target="#deleteSectionModal"
+              data-id="<?= $r['SectionID'] ?>"
+              data-name="<?= htmlspecialchars($r['SectionName']) ?>">
+              Delete
+            </button>
           </td>
         </tr>
         <?php 
@@ -473,6 +476,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
   </div>
 
+  <!-- Delete Section Modal -->
+  <div class="modal fade" id="deleteSectionModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <form method="post">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Delete Section</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p>Are you sure you want to delete <strong id="deleteSectionName"></strong>?</p>
+            <p class="text-danger"><small>This action cannot be undone.</small></p>
+            <input type="hidden" name="section_id" id="deleteSectionId">
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" name="delete_section" class="btn btn-danger">Delete</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Bootstrap + jQuery -->
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -485,6 +511,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       m.find('select[name=grade_level]').val(b.data('grade'));
       m.find('input[name=section_name]').val(b.data('name'));
       m.find('select[name=adviser_id]').val(b.data('adv'));
+    });
+
+    // Populate Delete modal
+    $('#deleteSectionModal').on('show.bs.modal', function(e) {
+      var b = $(e.relatedTarget), m = $(this);
+      m.find('#deleteSectionId').val(b.data('id'));
+      m.find('#deleteSectionName').text(b.data('name'));
     });
 
     // Auto-open Add Section modal if there was an add error

@@ -71,6 +71,114 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// Handle AJAX search request
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'true') {
+    $search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
+    $my_announcements_filter = isset($_GET['my_announcements']) && $_GET['my_announcements'] === 'on' ? true : false;
+
+    // Build query with filters
+    $announcements_query = "SELECT a.*, 
+           COALESCE(ad.FullName, CONCAT(t.fName, ' ', t.lName)) AS author_name
+    FROM announcements a
+    LEFT JOIN admin ad ON a.author_id = ad.UserID
+    LEFT JOIN teacher t ON a.author_id = t.userID
+    WHERE 1=1";
+
+    // Add search filter
+    if (!empty($search)) {
+        $announcements_query .= " AND (a.title LIKE '%$search%' OR a.content LIKE '%$search%')";
+    }
+
+    // Filter for teacher's own announcements only
+    if ($my_announcements_filter) {
+        $announcements_query .= " AND a.author_id = '{$_SESSION['user_id']}'";
+    }
+
+    // Add advisory class filter - teachers can see announcements for their advisory class
+    if ($advisory_class) {
+        $advisory_condition = " OR a.target_audience = 'advisory_{$advisory_class['SectionID']}'";
+    } else {
+        $advisory_condition = "";
+    }
+
+    // Teachers can see: all announcements, teacher-only announcements, and their advisory class announcements
+    $announcements_query .= " AND (a.target_audience = 'all' 
+                              OR a.target_audience = 'teachers' 
+                              $advisory_condition
+                              OR a.author_id = '{$_SESSION['user_id']}')";
+
+    // Sorting the results by date in descending order
+    $announcements_query .= " ORDER BY a.date DESC";
+
+    // Execute the query
+    $announcements_result = mysqli_query($conn, $announcements_query);
+    $total_announcements = mysqli_num_rows($announcements_result);
+
+    // Return HTML
+    if ($total_announcements > 0): ?>
+        <?php while ($announcement = mysqli_fetch_assoc($announcements_result)): 
+            $is_my_announcement = ($announcement['author_id'] == $_SESSION['user_id']);
+            $is_advisory_announcement = ($advisory_class && $announcement['target_audience'] == 'advisory_' . $advisory_class['SectionID']);
+        ?>
+            <div class="col-12 mb-3">
+                <div class="card announcement-card <?php echo $is_my_announcement ? 'my-announcement' : ''; ?>">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <h6 class="card-title text-primary mb-0">
+                                <?php echo htmlspecialchars($announcement['title']); ?>
+                                <?php if ($is_my_announcement): ?>
+                                    <span class="badge bg-primary ms-2">My Announcement</span>
+                                <?php endif; ?>
+                            </h6>
+                            <div class="d-flex gap-2">
+                                <span class="badge bg-light text-dark">
+                                    <?php 
+                                    if (strpos($announcement['target_audience'], 'advisory_') === 0 && $advisory_class) {
+                                        echo 'Advisory: ' . htmlspecialchars($advisory_class['SectionName']);
+                                    } else {
+                                        echo ucfirst($announcement['target_audience']);
+                                    }
+                                    ?>
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <p class="card-text text-muted small mb-2">
+                            <i class="fas fa-user me-1"></i>By: <?php echo htmlspecialchars($announcement['author_name']); ?>
+                            <i class="fas fa-clock ms-3 me-1"></i><?php echo date('M j, Y g:i A', strtotime($announcement['date'])); ?>
+                        </p>
+                        
+                        <p class="card-text">
+                            <?php echo nl2br(htmlspecialchars($announcement['content'])); ?>
+                        </p>
+                        
+                        <?php if ($is_my_announcement): ?>
+                            <div class="d-flex justify-content-end mt-3">
+                                <button type="button" class="btn btn-danger btn-sm delete-announcement" 
+                                        data-id="<?php echo $announcement['id']; ?>"
+                                        data-title="<?php echo htmlspecialchars($announcement['title']); ?>"
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#deleteAnnouncementModal">
+                                    <i class="fas fa-trash me-1"></i>Delete
+                                </button>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+        <?php endwhile; ?>
+    <?php else: ?>
+        <div class="col-12">
+            <div class="text-center py-5">
+                <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">No Announcements Found</h5>
+                <p class="text-muted">There are no announcements matching your criteria.</p>
+            </div>
+        </div>
+    <?php endif;
+    exit;
+}
+
 // Handle search and filter
 $search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
 $my_announcements_filter = isset($_GET['my_announcements']) ? true : false;
@@ -353,100 +461,54 @@ $today_count = $today_result ? mysqli_fetch_assoc($today_result)['count'] : 0;
                         <h5 class="card-title mb-0">
                             <i class="fas fa-list me-2"></i>Announcements
                         </h5>
-                        <span class="badge bg-secondary"><?php echo $total_announcements; ?> total</span>
                     </div>
                     <div class="card-body">
                         <!-- Filters -->
-                        <form method="GET" class="row g-3 mb-4">
+                        <div class="row g-3 mb-4">
                             <div class="col-md-6">
                                 <label for="search" class="form-label">Search</label>
                                 <input type="text" class="form-control" id="search" name="search" 
-                                       placeholder="Search announcements..." value="<?php echo htmlspecialchars($search); ?>">
+                                       placeholder="Search announcements..." value="">
                             </div>
                             <div class="col-md-4">
                                 <div class="form-check mt-4">
-                                    <input class="form-check-input" type="checkbox" id="my_announcements" name="my_announcements" 
-                                           <?php echo $my_announcements_filter ? 'checked' : ''; ?>>
+                                    <input class="form-check-input" type="checkbox" id="my_announcements" name="my_announcements">
                                     <label class="form-check-label" for="my_announcements">
                                         Show only my announcements
                                     </label>
                                 </div>
                             </div>
-                            <div class="col-md-2 d-flex align-items-end">
-                                <div class="d-grid w-100">
-                                    <button type="submit" class="btn btn-primary">
-                                        <i class="fas fa-filter me-1"></i>Filter
-                                    </button>
-                                </div>
-                            </div>
-                        </form>
+                        </div>
 
                         <!-- Announcements List -->
-                        <?php if (mysqli_num_rows($announcements_result) > 0): ?>
-                            <div class="table-responsive">
-                                <div class="row">
-                                    <?php while ($announcement = mysqli_fetch_assoc($announcements_result)): 
-                                        $is_my_announcement = ($announcement['author_id'] == $_SESSION['user_id']);
-                                        $is_advisory_announcement = ($advisory_class && $announcement['target_audience'] == 'advisory_' . $advisory_class['SectionID']);
-                                    ?>
-                                        <div class="col-12 mb-3">
-                                            <div class="card announcement-card <?php echo $is_my_announcement ? 'my-announcement' : ''; ?>">
-                                                <div class="card-body">
-                                                    <div class="d-flex justify-content-between align-items-start mb-2">
-                                                        <h6 class="card-title text-primary mb-0">
-                                                            <?php echo htmlspecialchars($announcement['title']); ?>
-                                                            <?php if ($is_my_announcement): ?>
-                                                                <span class="badge bg-primary ms-2">My Announcement</span>
-                                                            <?php endif; ?>
-                                                        </h6>
-                                                        <div class="d-flex gap-2">
-                                                            <span class="badge bg-light text-dark">
-                                                                <?php 
-                                                                if (strpos($announcement['target_audience'], 'advisory_') === 0 && $advisory_class) {
-                                                                    echo 'Advisory: ' . htmlspecialchars($advisory_class['SectionName']);
-                                                                } else {
-                                                                    echo ucfirst($announcement['target_audience']);
-                                                                }
-                                                                ?>
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    <p class="card-text text-muted small mb-2">
-                                                        <i class="fas fa-user me-1"></i>By: <?php echo htmlspecialchars($announcement['author_name']); ?>
-                                                        <i class="fas fa-clock ms-3 me-1"></i><?php echo date('M j, Y g:i A', strtotime($announcement['date'])); ?>
-                                                    </p>
-                                                    
-                                                    <p class="card-text">
-                                                        <?php echo nl2br(htmlspecialchars($announcement['content'])); ?>
-                                                    </p>
-                                                    
-                                                    <?php if ($is_my_announcement): ?>
-                                                        <div class="d-flex justify-content-end mt-3">
-                                                            <form method="POST" action="" 
-                                                                  onsubmit="return confirm('Are you sure you want to delete this announcement?');">
-                                                                <input type="hidden" name="announcement_id" value="<?php echo $announcement['id']; ?>">
-                                                                <button type="submit" name="delete_announcement" 
-                                                                        class="btn btn-danger btn-sm">
-                                                                    <i class="fas fa-trash me-1"></i>Delete
-                                                                </button>
-                                                            </form>
-                                                        </div>
-                                                    <?php endif; ?>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    <?php endwhile; ?>
-                                </div>
-                            </div>
-                        <?php else: ?>
-                            <div class="text-center py-5">
-                                <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
-                                <h5 class="text-muted">No Announcements Found</h5>
-                                <p class="text-muted">There are no announcements matching your criteria.</p>
-                            </div>
-                        <?php endif; ?>
+                        <!-- Announcements List -->
+                        <div class="row" id="announcementsList">
+                        </div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Announcement Confirmation Modal -->
+    <div class="modal fade" id="deleteAnnouncementModal" tabindex="-1" aria-labelledby="deleteAnnouncementModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="deleteAnnouncementModalLabel"><i class="fas fa-exclamation-triangle me-2 text-danger"></i>Confirm Delete</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete this announcement?</p>
+                    <div class="alert alert-info mb-0">
+                        <p class="mb-0"><strong>Title:</strong> <span id="deleteAnnouncementTitle"></span></p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirmDeleteAnnouncement">
+                        <i class="fas fa-trash me-2"></i>Delete Announcement
+                    </button>
                 </div>
             </div>
         </div>
@@ -456,6 +518,100 @@ $today_count = $today_result ? mysqli_fetch_assoc($today_result)['count'] : 0;
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
+        // Delete announcement modal handling
+        var deleteAnnouncementId = null;
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            // Handle delete button click
+            document.querySelectorAll('.delete-announcement').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    deleteAnnouncementId = this.getAttribute('data-id');
+                    const title = this.getAttribute('data-title');
+                    
+                    // Update modal content
+                    document.getElementById('deleteAnnouncementTitle').textContent = title;
+                });
+            });
+            
+            // Handle confirm delete button
+            document.getElementById('confirmDeleteAnnouncement').addEventListener('click', function() {
+                if (deleteAnnouncementId) {
+                    // Create and submit form
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = window.location.href;
+                    
+                    const idInput = document.createElement('input');
+                    idInput.type = 'hidden';
+                    idInput.name = 'announcement_id';
+                    idInput.value = deleteAnnouncementId;
+                    
+                    const deleteInput = document.createElement('input');
+                    deleteInput.type = 'hidden';
+                    deleteInput.name = 'delete_announcement';
+                    deleteInput.value = '1';
+                    
+                    form.appendChild(idInput);
+                    form.appendChild(deleteInput);
+                    document.body.appendChild(form);
+                    form.submit();
+                }
+            });
+        });
+        
+        // AJAX search functionality
+        const searchInput = document.getElementById('search');
+        const myAnnouncementsCheckbox = document.getElementById('my_announcements');
+        const announcementsList = document.getElementById('announcementsList');
+        
+        function loadAnnouncements() {
+            const searchValue = searchInput.value;
+            const myAnnouncementsValue = myAnnouncementsCheckbox.checked ? 'on' : '';
+            
+            const params = new URLSearchParams({
+                ajax: 'true',
+                search: searchValue,
+                my_announcements: myAnnouncementsValue
+            });
+            
+            fetch(window.location.href.split('?')[0] + '?' + params.toString())
+                .then(response => response.text())
+                .then(html => {
+                    announcementsList.innerHTML = html;
+                    // Re-attach delete button listeners
+                    attachDeleteListeners();
+                })
+                .catch(error => console.error('Error loading announcements:', error));
+        }
+        
+        function attachDeleteListeners() {
+            document.querySelectorAll('.delete-announcement').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    deleteAnnouncementId = this.getAttribute('data-id');
+                    const title = this.getAttribute('data-title');
+                    document.getElementById('deleteAnnouncementTitle').textContent = title;
+                });
+            });
+        }
+        
+        // Load announcements on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadAnnouncements();
+        });
+        
+        // Add event listeners for search and filter
+        if (searchInput) {
+            searchInput.addEventListener('input', function() {
+                loadAnnouncements();
+            });
+        }
+        
+        if (myAnnouncementsCheckbox) {
+            myAnnouncementsCheckbox.addEventListener('change', function() {
+                loadAnnouncements();
+            });
+        }
+        
         // Character counter for announcement content
         const contentTextarea = document.getElementById('content');
         const charCount = document.getElementById('charCount');

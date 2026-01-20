@@ -19,12 +19,12 @@ function sendOTPEmail($toEmail, $otp, $username = 'User') {
         $mail->SMTPDebug  = 0; // Set to 2 for debugging if needed
         
         // Recipients
-        $mail->setFrom('banahis2008@gmail.com', 'Balaytigue National High School');
+        $mail->setFrom('banahis2008@gmail.com', 'Smartcard');
         $mail->addAddress($toEmail, $username);
         
         // Content
         $mail->isHTML(true);
-        $mail->Subject = 'Password Reset OTP - School System';
+        $mail->Subject = 'Password Reset OTP - The School System';
         $mail->Body    = "
             <html>
             <body style='font-family: Arial, sans-serif;'>

@@ -49,10 +49,7 @@ if (isset($_GET['id'])) {
 ?>
 
 <div class="container mt-4">
-    <h3>Student Details</h3>
     <form>
-        <!-- Basic Information -->
-        <h5>Basic Information</h5>
         <div class="row">
             <div class="col-md-6 mb-3">
                 <label class="form-label">LRN</label>

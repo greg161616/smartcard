@@ -58,7 +58,7 @@ $sql = "
       AND se.SchoolYear = ?
       AND se.status = 'active'
     GROUP BY s.SubjectID, sec.SectionID, a.school_year
-    ORDER BY s.SubjectName, sec.GradeLevel, sec.SectionName
+    ORDER BY s.SubjectID, sec.SectionID
 ";
 $stmt = $conn->prepare($sql);
 $stmt->bind_param('iss', $teacherId, $selectedSchoolYear, $selectedSchoolYear);
@@ -332,13 +332,6 @@ $stmt->close();
                                 title="View Grades"
                               >
                                 <i class="bi bi-eye"></i>
-                              </a>
-                              <a 
-                                href="values.php?subject_id=<?= $a['SubjectID'] ?>&section_id=<?= $a['SectionID'] ?>&school_year=<?= urlencode($selectedSchoolYear) ?>" 
-                                class="btn btn-secondary btn-sm"
-                                title="Values"
-                              >
-                                <i class="bi bi-clipboard-data"></i>
                               </a>
                             </div>
                           </td>

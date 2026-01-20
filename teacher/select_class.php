@@ -133,17 +133,17 @@ $stmt->close();
       <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
         <h5 class="mb-0">Take Attendance</h5>
         <!-- Date selector form -->
-        <form method="get" class="d-flex">
+        <form method="get" class="d-flex" id="dateForm">
+          <label class="text-white me-2 mt-2" style="font-weight: 500;">Select Date:</label>
           <input 
             type="date" 
             name="date" 
             value="<?= htmlspecialchars($date) ?>" 
             class="form-control form-control-sm me-2" 
+            onchange="document.getElementById('dateForm').submit();" 
             required>
           <input type="hidden" name="school_year" value="<?= htmlspecialchars($selectedSchoolYear) ?>">
-          <button type="submit" class="btn btn-light btn-sm">
-            <i class="bi bi-arrow-clockwise"></i>
-          </button>
+          
         </form>
       </div>
 
@@ -153,20 +153,23 @@ $stmt->close();
             You don't have any scheduled classes for the selected school year (<?= htmlspecialchars($selectedSchoolYear) ?>).
           </div>
         <?php else: ?>
+          <div class="alert alert-info mb-3">
+            <i class="bi bi-calendar-event"></i> Showing classes for <strong><?= htmlspecialchars($date) ?></strong>
+          </div>
           <div class="row g-4">
             <?php foreach ($sections as $sec): ?>
               <div class="col-sm-6 col-lg-4">
                 <div class="card h-100">
                   <div class="card-body d-flex flex-column">
                     <h5 class="card-title">
-                      Grade <?= htmlspecialchars($sec['GradeLevel']) ?> - 
+                      <i class="bi bi-people-fill me-2"></i>Grade <?= htmlspecialchars($sec['GradeLevel']) ?> - 
                       <?= htmlspecialchars($sec['SectionName']) ?>
                     </h5>
                     <p class="card-text mt-auto">
-                      Date: <?= htmlspecialchars($date) ?>
+                      <i class="bi bi-calendar"></i> Date: <strong><?= htmlspecialchars($date) ?></strong>
                     </p>
                     <small class="text-muted">
-                      School Year: <?= htmlspecialchars($selectedSchoolYear) ?>
+                      <i class="bi bi-mortarboard"></i> School Year: <?= htmlspecialchars($selectedSchoolYear) ?>
                     </small>
                   </div>
                   <div class="card-footer bg-transparent text-end">

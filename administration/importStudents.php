@@ -53,13 +53,32 @@ if (isset($_POST['import_file'])) {
                     $middleName,    // C - MiddleName
                     $lastName,      // D - LastName
                     $sex,           // E - Sex
-                    $birthdate,     // F - Birthdate (not used in current code)
+                    $birthdate,     // F - Birthdate
                     $gradeLevel,    // G - Grade
                     $sectionName,   // H - Section
                     $email          // I - Email
                 ] = array_pad($row, 9, null);
 
-                // Basic validation (middle name, grade level and section are optional)
+                // Process birthdate
+                $mysqlBirthdate = null;
+                if (!empty($birthdate)) {
+                    // Handle Excel date formats
+                    if (is_numeric($birthdate)) {
+                        // Excel serial date
+                        $birthdate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($birthdate)->format('Y-m-d');
+                        $mysqlBirthdate = $birthdate;
+                    } else {
+                        // String date
+                        $timestamp = strtotime($birthdate);
+                        if ($timestamp !== false) {
+                            $mysqlBirthdate = date('Y-m-d', $timestamp);
+                        } else {
+                            $errors[] = "Row {$rowNum}: Invalid birthdate format: {$birthdate}. Using NULL instead.";
+                        }
+                    }
+                }
+
+                // Basic validation (middle name, birthdate, grade level and section are optional)
                 if (empty($lRn) || empty($firstName) || empty($lastName) || 
                     empty($sex) || !in_array(strtolower($sex), ['male', 'female', 'm', 'f']) ||
                     !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -89,14 +108,14 @@ if (isset($_POST['import_file'])) {
                     $newUserId = $conn->insert_id;
                     $stmt1->close();
 
-                    // 2) Insert into student table (with optional MiddleName)
+                    // 2) Insert into student table (with optional MiddleName and Birthdate)
                     $stmt2 = $conn->prepare("
-                        INSERT INTO `student` (UserID, LRN, FirstName, MiddleName, LastName, Sex)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                        INSERT INTO `student` (UserID, LRN, FirstName, MiddleName, LastName, Sex, Birthdate)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                     ");
-                    // Handle empty middle name (set to NULL if empty)
+                    // Handle empty middle name (set to empty string if empty)
                     $middleName = empty($middleName) ? '' : $middleName;
-                    $stmt2->bind_param("isssss", $newUserId, $lRn, $firstName, $middleName, $lastName, $sex);
+                    $stmt2->bind_param("issssss", $newUserId, $lRn, $firstName, $middleName, $lastName, $sex, $mysqlBirthdate);
                     $stmt2->execute();
                     $newStudentId = $conn->insert_id;
                     $stmt2->close();

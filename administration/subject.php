@@ -44,30 +44,195 @@ function updateSubject(mysqli $conn, int $subjectId, string $name, float $ww, fl
 }
 
 /**
- * Assign subject to teacher
+ * Assign subject to teacher - handles MAPEH assignment to 4 components
  */
-function assignSubjectToTeacher(mysqli $conn, int $teacherId, int $subjectId, int $sectionId, string $schoolYear) {
-    $stmt = $conn->prepare("
-        INSERT INTO assigned_subject (teacher_id, subject_id, section_id, school_year)
-        VALUES (?, ?, ?, ?)
-    ");
-    if (!$stmt) return false;
-    $stmt->bind_param("iiis", $teacherId, $subjectId, $sectionId, $schoolYear);
-    $ok = $stmt->execute();
-    $stmt->close();
-    return $ok;
+function assignSubjectToTeacher(mysqli $conn, int $teacherId, int $subjectId, int $sectionId, string $schoolYear, string $subjectName) {
+    // Validate all parameters
+    if (!$teacherId || !$sectionId || empty($schoolYear) || (!$subjectId && strtoupper($subjectName) != 'MAPEH')) {
+        return false;
+    }
+    
+    // Check if this is MAPEH subject
+    if (strtoupper($subjectName) == 'MAPEH') {
+        // Get the 4 MAPEH component subject IDs
+        $componentNames = ['Music', 'Arts', 'Physical Education', 'Health'];
+        $componentIds = [];
+        
+        foreach ($componentNames as $component) {
+            $stmt = $conn->prepare("SELECT SubjectID FROM subject WHERE SubjectName = ? LIMIT 1");
+            if (!$stmt) continue;
+            $stmt->bind_param("s", $component);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            if ($result && $result->num_rows > 0) {
+                $row = $result->fetch_assoc();
+                $componentIds[] = (int)$row['SubjectID'];
+            }
+            $stmt->close();
+        }
+        
+        if (empty($componentIds)) {
+            return false; // No MAPEH components found
+        }
+        
+        // Assign all 4 components
+        $success = true;
+        foreach ($componentIds as $compId) {
+            $stmt = $conn->prepare("
+                INSERT INTO assigned_subject (teacher_id, subject_id, section_id, school_year)
+                VALUES (?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE school_year = VALUES(school_year)
+            ");
+            if (!$stmt) {
+                $success = false;
+                continue;
+            }
+            $stmt->bind_param("iiis", $teacherId, $compId, $sectionId, $schoolYear);
+            if (!$stmt->execute()) {
+                $success = false;
+            }
+            $stmt->close();
+        }
+        return $success;
+    } else {
+        // Regular subject assignment
+        if (!$subjectId) return false;
+        
+        $stmt = $conn->prepare("
+            INSERT INTO assigned_subject (teacher_id, subject_id, section_id, school_year)
+            VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE school_year = VALUES(school_year)
+        ");
+        if (!$stmt) return false;
+        $stmt->bind_param("iiis", $teacherId, $subjectId, $sectionId, $schoolYear);
+        $ok = $stmt->execute();
+        $stmt->close();
+        return $ok;
+    }
 }
 
 /**
- * Remove subject assignment from teacher
+ * Remove subject assignment from teacher - handles MAPEH component removal
  */
-function removeSubjectAssignment(mysqli $conn, int $assignmentId) {
-    $stmt = $conn->prepare("DELETE FROM assigned_subject WHERE ID = ?");
-    if (!$stmt) return false;
-    $stmt->bind_param("i", $assignmentId);
-    $ok = $stmt->execute();
-    $stmt->close();
-    return $ok;
+function removeSubjectAssignment(mysqli $conn, int $assignmentId, int $subjectId, string $subjectName, string $schoolYear) {
+    global $active_school_year;
+    
+    // Use provided school year or fallback to active school year
+    $targetSchoolYear = !empty($schoolYear) ? $schoolYear : $active_school_year;
+    
+    if (!$assignmentId) {
+        return false;
+    }
+    
+    // Check if this is a MAPEH component
+    $isMapehComponent = in_array($subjectName, ['Music', 'Arts', 'Physical Education', 'Health']);
+    
+    if ($isMapehComponent) {
+        // When removing a MAPEH component, remove all components for consistency
+        // First, get the teacher and section for this assignment
+        $stmt = $conn->prepare("SELECT teacher_id, section_id, school_year FROM assigned_subject WHERE ID = ?");
+        if (!$stmt) return false;
+        $stmt->bind_param("i", $assignmentId);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        if ($result && $result->num_rows > 0) {
+            $row = $result->fetch_assoc();
+            $teacherId = (int)$row['teacher_id'];
+            $sectionId = (int)$row['section_id'];
+            $assignmentSchoolYear = $row['school_year'];
+            $stmt->close();
+            
+            // Get all MAPEH component IDs
+            $componentNames = ['Music', 'Arts', 'Physical Education', 'Health'];
+            $componentIds = [];
+            
+            foreach ($componentNames as $component) {
+                $stmt = $conn->prepare("SELECT SubjectID FROM subject WHERE SubjectName = ? LIMIT 1");
+                if (!$stmt) continue;
+                $stmt->bind_param("s", $component);
+                $stmt->execute();
+                $compResult = $stmt->get_result();
+                if ($compResult && $compResult->num_rows > 0) {
+                    $compRow = $compResult->fetch_assoc();
+                    $componentIds[] = (int)$compRow['SubjectID'];
+                }
+                $stmt->close();
+            }
+            
+            // Remove all MAPEH components for this teacher and section
+            $success = true;
+            foreach ($componentIds as $compId) {
+                $stmt = $conn->prepare("
+                    DELETE FROM assigned_subject 
+                    WHERE teacher_id = ? AND subject_id = ? AND section_id = ? AND school_year = ?
+                ");
+                if (!$stmt) {
+                    $success = false;
+                    continue;
+                }
+                $stmt->bind_param("iiis", $teacherId, $compId, $sectionId, $assignmentSchoolYear);
+                if (!$stmt->execute()) {
+                    $success = false;
+                }
+                $stmt->close();
+            }
+            return $success;
+        }
+        $stmt->close();
+        return false;
+    } else {
+        // Regular subject removal
+        $stmt = $conn->prepare("DELETE FROM assigned_subject WHERE ID = ?");
+        if (!$stmt) return false;
+        $stmt->bind_param("i", $assignmentId);
+        $ok = $stmt->execute();
+        $stmt->close();
+        return $ok;
+    }
+}
+
+/**
+ * Check if MAPEH components exist
+ */
+function checkMapehComponents($conn) {
+    $components = ['Music', 'Arts', 'Physical Education', 'Health'];
+    $existing = [];
+    
+    foreach ($components as $component) {
+        $stmt = $conn->prepare("SELECT SubjectID FROM subject WHERE SubjectName = ? LIMIT 1");
+        $stmt->bind_param("s", $component);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        if ($result && $result->num_rows > 0) {
+            $existing[] = $component;
+        }
+        $stmt->close();
+    }
+    
+    return $existing;
+}
+
+/**
+ * Get MAPEH component IDs
+ */
+function getMapehComponentIds($conn) {
+    $components = ['Music', 'Arts', 'Physical Education', 'Health'];
+    $ids = [];
+    
+    foreach ($components as $component) {
+        $stmt = $conn->prepare("SELECT SubjectID FROM subject WHERE SubjectName = ? LIMIT 1");
+        $stmt->bind_param("s", $component);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        if ($result && $result->num_rows > 0) {
+            $row = $result->fetch_assoc();
+            $ids[] = $row['SubjectID'];
+        }
+        $stmt->close();
+    }
+    
+    return $ids;
 }
 
 // Handle all form submissions
@@ -119,14 +284,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['assign_subject'])) {
         $teacherId = intval($_POST['teacher_id'] ?? 0);
         $subjectId = intval($_POST['assign_subject_id'] ?? 0);
+        $subjectName = trim($_POST['assign_subject_name'] ?? '');
         $sectionId = intval($_POST['section_id'] ?? 0);
         
-        if (!$teacherId || !$subjectId || !$sectionId) {
-            $_SESSION['error'] = "All fields are required to assign subject.";
-        } elseif (!assignSubjectToTeacher($conn, $teacherId, $subjectId, $sectionId, $active_school_year)) {
-            $_SESSION['error'] = "Failed to assign subject to teacher.";
+        // Validate required fields - subjectId can be 0 for MAPEH
+        if (!$teacherId || !$sectionId || (empty($subjectName) && !$subjectId)) {
+            $_SESSION['error'] = "Please select a teacher, section, and subject.";
+        } elseif (empty($active_school_year)) {
+            $_SESSION['error'] = "No active school year is set.";
+        } elseif (!assignSubjectToTeacher($conn, $teacherId, $subjectId, $sectionId, $active_school_year, $subjectName)) {
+            $_SESSION['error'] = "Failed to assign subject to teacher. Please check that the subject exists.";
         } else {
-            $_SESSION['message'] = "Subject assigned to teacher successfully.";
+            $_SESSION['message'] = "Subject assigned to teacher successfully. " . 
+                                  (strtoupper($subjectName) == 'MAPEH' ? "All 4 MAPEH components (Music, Arts, PE, Health) have been assigned." : "");
         }
         header("Location: " . $_SERVER['REQUEST_URI']);
         exit;
@@ -135,15 +305,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Remove Assignment
     if (isset($_POST['remove_assignment'])) {
         $assignmentId = intval($_POST['assignment_id'] ?? 0);
-        if (!$assignmentId || !removeSubjectAssignment($conn, $assignmentId)) {
-            $_SESSION['error'] = "Failed to remove assignment.";
+        $subjectName = trim($_POST['subject_name'] ?? '');
+        $subjectId = intval($_POST['subject_id'] ?? 0);
+        $schoolYear = trim($_POST['school_year'] ?? '');
+        
+        if (!$assignmentId) {
+            $_SESSION['error'] = "Invalid assignment ID.";
+        } elseif (!removeSubjectAssignment($conn, $assignmentId, $subjectId, $subjectName, $schoolYear)) {
+            $_SESSION['error'] = "Failed to remove assignment. Please try again.";
         } else {
-            $_SESSION['message'] = "Assignment removed successfully.";
+            $_SESSION['message'] = "Assignment removed successfully." . 
+                                  (in_array($subjectName, ['Music', 'Arts', 'Physical Education', 'Health']) ? 
+                                  " All MAPEH components have been removed." : "");
         }
         header("Location: " . $_SERVER['REQUEST_URI']);
         exit;
     }
 }
+
+// Get MAPEH components status
+$mapehComponents = checkMapehComponents($conn);
+$mapehComponentIds = getMapehComponentIds($conn);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -153,6 +335,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <title>Manage Subjects & Assignments</title>
   <link rel="icon" type="image/png" href="../img/logo.png">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     .card {
         box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
@@ -167,6 +350,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     .badge-percentage {
         font-size: 0.75em;
+    }
+    .mapeh-subject {
+        background-color: #f0f8ff;
+        border-left: 4px solid #007bff;
+    }
+    .mapeh-badge {
+        font-size: 0.7em;
+        background-color: #007bff;
     }
   </style>
 </head>
@@ -198,10 +389,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <div class="col-md-5 subject-list">
         <div class="card">
           <div class="card-header d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">Subjects</h5>
-            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addSubjectModal">
-              Add Subject
-            </button>
+            <h5 class="mb-0">Subjects List</h5>
+            <div>
+              <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addSubjectModal">
+                Add Subject
+              </button>
+            </div>
           </div>
           <div class="card-body">
             <div class="table-responsive">
@@ -214,6 +407,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </thead>
                 <tbody>
                   <?php
+                  // Get all subjects except MAPEH components, but include a virtual MAPEH entry
                   $subjects = $conn->query("
                     SELECT 
                       SubjectID,
@@ -222,9 +416,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                       performance_task_percentage,
                       quarterly_assessment_percentage
                     FROM subject
+                    WHERE SubjectName NOT IN ('Music', 'Arts', 'Physical Education', 'Health')
                     ORDER BY SubjectName
                   ");
                   
+                  // Display regular subjects first
                   while ($subject = $subjects->fetch_assoc()):
                     $wwPercent = floatval($subject['written_work_percentage']) * 100;
                     $ptPercent = floatval($subject['performance_task_percentage']) * 100;
@@ -271,6 +467,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </td>
                   </tr>
                   <?php endwhile; ?>
+                  
+                  <!-- Virtual MAPEH Entry -->
+                  <?php if (count($mapehComponents) > 0): ?>
+                  <tr class="mapeh-subject">
+                    <td>
+                      <strong>MAPEH</strong>
+                      <span class="badge mapeh-badge">Includes 4 components</span>
+                    </td>
+                    <td class="d-flex gap-1">
+                      <button 
+                        class="btn btn-info btn-sm"
+                        data-bs-toggle="modal" 
+                        data-bs-target="#viewMapehModal"
+                      >
+                        View Components
+                      </button>
+
+                      <button 
+                        class="btn btn-primary btn-sm"
+                        data-bs-toggle="modal" 
+                        data-bs-target="#assignSubjectModal"
+                        data-subject-id="0"
+                        data-subject-name="MAPEH"
+                      >
+                        Assign MAPEH
+                      </button>
+                    </td>
+                  </tr>
+                  <?php endif; ?>
                 </tbody>
               </table>
             </div>
@@ -298,11 +523,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </thead>
                 <tbody>
                   <?php
+                  // Get all assignments
                   $assignments = $conn->query("
                     SELECT 
                       a.ID as assignment_id,
                       CONCAT(t.fName, ' ', t.lName) as teacher_name,
                       s.SubjectName,
+                      s.SubjectID,
                       sec.SectionName,
                       a.school_year
                     FROM assigned_subject a
@@ -310,22 +537,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     INNER JOIN subject s ON a.subject_id = s.SubjectID
                     INNER JOIN section sec ON a.section_id = sec.SectionID
                     WHERE a.school_year = '" . mysqli_real_escape_string($conn, $active_school_year) . "'
-                    ORDER BY t.lName, t.fName, s.SubjectName
+                    ORDER BY t.lName, t.fName, 
+                      CASE 
+                        WHEN s.SubjectName IN ('Music', 'Arts', 'Physical Education', 'Health') THEN 1
+                        ELSE 0
+                      END,
+                      s.SubjectName
                   ");
                   
                   if ($assignments && $assignments->num_rows > 0):
                     while ($assignment = $assignments->fetch_assoc()):
+                      $isMapehComponent = in_array($assignment['SubjectName'], ['Music', 'Arts', 'Physical Education', 'Health']);
                   ?>
-                  <tr>
+                  <tr class="<?= $isMapehComponent ? 'mapeh-subject' : '' ?>">
                     <td><?= htmlspecialchars($assignment['teacher_name']) ?></td>
-                    <td><?= htmlspecialchars($assignment['SubjectName']) ?></td>
+                    <td>
+                      <?= htmlspecialchars($assignment['SubjectName']) ?>
+                      <?php if ($isMapehComponent): ?>
+                        <span class="badge mapeh-badge">MAPEH Component</span>
+                      <?php endif; ?>
+                    </td>
                     <td><?= htmlspecialchars($assignment['SectionName']) ?></td>
                     <td><?= htmlspecialchars($assignment['school_year']) ?></td>
                     <td>
                       <form method="post" class="d-inline">
                         <input type="hidden" name="assignment_id" value="<?= $assignment['assignment_id'] ?>">
+                        <input type="hidden" name="subject_id" value="<?= $assignment['SubjectID'] ?>">
+                        <input type="hidden" name="subject_name" value="<?= htmlspecialchars($assignment['SubjectName']) ?>">
+                        <input type="hidden" name="school_year" value="<?= htmlspecialchars($assignment['school_year']) ?>">
                         <button type="submit" name="remove_assignment" class="btn btn-sm btn-danger" 
-                                onclick="return confirm('Are you sure you want to remove this assignment?')">
+                                onclick="return confirm('Are you sure you want to remove this assignment? <?= $isMapehComponent ? "This will remove ALL MAPEH components for this teacher and section." : "" ?>')">
                           Remove
                         </button>
                       </form>
@@ -360,6 +601,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <div class="mb-3">
             <label class="form-label">Subject Name</label>
             <input type="text" name="subject_name" class="form-control" required>
+            <small class="text-muted">Note: To add MAPEH components, use names: Music, Arts, Physical Education, Health</small>
           </div>
           <div class="mb-3">
             <label class="form-label">Written Work %</label>
@@ -418,6 +660,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
   </div>
 
+  <!-- View MAPEH Components Modal -->
+  <div class="modal fade" id="viewMapehModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">MAPEH Components</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            MAPEH consists of 4 separate subjects that are assigned together:
+          </div>
+          
+          <table class="table table-bordered">
+            <thead class="table-light">
+              <tr>
+                <th>Component</th>
+                <th>Written Work</th>
+                <th>Performance Task</th>
+                <th>Quarterly Assessment</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php
+              foreach ($mapehComponents as $component):
+                $stmt = $conn->prepare("
+                  SELECT written_work_percentage, performance_task_percentage, quarterly_assessment_percentage 
+                  FROM subject WHERE SubjectName = ? LIMIT 1
+                ");
+                $stmt->bind_param("s", $component);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                if ($result && $result->num_rows > 0):
+                  $row = $result->fetch_assoc();
+                  $ww = $row['written_work_percentage'] * 100;
+                  $pt = $row['performance_task_percentage'] * 100;
+                  $qa = $row['quarterly_assessment_percentage'] * 100;
+              ?>
+              <tr>
+                <td><?= htmlspecialchars($component) ?></td>
+                <td><?= $ww ?>%</td>
+                <td><?= $pt ?>%</td>
+                <td><?= $qa ?>%</td>
+              </tr>
+              <?php 
+                endif;
+                $stmt->close();
+              endforeach; 
+              ?>
+            </tbody>
+          </table>
+          
+          <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            <strong>Important:</strong> When you assign "MAPEH", all 4 components will be automatically assigned to the teacher.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Edit Subject Modal -->
   <div class="modal fade" id="editSubjectModal" tabindex="-1">
     <div class="modal-dialog">
@@ -466,9 +773,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
         <div class="modal-body">
           <input type="hidden" name="assign_subject_id" id="assign-subject-id">
+          <input type="hidden" name="assign_subject_name" id="assign-subject-name">
           <div class="mb-3">
             <label class="form-label">Subject</label>
-            <input type="text" id="assign-subject-name" class="form-control" readonly>
+            <input type="text" id="assign-subject-display-name" class="form-control" readonly>
+            <div id="mapeh-warning" class="alert alert-info mt-2" style="display: none;">
+              <i class="fas fa-info-circle me-2"></i>
+              This will assign all 4 MAPEH components: Music, Arts, Physical Education, and Health.
+            </div>
           </div>
           <div class="mb-3">
             <label class="form-label">Teacher</label>
@@ -539,8 +851,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Populate Assign Subject modal
     $('#assignSubjectModal').on('show.bs.modal', function(e) {
       const btn = $(e.relatedTarget);
-      $('#assign-subject-id').val(btn.data('subject-id'));
-      $('#assign-subject-name').val(btn.data('subject-name'));
+      const subjectName = btn.data('subject-name');
+      const subjectId = btn.data('subject-id');
+      
+      $('#assign-subject-id').val(subjectId);
+      $('#assign-subject-name').val(subjectName);
+      $('#assign-subject-display-name').val(subjectName);
+      
+      // Show MAPEH warning if assigning MAPEH
+      if (subjectName.toUpperCase() === 'MAPEH') {
+        $('#mapeh-warning').show();
+      } else {
+        $('#mapeh-warning').hide();
+      }
     });
 
     // Real-time percentage total validation

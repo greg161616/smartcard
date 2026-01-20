@@ -1,7 +1,7 @@
 <?php
 session_start();
 require __DIR__ . '/../config.php';
-
+date_default_timezone_set('Asia/Manila');
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'head') {
     header('Location: ../login.php');
     exit;
@@ -45,7 +45,7 @@ if ($stmt) {
 }
 
 // Total Teachers (active teachers)
-$result = mysqli_query($conn, "SELECT COUNT(*) as total FROM teacher ");
+$result = mysqli_query($conn, "SELECT COUNT(*) as total FROM teacher where status = 'Active'");
 if ($result) {
     $row = mysqli_fetch_assoc($result);
     $total_teachers = $row['total'];
@@ -195,7 +195,7 @@ if ($stmt) {
                 <div class="dashboard-header p-4 mb-4">
                     <div class="row align-items-center">
                         <div class="col-md-6">
-                            <h1 class="h2 mb-2"><i class="fas fa-tachometer-alt me-2"></i>Head Teacher Dashboard</h1>
+                            <h1 class="h2 mb-2"><i class="fas fa-tachometer-alt me-2"></i>Dashboard</h1>
                             <p class="welcome-text mb-0">Welcome back! Here's your overview for the current school year.</p>
                         </div>
                         <div class="col-md-6 text-md-end">
@@ -213,12 +213,9 @@ if ($stmt) {
                         <div class="school-year-indicator p-3 rounded d-flex align-items-center justify-content-between">
                             <div>
                                 <i class="fas fa-calendar-alt me-2 text-info"></i>
-                                <strong>Active School Year:</strong> 
+                                <strong>School Year:</strong> 
                                 <span class="ms-2 fw-bold"><?php echo htmlspecialchars($active_school_year); ?></span>
                             </div>
-                            <span class="school-year-badge">
-                                <i class="fas fa-check-circle me-1"></i>Currently Active
-                            </span>
                         </div>
                     </div>
                 </div>

@@ -298,9 +298,6 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
             <div class="search-input-container">
               <input type="text" name="search" id="searchInput" class="form-control" 
                      placeholder="Search by section name or adviser name...">
-              <div class="search-spinner spinner-border spinner-border-sm" role="status">
-                <span class="visually-hidden">Loading...</span>
-              </div>
             </div>
           </div>
           <div class="col-md-3">

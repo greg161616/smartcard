@@ -566,7 +566,7 @@ while ($row = $announcements_result->fetch_assoc()) {
 
         <div class="row">
             <!-- Left Column -->
-            <div class="col-lg-8">
+            <div class="col-md-8">
                 <!-- Student Distribution by Class -->
                 <div class="card mb-4">
                     <div class="card-header bg-light text-dark">
@@ -580,8 +580,36 @@ while ($row = $announcements_result->fetch_assoc()) {
                         <?php endif; ?>
                     </div>
                 </div>
-
-                <!-- Grade Overview -->
+            </div>
+            <!-- Right Column -->
+            <div class="col-md-4">
+                <!-- Upcoming Events -->
+                <div class="card mb-4">
+                    <div class="card-header bg-light text-dark">
+                        <h5 class="mb-0">Upcoming Events</h5>
+                    </div>
+                    <div class="card-body">
+                        <?php if (!empty($upcoming_events)): ?>
+                            <?php foreach ($upcoming_events as $event): ?>
+                                <div class="border-start border-3 border-secondary ps-3 mb-3">
+                                    <h6 class="mb-1"><?php echo htmlspecialchars($event['title']); ?></h6>
+                                    <small class="text-muted d-block">
+                                        <?php echo date('M j, Y', strtotime($event['event_date'])); ?>
+                                    </small>
+                                    <small class="text-muted">
+                                        <?php echo strlen($event['description']) > 50 ? substr($event['description'], 0, 50) . '...' : $event['description']; ?>
+                                    </small>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <p class="text-muted">No upcoming events.</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+            </div>
+            <div class="row">
+                <div class="col-md-8">
                 <div class="card mb-4">
                     <div class="card-header bg-light text-dark d-flex justify-content-between align-items-center">
                         <h5 class="mb-0">Average Grade (<?php echo htmlspecialchars($current_school_year); ?>)</h5>
@@ -609,6 +637,38 @@ while ($row = $announcements_result->fetch_assoc()) {
                         <?php endif; ?>
                     </div>
                 </div>
+                </div>
+                <div class="col-md-4">
+                <!-- Recent Announcements -->
+                <div class="card">
+                    <div class="card-header bg-light text-dark">
+                        <h5 class="mb-0">Recent Announcements</h5>
+                    </div>
+                    <div class="card-body">
+                        <?php if (!empty($recent_announcements)): ?>
+                            <?php foreach ($recent_announcements as $announcement): ?>
+                                <div class="mb-3 pb-2 border-bottom announcement-link" 
+                                     data-bs-toggle="modal" 
+                                     data-bs-target="#announcementModal"
+                                     data-title="<?php echo htmlspecialchars($announcement['title']); ?>"
+                                     data-date="<?php echo date('M j, Y', strtotime($announcement['date'])); ?>"
+                                     data-content="<?php echo htmlspecialchars($announcement['content']); ?>">
+                                    <h6 class="mb-1 text-primary"><?php echo htmlspecialchars($announcement['title']); ?></h6>
+                                    <small class="text-muted d-block">
+                                        <?php echo date('M j, Y', strtotime($announcement['date'])); ?>
+                                    </small>
+                                    <small class="text-muted">
+                                        <?php echo strlen($announcement['content']) > 60 ? substr($announcement['content'], 0, 60) . '...' : $announcement['content']; ?>
+                                    </small>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <p class="text-muted">No recent announcements.</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                </div>
+            </div>
 
                 <!-- Students with Honors -->
                 <div class="card mb-4">
@@ -723,61 +783,6 @@ while ($row = $announcements_result->fetch_assoc()) {
                     </div>
                 </div>
             </div>
-
-            <!-- Right Column -->
-            <div class="col-lg-4">
-                <!-- Upcoming Events -->
-                <div class="card mb-4">
-                    <div class="card-header bg-light text-dark">
-                        <h5 class="mb-0">Upcoming Events</h5>
-                    </div>
-                    <div class="card-body">
-                        <?php if (!empty($upcoming_events)): ?>
-                            <?php foreach ($upcoming_events as $event): ?>
-                                <div class="border-start border-3 border-secondary ps-3 mb-3">
-                                    <h6 class="mb-1"><?php echo htmlspecialchars($event['title']); ?></h6>
-                                    <small class="text-muted d-block">
-                                        <?php echo date('M j, Y', strtotime($event['event_date'])); ?>
-                                    </small>
-                                    <small class="text-muted">
-                                        <?php echo strlen($event['description']) > 50 ? substr($event['description'], 0, 50) . '...' : $event['description']; ?>
-                                    </small>
-                                </div>
-                            <?php endforeach; ?>
-                        <?php else: ?>
-                            <p class="text-muted">No upcoming events.</p>
-                        <?php endif; ?>
-                    </div>
-                </div>
-
-                <!-- Recent Announcements -->
-                <div class="card">
-                    <div class="card-header bg-light text-dark">
-                        <h5 class="mb-0">Recent Announcements</h5>
-                    </div>
-                    <div class="card-body">
-                        <?php if (!empty($recent_announcements)): ?>
-                            <?php foreach ($recent_announcements as $announcement): ?>
-                                <div class="mb-3 pb-2 border-bottom announcement-link" 
-                                     data-bs-toggle="modal" 
-                                     data-bs-target="#announcementModal"
-                                     data-title="<?php echo htmlspecialchars($announcement['title']); ?>"
-                                     data-date="<?php echo date('M j, Y', strtotime($announcement['date'])); ?>"
-                                     data-content="<?php echo htmlspecialchars($announcement['content']); ?>">
-                                    <h6 class="mb-1 text-primary"><?php echo htmlspecialchars($announcement['title']); ?></h6>
-                                    <small class="text-muted d-block">
-                                        <?php echo date('M j, Y', strtotime($announcement['date'])); ?>
-                                    </small>
-                                    <small class="text-muted">
-                                        <?php echo strlen($announcement['content']) > 60 ? substr($announcement['content'], 0, 60) . '...' : $announcement['content']; ?>
-                                    </small>
-                                </div>
-                            <?php endforeach; ?>
-                        <?php else: ?>
-                            <p class="text-muted">No recent announcements.</p>
-                        <?php endif; ?>
-                    </div>
-                </div>
             </div>
         </div>
     </div>
@@ -808,48 +813,156 @@ while ($row = $announcements_result->fetch_assoc()) {
     <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
     
     <script>
-        // Class Distribution Chart
-        <?php if (!empty($section_counts)): ?>
-        const classCtx = document.getElementById('classDistributionChart').getContext('2d');
-        const classChart = new Chart(classCtx, {
-            type: 'bar',
-            data: {
-                labels: [<?php echo "'" . implode("','", array_keys($section_counts)) . "'"; ?>],
-                datasets: [{
-                    label: 'Male',
-                    data: [<?php echo implode(',', array_column($section_counts, 'male')); ?>],
-                    backgroundColor: '#3498db'
-                }, {
-                    label: 'Female',
-                    data: [<?php echo implode(',', array_column($section_counts, 'female')); ?>],
-                    backgroundColor: '#e74c3c'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    x: {
-                        grid: {
-                            display: false
-                        }
-                    },
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            stepSize: 1
-                        }
+// Class Distribution Chart - Stacked Bar Graph with Patterns
+<?php if (!empty($section_counts)): ?>
+const classCtx = document.getElementById('classDistributionChart').getContext('2d');
+const classChart = new Chart(classCtx, {
+    type: 'bar',
+    data: {
+        labels: [<?php echo "'" . implode("','", array_keys($section_counts)) . "'"; ?>],
+        datasets: [
+            {
+                label: 'Male',
+                data: [<?php 
+                    $male_data = [];
+                    foreach ($section_counts as $section) {
+                        $male_data[] = $section['male'];
                     }
-                },
-                plugins: {
-                    legend: {
-                        position: 'top'
+                    echo implode(',', $male_data); 
+                ?>],
+                backgroundColor: 'rgba(52, 152, 219, 0.8)', // Semi-transparent blue
+                borderColor: 'rgba(41, 128, 185, 1)',
+                borderWidth: 1,
+                stack: 'Stack 1'
+            }, 
+            {
+                label: 'Female',
+                data: [<?php 
+                    $female_data = [];
+                    foreach ($section_counts as $section) {
+                        $female_data[] = $section['female'];
+                    }
+                    echo implode(',', $female_data); 
+                ?>],
+                    backgroundColor: 'rgba(255, 182, 193, 0.8)',
+                    borderColor: 'rgba(255, 182, 193, 1)',
+                borderWidth: 1,
+                stack: 'Stack 1'
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            tooltip: {
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                titleColor: '#fff',
+                bodyColor: '#fff',
+                borderColor: '#3498db',
+                borderWidth: 1,
+                callbacks: {
+                    label: function(context) {
+                        let label = context.dataset.label || '';
+                        if (label) {
+                            label += ': ';
+                        }
+                        label += context.raw + ' student';
+                        if (context.raw !== 1) label += 's';
+                        
+                        // Calculate percentage
+                        const total = classChart.data.datasets.reduce((sum, dataset) => {
+                            return sum + dataset.data[context.dataIndex];
+                        }, 0);
+                        
+                        const percentage = ((context.raw / total) * 100).toFixed(1);
+                        return [`${label} (${percentage}%)`];
+                    },
+                    footer: function(tooltipItems) {
+                        if (tooltipItems.length > 0) {
+                            const sectionIndex = tooltipItems[0].dataIndex;
+                            const total = classChart.data.datasets.reduce((sum, dataset) => {
+                                return sum + dataset.data[sectionIndex];
+                            }, 0);
+                            return `Total: ${total} student${total !== 1 ? 's' : ''}`;
+                        }
+                        return '';
                     }
                 }
+            },
+            legend: {
+                position: 'top',
+                labels: {
+                    color: '#2c3e50',
+                    font: {
+                        size: 12,
+                        weight: '500'
+                    },
+                    usePointStyle: true,
+                    pointStyle: 'circle',
+                    padding: 15
+                }
             }
-        });
-        <?php endif; ?>
-
+        },
+        scales: {
+            x: {
+                stacked: true,
+                grid: {
+                    display: false,
+                    drawBorder: false
+                },
+                ticks: {
+                    color: '#2c3e50',
+                    font: {
+                        size: 11,
+                        weight: '500'
+                    },
+                    maxRotation: 45,
+                    minRotation: 45
+                }
+            },
+            y: {
+                stacked: true,
+                beginAtZero: true,
+                max: 100,
+                ticks: {
+                    color: '#7f8c8d',
+                    stepSize: 20, // 20, 40, 60, 80, 100, 120
+                    font: {
+                        size: 11
+                    },
+                    callback: function(value) {
+                        return value;
+                    }
+                },
+                title: {
+                    display: true,
+                    text: 'Number of Students',
+                    color: '#2c3e50',
+                    font: {
+                        size: 12,
+                        weight: '600'
+                    },
+                    padding: {top: 10, bottom: 20}
+                },
+                grid: {
+                    color: 'rgba(0, 0, 0, 0.05)',
+                    drawBorder: false,
+                    tickLength: 0
+                }
+            }
+        },
+        interaction: {
+            intersect: false,
+            mode: 'index'
+        },
+        animation: {
+            duration: 1000,
+            easing: 'easeOutQuart'
+        }
+    }
+});
+<?php endif; ?>
         // Grade Overview Chart - MODIFIED to handle section and quarter filtering
         <?php if (!empty($sections)): ?>
         // Prepare data structure for JavaScript

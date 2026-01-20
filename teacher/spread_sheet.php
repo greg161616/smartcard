@@ -205,7 +205,7 @@ $stmt->close();
 
 function getRemarks($grade) {
     if ($grade >= 75) return "PASSED";
-    return "Did Not Meet Expectations";
+    return "FAILED";
 }
 
 // Function to generate quarter table HTML
@@ -319,7 +319,8 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                             <td class="text-center qa-ps"><?= $studentData ? number_format($studentData['qa_ps'], 2) : '0.00' ?></td>
                             <td class="text-center qa-ws"><?= $studentData ? number_format($studentData['qa_ws'], 2) : '0.00' ?></td>
                             <td class="text-center initial-grade"><?= $studentData ? number_format($studentData['initial_grade'], 2) : '0.00' ?></td>
-                            <td class="text-center quarterly-grade"><?= $studentData ? $studentData['quarterly_grade'] : '0' ?></td>
+                            <?php $qgVal = $studentData ? (int)$studentData['quarterly_grade'] : 0; ?>
+                            <td class="text-center quarterly-grade<?= ($qgVal <= 74) ? ' grade-low' : '' ?>"><?= $qgVal ?></td>
                         </tr>
                         <?php endforeach; ?>
                         <?php endif; ?>
@@ -366,7 +367,8 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                             <td class="text-center qa-ps"><?= $studentData ? number_format($studentData['qa_ps'], 2) : '0.00' ?></td>
                             <td class="text-center qa-ws"><?= $studentData ? number_format($studentData['qa_ws'], 2) : '0.00' ?></td>
                             <td class="text-center initial-grade"><?= $studentData ? number_format($studentData['initial_grade'], 2) : '0.00' ?></td>
-                            <td class="text-center quarterly-grade"><?= $studentData ? $studentData['quarterly_grade'] : '0' ?></td>
+                            <?php $qgVal = $studentData ? (int)$studentData['quarterly_grade'] : 0; ?>
+                            <td class="text-center quarterly-grade<?= ($qgVal <= 74) ? ' grade-low' : '' ?>"><?= $qgVal ?></td>
                         </tr>
                         <?php endforeach; ?>
                         <?php endif; ?>
@@ -449,9 +451,6 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
         /* Gender divider */
         .gender-divider {
             background-color: #e9ecef !important;
-            position: sticky;
-            top: 65px; /* Below both header rows */
-            z-index: 95; /* above sticky columns but below headers */
         }
         
         .max-score-input {
@@ -492,6 +491,11 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
             white-space: nowrap;
         }
 
+        /* Low grade highlight (red) */
+        .grade-low {
+            color: #dc3545 !important;
+            font-weight: 600;
+        }
         /* Summary table styles */
         #Summary .table-container {
             max-height: 400px;
@@ -572,82 +576,123 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                 ?>
             </div>
 
-            <!-- Summary Content -->
-            <div id="Summary" class="quarter-content d-none">
-                <div class="card-body">
-                    <!-- Summary Info -->
-                    <div class="row mb-4">
-                        <div class="col-md-4">
-                            <strong>Summary of Grades</strong>
-                        </div>
-                        <div class="col-md-4">
-                            <strong>Subject:</strong> <?= htmlspecialchars($subjectName) ?>
-                        </div>
-                        <div class="col-md-4">
-                            <strong>Grade Level:</strong> Grade 7
-                        </div>
-                    </div>
+<!-- Summary Content -->
+<div id="Summary" class="quarter-content d-none">
+    <div class="card-body">
+        <!-- Summary Table -->
+        <div class="table-container">
+            <table class="table table-bordered table-hover mb-0 sticky-table">
+                <thead>
+                    <tr class="sticky-header-row-1">
+                        <th class="sticky-col-1 text-center">No.</th>
+                        <th class="sticky-col-2 learner-name-col">Learner's Name</th>
+                        <th class="text-center">Q1 Grade</th>
+                        <th class="text-center">Q2 Grade</th>
+                        <th class="text-center">Q3 Grade</th>
+                        <th class="text-center">Q4 Grade</th>
+                        <th class="text-center">Final Grade</th>
+                        <th class="text-center remarks-col">Remarks</th>
+                    </tr>
+                </thead>
+                <tbody id="summaryDataBody">
+                    <?php 
+                    // Function to get final grade and remarks from database
+                    function getSummaryGrades($studentId, $gradesDetails, $summaryGrades) {
+                        $q1 = isset($gradesDetails[$studentId][1]['quarterly_grade']) ? 
+                              $gradesDetails[$studentId][1]['quarterly_grade'] : null;
+                        $q2 = isset($gradesDetails[$studentId][2]['quarterly_grade']) ? 
+                              $gradesDetails[$studentId][2]['quarterly_grade'] : null;
+                        $q3 = isset($gradesDetails[$studentId][3]['quarterly_grade']) ? 
+                              $gradesDetails[$studentId][3]['quarterly_grade'] : null;
+                        $q4 = isset($gradesDetails[$studentId][4]['quarterly_grade']) ? 
+                              $gradesDetails[$studentId][4]['quarterly_grade'] : null;
+                        
+                        // Fetch final grade from database
+                        $final = null;
+                        if (isset($summaryGrades[$studentId]['Final'])) {
+                            $final = $summaryGrades[$studentId]['Final'];
+                        }
+                        
+                        return [
+                            'q1' => $q1,
+                            'q2' => $q2,
+                            'q3' => $q3,
+                            'q4' => $q4,
+                            'final' => $final
+                        ];
+                    }
 
-                    <!-- Summary Table -->
-                    <div class="table-container">
-                        <table class="table table-bordered table-hover mb-0 sticky-table">
-                            <thead>
-                                <tr class="sticky-header-row-1">
-                                    <th class="sticky-col-1 text-center">No.</th>
-                                    <th class="sticky-col-2 learner-name-col">Learner's Name</th>
-                                    <th class="text-center">Q1 Grade</th>
-                                    <th class="text-center">Q2 Grade</th>
-                                    <th class="text-center">Q3 Grade</th>
-                                    <th class="text-center">Q4 Grade</th>
-                                    <th class="text-center">Final Grade</th>
-                                    <th class="text-center remarks-col">Remarks</th>
-                                </tr>
-                            </thead>
-                            <tbody id="summaryDataBody">
-                                <?php 
-                                // Male students
-                                if (!empty($maleStudents)): ?>
-                                    <tr class="gender-divider bg-light">
-                                        <td colspan="8" class="fw-bold bg-secondary text-white">Male Students (<?= count($maleStudents) ?>)</td>
-                                    </tr>
-                                    <?php foreach ($maleStudents as $index => $student): ?>
-                                        <tr>
-                                            <td class="sticky-col-1 text-center"><?= $index + 1 ?></td>
-                                            <td class="sticky-col-2 learner-name-cell"><?= htmlspecialchars($student['name']) ?></td>
-                                            <td class="text-center"><?= isset($summaryGrades[$student['id']]['Q1']) ? $summaryGrades[$student['id']]['Q1'] : '-' ?></td>
-                                            <td class="text-center"><?= isset($summaryGrades[$student['id']]['Q2']) ? $summaryGrades[$student['id']]['Q2'] : '-' ?></td>
-                                            <td class="text-center"><?= isset($summaryGrades[$student['id']]['Q3']) ? $summaryGrades[$student['id']]['Q3'] : '-' ?></td>
-                                            <td class="text-center"><?= isset($summaryGrades[$student['id']]['Q4']) ? $summaryGrades[$student['id']]['Q4'] : '-' ?></td>
-                                            <td class="text-center"><?= isset($summaryGrades[$student['id']]['Final']) ? $summaryGrades[$student['id']]['Final'] : '-' ?></td>
-                                            <td class="text-center remarks-cell"><?= isset($summaryGrades[$student['id']]['Final']) ? getRemarks($summaryGrades[$student['id']]['Final']) : '-' ?></td>
-                                        </tr>
-                                    <?php endforeach; 
-                                endif;
+                    // Male students
+                    if (!empty($maleStudents)): ?>
+                        <tr class="gender-divider bg-light">
+                            <td colspan="8" class="fw-bold bg-secondary text-white">Male Students (<?= count($maleStudents) ?>)</td>
+                        </tr>
+                        <?php foreach ($maleStudents as $index => $student): 
+                            $summary = getSummaryGrades($student['id'], $gradesDetails, $summaryGrades);
+                        ?>
+                            <tr>
+                                <td class="sticky-col-1 text-center"><?= $index + 1 ?></td>
+                                <td class="sticky-col-2 learner-name-cell"><?= htmlspecialchars($student['name']) ?></td>
+                                <td class="text-center<?= (is_numeric($summary['q1']) && $summary['q1'] <= 74) ? ' grade-low' : '' ?>">
+                                    <?= $summary['q1'] !== null ? $summary['q1'] : '-' ?>
+                                </td>
+                                <td class="text-center<?= (is_numeric($summary['q2']) && $summary['q2'] <= 74) ? ' grade-low' : '' ?>">
+                                    <?= $summary['q2'] !== null ? $summary['q2'] : '-' ?>
+                                </td>
+                                <td class="text-center<?= (is_numeric($summary['q3']) && $summary['q3'] <= 74) ? ' grade-low' : '' ?>">
+                                    <?= $summary['q3'] !== null ? $summary['q3'] : '-' ?>
+                                </td>
+                                <td class="text-center<?= (is_numeric($summary['q4']) && $summary['q4'] <= 74) ? ' grade-low' : '' ?>">
+                                    <?= $summary['q4'] !== null ? $summary['q4'] : '-' ?>
+                                </td>
+                                <td class="text-center<?= (is_numeric($summary['final']) && $summary['final'] <= 74) ? ' grade-low' : '' ?>">
+                                    <?= $summary['final'] !== null ? $summary['final'] : '-' ?>
+                                </td>
+                                <td class="text-center remarks-cell">
+                                    <?= $summary['final'] !== null ? getRemarks($summary['final']) : '-' ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; 
+                    endif;
 
-                                // Female students
-                                if (!empty($femaleStudents)): ?>
-                                    <tr class="gender-divider bg-light">
-                                        <td colspan="8" class="fw-bold bg-secondary text-white">Female Students (<?= count($femaleStudents) ?>)</td>
-                                    </tr>
-                                    <?php foreach ($femaleStudents as $index => $student): ?>
-                                        <tr>
-                                            <td class="sticky-col-1 text-center"><?= $index + 1 ?></td>
-                                            <td class="sticky-col-2 learner-name-cell"><?= htmlspecialchars($student['name']) ?></td>
-                                            <td class="text-center"><?= isset($summaryGrades[$student['id']]['Q1']) ? $summaryGrades[$student['id']]['Q1'] : '-' ?></td>
-                                            <td class="text-center"><?= isset($summaryGrades[$student['id']]['Q2']) ? $summaryGrades[$student['id']]['Q2'] : '-' ?></td>
-                                            <td class="text-center"><?= isset($summaryGrades[$student['id']]['Q3']) ? $summaryGrades[$student['id']]['Q3'] : '-' ?></td>
-                                            <td class="text-center"><?= isset($summaryGrades[$student['id']]['Q4']) ? $summaryGrades[$student['id']]['Q4'] : '-' ?></td>
-                                            <td class="text-center"><?= isset($summaryGrades[$student['id']]['Final']) ? $summaryGrades[$student['id']]['Final'] : '-' ?></td>
-                                            <td class="text-center remarks-cell"><?= isset($summaryGrades[$student['id']]['Final']) ? getRemarks($summaryGrades[$student['id']]['Final']) : '-' ?></td>
-                                        </tr>
-                                    <?php endforeach; 
-                                endif;
-                                ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
+                    // Female students
+                    if (!empty($femaleStudents)): ?>
+                        <tr class="gender-divider bg-light">
+                            <td colspan="8" class="fw-bold bg-secondary text-white">Female Students (<?= count($femaleStudents) ?>)</td>
+                        </tr>
+                        <?php foreach ($femaleStudents as $index => $student): 
+                            $summary = getSummaryGrades($student['id'], $gradesDetails, $summaryGrades);
+                        ?>
+                            <tr>
+                                <td class="sticky-col-1 text-center"><?= $index + 1 ?></td>
+                                <td class="sticky-col-2 learner-name-cell"><?= htmlspecialchars($student['name']) ?></td>
+                                <td class="text-center<?= (is_numeric($summary['q1']) && $summary['q1'] <= 74) ? ' grade-low' : '' ?>">
+                                    <?= $summary['q1'] !== null ? $summary['q1'] : '-' ?>
+                                </td>
+                                <td class="text-center<?= (is_numeric($summary['q2']) && $summary['q2'] <= 74) ? ' grade-low' : '' ?>">
+                                    <?= $summary['q2'] !== null ? $summary['q2'] : '-' ?>
+                                </td>
+                                <td class="text-center<?= (is_numeric($summary['q3']) && $summary['q3'] <= 74) ? ' grade-low' : '' ?>">
+                                    <?= $summary['q3'] !== null ? $summary['q3'] : '-' ?>
+                                </td>
+                                <td class="text-center<?= (is_numeric($summary['q4']) && $summary['q4'] <= 74) ? ' grade-low' : '' ?>">
+                                    <?= $summary['q4'] !== null ? $summary['q4'] : '-' ?>
+                                </td>
+                                <td class="text-center<?= (is_numeric($summary['final']) && $summary['final'] <= 74) ? ' grade-low' : '' ?>">
+                                    <?= $summary['final'] !== null ? $summary['final'] : '-' ?>
+                                </td>
+                                <td class="text-center remarks-cell">
+                                    <?= $summary['final'] !== null ? getRemarks($summary['final']) : '-' ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; 
+                    endif;
+                    ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
         </div>
     </div>
 
@@ -677,14 +722,53 @@ function getRemarks(grade) {
 }
 
 function transmuteGrade(initialGrade) {
-    let transmuted = ((initialGrade - 60) / 1.6) + 75;
-    transmuted = Math.floor(transmuted);
-    if (transmuted < 0) transmuted = 0;
-    if (transmuted > 100) transmuted = 100;
-    if (transmuted <= 37) {
-        transmuted = 0;
-    }
-    return transmuted;
+    // First handle the exact 100 case
+    if (initialGrade === 100) return 100;
+    
+    // Handle each range as specified in the table
+    if (initialGrade >= 98.40 && initialGrade <= 99.99) return 99;
+    if (initialGrade >= 96.80 && initialGrade <= 98.39) return 98;
+    if (initialGrade >= 95.20 && initialGrade <= 96.79) return 97;
+    if (initialGrade >= 93.60 && initialGrade <= 95.19) return 96;
+    if (initialGrade >= 92.00 && initialGrade <= 93.59) return 95;
+    if (initialGrade >= 90.40 && initialGrade <= 91.99) return 94;
+    if (initialGrade >= 88.80 && initialGrade <= 90.39) return 93;
+    if (initialGrade >= 87.20 && initialGrade <= 88.79) return 92;
+    if (initialGrade >= 85.60 && initialGrade <= 87.19) return 91;
+    if (initialGrade >= 84.00 && initialGrade <= 85.59) return 90;
+    if (initialGrade >= 82.40 && initialGrade <= 83.99) return 89;
+    if (initialGrade >= 80.80 && initialGrade <= 82.39) return 88;
+    if (initialGrade >= 79.20 && initialGrade <= 80.79) return 87;
+    if (initialGrade >= 77.60 && initialGrade <= 79.19) return 86;
+    if (initialGrade >= 76.00 && initialGrade <= 77.59) return 85;
+    if (initialGrade >= 74.40 && initialGrade <= 75.99) return 84;
+    if (initialGrade >= 72.80 && initialGrade <= 74.39) return 83;
+    if (initialGrade >= 71.20 && initialGrade <= 72.79) return 82;
+    if (initialGrade >= 69.60 && initialGrade <= 71.19) return 81;
+    if (initialGrade >= 68.00 && initialGrade <= 69.59) return 80;
+    if (initialGrade >= 66.40 && initialGrade <= 67.99) return 79;
+    if (initialGrade >= 64.80 && initialGrade <= 66.39) return 78;
+    if (initialGrade >= 63.20 && initialGrade <= 64.79) return 77;
+    if (initialGrade >= 61.60 && initialGrade <= 63.19) return 76;
+    if (initialGrade >= 60.00 && initialGrade <= 61.59) return 75;
+    if (initialGrade >= 56.00 && initialGrade <= 59.99) return 74;
+    if (initialGrade >= 52.00 && initialGrade <= 55.99) return 73;
+    if (initialGrade >= 48.00 && initialGrade <= 51.99) return 72;
+    if (initialGrade >= 44.00 && initialGrade <= 47.99) return 71;
+    if (initialGrade >= 40.00 && initialGrade <= 43.99) return 70;
+    if (initialGrade >= 36.00 && initialGrade <= 39.99) return 69;
+    if (initialGrade >= 32.00 && initialGrade <= 35.99) return 68;
+    if (initialGrade >= 28.00 && initialGrade <= 31.99) return 67;
+    if (initialGrade >= 24.00 && initialGrade <= 27.99) return 66;
+    if (initialGrade >= 20.00 && initialGrade <= 23.99) return 65;
+    if (initialGrade >= 16.00 && initialGrade <= 19.99) return 64;
+    if (initialGrade >= 12.00 && initialGrade <= 15.99) return 63;
+    if (initialGrade >= 8.00 && initialGrade <= 11.99) return 62;
+    if (initialGrade >= 4.00 && initialGrade <= 7.99) return 61;
+    if (initialGrade >= 0 && initialGrade <= 3.99) return 60;
+    
+    // Fallback for values outside the table (though the table covers 0-100)
+    return Math.floor(Math.max(0, Math.min(100, initialGrade)));
 }
 
 function calculateTotals(row, quarter) {
@@ -748,7 +832,15 @@ function calculateTotals(row, quarter) {
     row.querySelector('.qa-ws').textContent = qaWS;
     
     row.querySelector('.initial-grade').textContent = initialGrade;
-    row.querySelector('.quarterly-grade').textContent = quarterlyGrade;
+    const qCell = row.querySelector('.quarterly-grade');
+    if (qCell) {
+        qCell.textContent = quarterlyGrade;
+        if (parseFloat(quarterlyGrade) <= 74) {
+            qCell.classList.add('grade-low');
+        } else {
+            qCell.classList.remove('grade-low');
+        }
+    }
     
     return {
         wwTotal,

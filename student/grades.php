@@ -2,6 +2,23 @@
 session_start();
 require_once '../config.php';
 
+// Function to determine grade class based on value
+function getGradeClass($grade) {
+    if (empty($grade)) {
+        return 'empty';
+    }
+    $numGrade = floatval($grade);
+    if ($numGrade >= 90) {
+        return 'excellent';
+    } elseif ($numGrade >= 80) {
+        return 'good';
+    } elseif ($numGrade >= 75) {
+        return 'needs-work';
+    } else {
+        return 'failing';
+    }
+}
+
 // Check if user is logged in and is a student
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
     header('Location: ../login.php');
@@ -227,11 +244,12 @@ if (count($grades) > 0) {
             transform: translateY(-2px);
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
         }
-        .grade-btn.q1 { background-color: #e3f2fd; color: #1976d2; border-color: #bbdefb; }
-        .grade-btn.q2 { background-color: #e8f5e9; color: #388e3c; border-color: #c8e6c9; }
-        .grade-btn.q3 { background-color: #fff3e0; color: #f57c00; border-color: #ffe0b2; }
-        .grade-btn.q4 { background-color: #fce4ec; color: #c2185b; border-color: #f8bbd9; }
-        .grade-btn.final { background-color: #e8eaf6; color: #303f9f; border-color: #c5cae9; font-weight: 700; }
+        /* Grade status colors */
+        .grade-btn.excellent { background-color: #c8e6c9; color: #1b5e20; border-color: #81c784; }
+        .grade-btn.good { background-color: #e3f2fd; color: #0d47a1; border-color: #64b5f6; }
+        .grade-btn.needs-work { background-color: #fff8b4; color: #854813; border-color: #ffe603; }
+        .grade-btn.failing { background-color: #ffcdd2; color: #b71c1c; border-color: #ef5350; }
+        .grade-btn.final { background-color: #e8eaf6; color: #2e2f33; border-color: #c5cae9; font-weight: 700; }
         .grade-btn.empty { background-color: #f5f5f5; color: #9e9e9e; border-color: #e0e0e0; cursor: default; }
         .grade-btn.empty:hover { transform: none; box-shadow: none; }
         .score-table {
@@ -311,6 +329,50 @@ if (count($grades) > 0) {
             flex-direction: column;
             align-items: center;
         }
+        .grade-legend {
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .grade-legend h6 {
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .legend-items {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 30px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .legend-color {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            border: 2px solid;
+        }
+        .legend-color.excellent {
+            background-color: #c8e6c9;
+            border-color: #81c784;
+        }
+        .legend-color.good {
+            background-color: #e3f2fd;
+            border-color: #64b5f6;
+        }
+        .legend-color.needs-work {
+            background-color: #fff9c4;
+            border-color: #fff59d;
+        }
+        .legend-color.failing {
+            background-color: #ffcdd2;
+            border-color: #ef5350;
+        }
     </style>
 </head>
 <body>
@@ -342,6 +404,29 @@ if (count($grades) > 0) {
                             </select>
                         </div>
                     </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Grade Legend -->
+        <div class="grade-legend">
+            <h6><i class="bi bi-info-circle me-2"></i>Grade Color Legend</h6>
+            <div class="legend-items">
+                <div class="legend-item">
+                    <div class="legend-color excellent"></div>
+                    <span><strong>90 - 100:</strong> Excellent</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color good"></div>
+                    <span><strong>80 - 89:</strong> Good</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color needs-work"></div>
+                    <span><strong>75 - 79:</strong> Needs Improvement</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color failing"></div>
+                    <span><strong>Below 75:</strong> Failing</span>
                 </div>
             </div>
         </div>
@@ -397,7 +482,7 @@ if (count($grades) > 0) {
                         <!-- Quarter 1 Grade Button -->
                         <div class="grade-cell quarter-grade">
                             <?php if (!empty($grade['Q1'])): ?>
-                                <a href="#" class="grade-btn q1" data-bs-toggle="modal" data-bs-target="#detailsModal" 
+                                <a href="#" class="grade-btn <?php echo getGradeClass($grade['Q1']); ?>" data-bs-toggle="modal" data-bs-target="#detailsModal" 
                                    onclick="showDetailedScores(<?php echo $subject_id; ?>, '<?php echo htmlspecialchars($grade['SubjectName']); ?>', 1)">
                                     <?php echo htmlspecialchars($grade['Q1']); ?>
                                 </a>
@@ -409,7 +494,7 @@ if (count($grades) > 0) {
                         <!-- Quarter 2 Grade Button -->
                         <div class="grade-cell quarter-grade">
                             <?php if (!empty($grade['Q2'])): ?>
-                                <a href="#" class="grade-btn q2" data-bs-toggle="modal" data-bs-target="#detailsModal" 
+                                <a href="#" class="grade-btn <?php echo getGradeClass($grade['Q2']); ?>" data-bs-toggle="modal" data-bs-target="#detailsModal" 
                                    onclick="showDetailedScores(<?php echo $subject_id; ?>, '<?php echo htmlspecialchars($grade['SubjectName']); ?>', 2)">
                                     <?php echo htmlspecialchars($grade['Q2']); ?>
                                 </a>
@@ -421,7 +506,7 @@ if (count($grades) > 0) {
                         <!-- Quarter 3 Grade Button -->
                         <div class="grade-cell quarter-grade">
                             <?php if (!empty($grade['Q3'])): ?>
-                                <a href="#" class="grade-btn q3" data-bs-toggle="modal" data-bs-target="#detailsModal" 
+                                <a href="#" class="grade-btn <?php echo getGradeClass($grade['Q3']); ?>" data-bs-toggle="modal" data-bs-target="#detailsModal" 
                                    onclick="showDetailedScores(<?php echo $subject_id; ?>, '<?php echo htmlspecialchars($grade['SubjectName']); ?>', 3)">
                                     <?php echo htmlspecialchars($grade['Q3']); ?>
                                 </a>
@@ -433,7 +518,7 @@ if (count($grades) > 0) {
                         <!-- Quarter 4 Grade Button -->
                         <div class="grade-cell quarter-grade">
                             <?php if (!empty($grade['Q4'])): ?>
-                                <a href="#" class="grade-btn q4" data-bs-toggle="modal" data-bs-target="#detailsModal" 
+                                <a href="#" class="grade-btn <?php echo getGradeClass($grade['Q4']); ?>" data-bs-toggle="modal" data-bs-target="#detailsModal" 
                                    onclick="showDetailedScores(<?php echo $subject_id; ?>, '<?php echo htmlspecialchars($grade['SubjectName']); ?>', 4)">
                                     <?php echo htmlspecialchars($grade['Q4']); ?>
                                 </a>

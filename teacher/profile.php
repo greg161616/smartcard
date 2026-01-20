@@ -282,7 +282,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         .file-input-wrapper {
             position: relative;
-            overflow: hidden;
             display: inline-block;
         }
         .file-input-wrapper input[type=file] {
@@ -298,13 +297,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
     <?php include '../navs/teacherNav.php'; ?>
-    
-    <div class="profile-header py-5 mb-4">
-        <div class="container-fluid">
-            <h2 class="mb-1">Teacher Profile</h2>
-            <p class="mb-0">Manage your personal information and credentials</p>
-        </div>
-    </div>
 
     <div class="container mt-4">
         <?php if ($message): ?>
@@ -343,43 +335,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <input type="text" class="form-control" id="mName" name="mName" 
                                            value="<?php echo htmlspecialchars($teacher['mName'] ?? ''); ?>">
                                 </div>
-                                <div class="col-md-6 mb-3">
+                                <div class="col-md-3 mb-3">
                                     <label for="surfix" class="form-label">Suffix</label>
                                     <input type="text" class="form-control" id="surfix" name="surfix" 
                                            value="<?php echo htmlspecialchars($teacher['surfix'] ?? ''); ?>">
                                 </div>
-                            </div>
-                            
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
+                                <div class="col-md-3 mb-3">
                                     <label for="gender" class="form-label">Gender</label>
                                     <select class="form-control" id="gender" name="gender">
                                         <option value="Male" <?php echo ($teacher['gender'] ?? '') === 'Male' ? 'selected' : ''; ?>>Male</option>
                                         <option value="Female" <?php echo ($teacher['gender'] ?? '') === 'Female' ? 'selected' : ''; ?>>Female</option>
                                     </select>
                                 </div>
+                            </div>
+                            
+                            <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <label for="contact" class="form-label">Contact Number</label>
                                     <input type="text" class="form-control" id="contact" name="contact" 
                                            value="<?php echo htmlspecialchars($teacher['contact'] ?? ''); ?>">
                                 </div>
-                            </div>
-                            
-                            <div class="mb-3">
+                                <div class="col-md-6 mb-3">
                                 <label for="address" class="form-label">Address</label>
-                                <textarea class="form-control" id="address" name="address" rows="3"><?php echo htmlspecialchars($teacher['address'] ?? ''); ?></textarea>
+                                <textarea class="form-control" id="address" name="address"><?php echo htmlspecialchars($teacher['address'] ?? ''); ?></textarea>
                             </div>
-                            
+                            </div>
                             <div class="mb-3">
                                 <label for="email" class="form-label">Email Address *</label>
                                 <input type="email" class="form-control" id="email" name="email" 
                                        value="<?php echo htmlspecialchars($teacher['Email'] ?? ''); ?>" required>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label for="profile_picture" class="form-label">Profile Picture</label>
-                                <input type="file" class="form-control" id="profile_picture" name="profile_picture" accept="image/jpeg,image/jpg,image/png,image/gif">
-                                <small class="form-text text-muted">Supported formats: JPEG, JPG, PNG, GIF. Max file size: 5MB.</small>
                             </div>
                             
                             <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#updateProfileModal">
@@ -427,47 +411,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <?php endif; ?>
                         </div>
                         
-                        <h5 class="mt-3"><?php echo htmlspecialchars($teacher['fName'] . ' ' . $teacher['lName']); ?></h5>
-                        <div class="small mt-3 text-start">
-                            <p><strong>Teacher ID:</strong> <?php echo htmlspecialchars($teacher['TeacherID']); ?></p>
-                            <p><strong>Status:</strong> 
-                                <span class="badge bg-<?php echo ($teacher['status'] ?? 'active') === 'active' ? 'success' : 'secondary'; ?>">
-                                    <?php echo htmlspecialchars($teacher['status'] ?? 'active'); ?>
-                                </span>
-                            </p>
-                            <p><strong>Email:</strong> <?php echo htmlspecialchars($teacher['Email']); ?></p>
-                            <p><strong>Contact:</strong> <?php echo htmlspecialchars($teacher['contact'] ?? 'Not provided'); ?></p>
-                        </div>
+                            <hr>
+                            <h5 class="mt-2"><?php echo htmlspecialchars(($teacher['fName'] ?? '') . ' ' . ($teacher['lName'] ?? '')); ?></h5>
+                            <p class="mb-1 text-muted"><?php echo htmlspecialchars($teacher['Email'] ?? ''); ?></p>
+                            <p class="mb-2"><strong>Status:</strong> <?php echo htmlspecialchars($teacher['status'] ?? ''); ?></p>
+
+                            <div class="d-grid gap-2">
+                                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#changePasswordModal">
+                                    <i class="fas fa-key"></i> Change Password
+                                </button>
+                            </div>
                     </div>
                 </div>
 
-                <!-- Change Password Card -->
-                <div class="card">
-                    <div class="card-header bg-light">
-                        <h5 class="card-title mb-0">Change Password</h5>
-                    </div>
-                    <div class="card-body">
-                        <form method="POST" action="" id="passwordForm">
-                            <input type="hidden" name="change_password" value="1">
-                            <div class="mb-3">
-                                <label for="currentPassword" class="form-label">Current Password *</label>
-                                <input type="password" class="form-control" id="currentPassword" name="currentPassword" required>
-                            </div>
-                            <div class="mb-3">
-                                <label for="newPassword" class="form-label">New Password *</label>
-                                <input type="password" class="form-control" id="newPassword" name="newPassword" required>
-                            </div>
-                            <div class="mb-3">
-                                <label for="confirmPassword" class="form-label">Confirm New Password *</label>
-                                <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" required>
-                            </div>
-                                                            
-                            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#changePasswordModal">
-                                Change Password
-                            </button>
-                        </form>
-                    </div>
-                </div>
+                <!-- Change Password moved into modal -->
             </div>
         </div>
     </div>
@@ -499,13 +456,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <h5 class="modal-title" id="changePasswordModalLabel">Confirm Password Change</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body">
-                    Are you sure you want to change your password?
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="validatePasswordForm()">Yes, Change Password</button>
-                </div>
+                <form method="POST" action="" id="passwordModalForm">
+                    <input type="hidden" name="change_password" value="1">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="currentPassword" class="form-label">Current Password *</label>
+                            <input type="password" class="form-control" id="currentPassword" name="currentPassword" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="newPassword" class="form-label">New Password *</label>
+                            <input type="password" class="form-control" id="newPassword" name="newPassword" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="confirmPassword" class="form-label">Confirm New Password *</label>
+                            <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" required>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-primary" onclick="validatePasswordForm()">Yes, Change Password</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -557,7 +528,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 return;
             }
             
-            document.getElementById('passwordForm').submit();
+            document.getElementById('passwordModalForm').submit();
         }
         
         // Quick profile picture upload
@@ -589,17 +560,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         });
         
-        // File size validation for the main form
-        document.getElementById('profile_picture').addEventListener('change', function() {
-            const file = this.files[0];
-            if (file) {
-                const maxSize = 5 * 1024 * 1024; // 5MB
-                if (file.size > maxSize) {
-                    alert('File size exceeds 5MB. Please choose a smaller file.');
-                    this.value = '';
+        // File size validation for the main form (guarded)
+        const profilePictureInput = document.getElementById('profile_picture');
+        if (profilePictureInput) {
+            profilePictureInput.addEventListener('change', function() {
+                const file = this.files[0];
+                if (file) {
+                    const maxSize = 5 * 1024 * 1024; // 5MB
+                    if (file.size > maxSize) {
+                        alert('File size exceeds 5MB. Please choose a smaller file.');
+                        this.value = '';
+                    }
                 }
-            }
-        });
+            });
+        }
     </script>
 </body>
 </html>

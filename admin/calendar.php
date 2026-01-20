@@ -230,11 +230,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_announcement']
 $search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
 $audience_filter = isset($_GET['audience_filter']) ? mysqli_real_escape_string($conn, $_GET['audience_filter']) : '';
 
-// Build query with filters
+// Build query with filters - only show head teachers announcements
 $announcements_query = "SELECT a.*, u.Email as author_email 
                         FROM announcements a 
                         LEFT JOIN user u ON a.author_id = u.UserID 
-                        WHERE 1=1";
+                        LEFT JOIN admin ad ON u.UserID = ad.UserID 
+                        WHERE ad.Position = 'Head Teacher'";
 
 if (!empty($search)) {
     $announcements_query .= " AND (a.title LIKE '%$search%' OR a.content LIKE '%$search%')";
@@ -249,14 +250,20 @@ $announcements_query .= " ORDER BY a.date DESC LIMIT 10"; // Show only recent 10
 $announcements_result = mysqli_query($conn, $announcements_query);
 $total_announcements = mysqli_num_rows($announcements_result);
 
-// Get counts for stats
+// Get counts for stats (only head teachers)
 $today = date('Y-m-d');
-$today_query = "SELECT COUNT(*) as count FROM announcements WHERE DATE(date) = '$today'";
+$today_query = "SELECT COUNT(*) as count FROM announcements a 
+                LEFT JOIN user u ON a.author_id = u.UserID 
+                LEFT JOIN admin ad ON u.UserID = ad.UserID 
+                WHERE DATE(a.date) = '$today' AND ad.Position = 'Head Teacher'";
 $today_result = mysqli_query($conn, $today_query);
 $today_count = mysqli_fetch_assoc($today_result)['count'];
 
-// Get total announcements count
-$total_query = "SELECT COUNT(*) as count FROM announcements";
+// Get total announcements count (only head teachers)
+$total_query = "SELECT COUNT(*) as count FROM announcements a 
+                LEFT JOIN user u ON a.author_id = u.UserID 
+                LEFT JOIN admin ad ON u.UserID = ad.UserID 
+                WHERE ad.Position = 'Head Teacher'";
 $total_result = mysqli_query($conn, $total_query);
 $total_count = mysqli_fetch_assoc($total_result)['count'];
 ?>
@@ -589,15 +596,6 @@ $total_count = mysqli_fetch_assoc($total_result)['count'];
                                 <button id="next-month"><i class="fas fa-chevron-right"></i></button>
                             </div>
                             <div class="d-flex align-items-center">
-                                <select class="form-select form-select-sm country-selector" id="countrySelector">
-                                    <option value="PH">Philippines</option>
-                                    <option value="US">United States</option>
-                                    <option value="GB">United Kingdom</option>
-                                    <option value="CA">Canada</option>
-                                    <option value="AU">Australia</option>
-                                    <option value="JP">Japan</option>
-                                    <option value="SG">Singapore</option>
-                                </select>
                                 <button class="btn btn-primary ms-2 rounded-circle" data-bs-toggle="modal" data-bs-target="#addEventModal">
                                     <i class="fas fa-plus"></i>
                                 </button>
@@ -638,11 +636,6 @@ $total_count = mysqli_fetch_assoc($total_result)['count'];
                     <div class="card-body">
                         <!-- Search and Filter -->
                         <form method="GET" class="row g-3 mb-4">
-                            <div class="col-md-5">
-                                <label for="search" class="form-label">Search</label>
-                                <input type="text" class="form-control" id="search" name="search" 
-                                       placeholder="Search announcements..." value="<?php echo htmlspecialchars($search); ?>">
-                            </div>
                             <div class="col-md-4">
                                 <label for="audience_filter" class="form-label">Audience</label>
                                 <select class="form-select" id="audience_filter" name="audience_filter">
@@ -651,9 +644,14 @@ $total_count = mysqli_fetch_assoc($total_result)['count'];
                                     <option value="student" <?php echo $audience_filter === 'student' ? 'selected' : ''; ?>>Students</option>
                                 </select>
                             </div>
+                            <div class="col-md-5">
+                                <label for="search" class="form-label">Search</label>
+                                <input type="text" class="form-control" id="search" name="search" 
+                                       placeholder="Search announcements..." value="<?php echo htmlspecialchars($search); ?>">
+                            </div>
                             <div class="col-md-3 d-flex align-items-end">
                                 <div class="">
-                                    <button type="submit" class="btn btn-primary">
+                                    <button type="submit" class="btn">
                                         <i class="fas fa-search me-1"></i>
                                     </button>
                                     <a href="<?php echo $_SERVER['PHP_SELF']; ?>" class="btn btn-outline-secondary">

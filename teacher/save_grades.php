@@ -277,29 +277,26 @@ try {
 
         if ($gradeExists) {
             // Update existing grade
-           $updateGradeStmt = $conn->prepare("
-            UPDATE grades_details SET 
-                ww1 = ?, ww2 = ?, ww3 = ?, ww4 = ?, ww5 = ?, 
-                ww6 = ?, ww7 = ?, ww8 = ?, ww9 = ?, ww10 = ?,
-                pt1 = ?, pt2 = ?, pt3 = ?, pt4 = ?, pt5 = ?, 
-                pt6 = ?, pt7 = ?, pt8 = ?, pt9 = ?, pt10 = ?,
-                qa1 = ?,
-                ww_total = ?, ww_ps = ?, ww_ws = ?,
-                pt_total = ?, pt_ps = ?, pt_ws = ?,
-                qa_ps = ?, qa_ws = ?,
-                initial_grade = ?, quarterly_grade = ?,
-                uploaded = NOW()
-            WHERE teacherID = ? AND subjectID = ? AND studentID = ? AND quarter = ? AND school_year = ?
-        ");
+            $updateGradeStmt = $conn->prepare("
+                UPDATE grades_details SET 
+                    ww1 = ?, ww2 = ?, ww3 = ?, ww4 = ?, ww5 = ?, 
+                    ww6 = ?, ww7 = ?, ww8 = ?, ww9 = ?, ww10 = ?,
+                    pt1 = ?, pt2 = ?, pt3 = ?, pt4 = ?, pt5 = ?, 
+                    pt6 = ?, pt7 = ?, pt8 = ?, pt9 = ?, pt10 = ?,
+                    qa1 = ?,
+                    ww_total = ?, ww_ps = ?, ww_ws = ?,
+                    pt_total = ?, pt_ps = ?, pt_ws = ?,
+                    qa_ps = ?, qa_ws = ?,
+                    initial_grade = ?, quarterly_grade = ?,
+                    uploaded = NOW()
+                WHERE teacherID = ? AND subjectID = ? AND studentID = ? AND quarter = ? AND school_year = ?
+            ");
 
-if (!$updateGradeStmt) {
-    throw new Exception("Prepare failed: " . $conn->error);
-}
+            if (!$updateGradeStmt) {
+                throw new Exception("Prepare failed: " . $conn->error);
+            }
 
             // Build the types string dynamically to ensure correct count
-            // Order: 21 integers (ww1-ww10, pt1-pt10, qa1),
-            // then 9 doubles (ww_total, ww_ps, ww_ws, pt_total, pt_ps, pt_ws, qa_ps, qa_ws, initial_grade),
-            // then 5 integers (quarterly_grade, teacherID, subjectID, studentID, quarter) and one string (school_year)
             $updateTypes = str_repeat('i', 21) . str_repeat('d', 9) . str_repeat('i', 5) . 's';
             $updateGradeStmt->bind_param(
                 $updateTypes,
@@ -438,6 +435,93 @@ if (!$updateGradeStmt) {
             }
             $insertSummaryStmt->close();
         }
+        
+        // 4. If this is Quarter 4, calculate and update the Final grade
+        if ($quarter == 4) {
+            // Get all quarter grades for this student, subject, and school year
+            $getQuarterGradesStmt = $conn->prepare("
+                SELECT Q1, Q2, Q3, Q4 
+                FROM grades 
+                WHERE student_id = ? AND subject = ? AND school_year = ?
+            ");
+            
+            if (!$getQuarterGradesStmt) {
+                throw new Exception("Prepare failed: " . $conn->error);
+            }
+            
+            $getQuarterGradesStmt->bind_param('iis', $studentID, $subjectID, $schoolYear);
+            $getQuarterGradesStmt->execute();
+            $quarterResult = $getQuarterGradesStmt->get_result();
+            
+            if ($quarterResult && $quarterResult->num_rows > 0) {
+                $quarterRow = $quarterResult->fetch_assoc();
+                $q1 = $quarterRow['Q1'];
+                $q2 = $quarterRow['Q2'];
+                $q3 = $quarterRow['Q3'];
+                $q4 = $quarterRow['Q4'];
+                
+                // Calculate final grade (average of all 4 quarters)
+                // Note: Only include quarters that are not NULL
+                $quarterCount = 0;
+                $quarterSum = 0;
+                
+                if (!is_null($q1)) {
+                    $quarterSum += $q1;
+                    $quarterCount++;
+                }
+                if (!is_null($q2)) {
+                    $quarterSum += $q2;
+                    $quarterCount++;
+                }
+                if (!is_null($q3)) {
+                    $quarterSum += $q3;
+                    $quarterCount++;
+                }
+                if (!is_null($q4)) {
+                    $quarterSum += $q4;
+                    $quarterCount++;
+                }
+                
+                $finalGrade = null;
+                if ($quarterCount > 0) {
+                    $finalGrade = round($quarterSum / $quarterCount, 2);
+                }
+                
+                // Update the Final grade in the grades table
+                $updateFinalGradeStmt = $conn->prepare("
+                    UPDATE grades 
+                    SET Final = ?, uploadedby = ?, uploaded = NOW() 
+                    WHERE student_id = ? AND subject = ? AND school_year = ?
+                ");
+                
+                if (!$updateFinalGradeStmt) {
+                    throw new Exception("Prepare failed: " . $conn->error);
+                }
+                
+                // Use the same teacherID as uploadedby for consistency
+                $updateFinalGradeStmt->bind_param('diiis', $finalGrade, $teacherID, $studentID, $subjectID, $schoolYear);
+                
+                if (!$updateFinalGradeStmt->execute()) {
+                    throw new Exception("Update failed for Final grade: " . $updateFinalGradeStmt->error);
+                }
+                $updateFinalGradeStmt->close();
+                
+                // Log the final grade calculation
+                log_system_action($conn, 'Final Grade Calculated', $teacherID, [
+                    'teacher' => $teacher_name,
+                    'student_id' => $studentID,
+                    'subject' => $subject_name,
+                    'school_year' => $schoolYear,
+                    'q1' => $q1,
+                    'q2' => $q2,
+                    'q3' => $q3,
+                    'q4' => $q4,
+                    'final_grade' => $finalGrade,
+                    'message' => "Calculated final grade for student #$studentID in $subject_name"
+                ], 'info');
+            }
+            $getQuarterGradesStmt->close();
+        }
     }
     
     // Commit transaction
@@ -445,6 +529,12 @@ if (!$updateGradeStmt) {
     
     $response['success'] = true;
     $response['message'] = 'Grades saved successfully';
+    
+    // Add final grade info to response if quarter is 4
+    if ($quarter == 4) {
+        $response['final_calculated'] = true;
+        $response['message'] = 'Grades saved successfully. Final grades calculated.';
+    }
     
     // Log successful save
     log_system_action($conn, 'Grade Save Completed', $teacherID, [
@@ -455,6 +545,7 @@ if (!$updateGradeStmt) {
         'students_processed' => $students_processed,
         'students_updated' => $students_updated,
         'students_inserted' => $students_inserted,
+        'final_calculated' => ($quarter == 4) ? 'Yes' : 'No',
         'message' => "Successfully saved grades for {$subject_name} - Quarter {$quarter} ({$students_processed} students)"
     ], 'success');
     

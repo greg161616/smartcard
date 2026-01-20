@@ -13,7 +13,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'teacher') {
 $students_result = null;
 $current_year = '2025-2026';
 
-// Get teacher information - FIXED: Get TeacherID from teacher table
+// Get teacher information
 $user_id = $_SESSION['user_id'];
 
 // Fetch active school year
@@ -22,23 +22,41 @@ $schoolyear_result = $conn->query($schoolyear_query);
 $schoolyear = $schoolyear_result ? $schoolyear_result->fetch_assoc() : null;
 $current_year = $schoolyear ? $schoolyear['school_year'] : '2025-2026';
 
-// Get teacher's basic info using prepared statement - FIXED: Get TeacherID properly
+// Get teacher's basic info
 $teacher_sql = "SELECT TeacherID, fName, lName, mName FROM teacher WHERE UserID = ?";
 $teacher_stmt = $conn->prepare($teacher_sql);
 $teacher_stmt->bind_param("i", $user_id);
 $teacher_stmt->execute();
 $teacher_result = $teacher_stmt->get_result();
 $teacher = $teacher_result->fetch_assoc();
-$teacher_id = $teacher ? $teacher['TeacherID'] : null; // This is the actual TeacherID
+$teacher_id = $teacher ? $teacher['TeacherID'] : null;
 $teacher_name = $teacher ? trim($teacher['fName'] . ' ' . ($teacher['mName'] ? $teacher['mName'] . ' ' : '') . $teacher['lName']) : 'Teacher';
 $teacher_stmt->close();
 
+// Session flag to prevent repeated PDF generation
 $generate_pdf = isset($_GET['generate_pdf']) ? $_GET['generate_pdf'] : null;
 $quarter = isset($_GET['quarter']) ? $_GET['quarter'] : null;
 $student_id = isset($_GET['student_id']) ? $_GET['student_id'] : null;
+$save_temp = isset($_GET['save_temp']) ? $_GET['save_temp'] : null;
+
+// Prevent looping
+if ($generate_pdf && isset($_SESSION['pdf_generated']) && $_SESSION['pdf_generated'] === true) {
+    unset($_SESSION['pdf_generated']);
+    $redirect_url = 'record.php';
+    if ($student_id) {
+        $redirect_url .= '?student_id=' . urlencode($student_id);
+    }
+    header('Location: ' . $redirect_url);
+    exit();
+}
+
+// Set the flag if PDF generation is requested
+if ($generate_pdf) {
+    $_SESSION['pdf_generated'] = true;
+}
 
 if (!$student_id) {
-    // Fetch students from teacher's advisory class for the list page - FIXED: Use TeacherID
+    // Fetch students from teacher's advisory class
     if ($teacher_id) {
         $advisory_sql = "SELECT SectionID, AdviserID FROM section WHERE AdviserID = ?";
         $advisory_stmt = $conn->prepare($advisory_sql);
@@ -81,7 +99,7 @@ if ($student_id) {
     $observed_values = [];
     $section = [];
 
-    // Get student information using prepared statement
+    // Get student information
     $student_query = "SELECT * FROM student WHERE StudentID = ?";
     $student_stmt = $conn->prepare($student_query);
     $student_stmt->bind_param("i", $student_id);
@@ -96,7 +114,7 @@ if ($student_id) {
         exit();
     }
 
-    // Get student's current section using prepared statement
+    // Get student's current section
     $section_query = "
         SELECT s.*, se.SchoolYear 
         FROM section_enrollment se 
@@ -113,7 +131,7 @@ if ($student_id) {
     $section = $section_result->fetch_assoc();
     $section_stmt->close();
 
-    // Get grades from grades table using prepared statement - FIXED: Use proper subject relationship
+    // Get grades from grades table
     $grades_query = "
         SELECT g.*, s.SubjectName 
         FROM grades g 
@@ -133,7 +151,6 @@ if ($student_id) {
     }
 
     // Get attendance data
-    // Extract year and next_year from $current_year (format: YYYY-YYYY)
     $year = '';
     $next_year = '';
     if (preg_match('/^(\d{4})-(\d{4})$/', $current_year, $matches)) {
@@ -141,7 +158,6 @@ if ($student_id) {
         $next_year = $matches[2];
     }
     
-    // FIXED: Attendance query - check if student is in teacher's section
     $attendance_query = "
         SELECT MONTH(Date) as month_num, 
                COUNT(*) as total_days,
@@ -186,7 +202,7 @@ if ($student_id) {
         $attendance[$name] = isset($attendance_data[$num]) ? $attendance_data[$num] : ['present' => 0, 'absent' => 0, 'excused' => 0, 'total' => 0];
     }
 
-    // Get teacher's name for signature using prepared statement - FIXED: Use TeacherID
+    // Get teacher's name for signature
     $teacher_name_query = "SELECT fName, lName FROM teacher WHERE TeacherID = ?";
     $teacher_name_stmt = $conn->prepare($teacher_name_query);
     $teacher_name_stmt->bind_param("i", $teacher_id);
@@ -196,8 +212,15 @@ if ($student_id) {
     $teacher_name_stmt->close();
     $teacher_full_name = $teacher_name_info ? $teacher_name_info['fName'] . ' ' . $teacher_name_info['lName'] : 'Teacher';
 
-    // Load observed/student values using prepared statement
-    // NOTE: student_values table is not in your schema, so this might need adjustment
+    $head_query = "SELECT FullName FROM admin WHERE Position = 'Head teacher' AND status = 'active' LIMIT 1";
+    $head_query = $conn->prepare($head_query);
+    $head_query->execute();
+    $head_result = $head_query->get_result();
+    $head = $head_result->fetch_assoc();
+    $head_query->close();
+    $head_teacher_name = $head ? $head['FullName'] : 'Head Teacher';
+
+    // Get observed values if table exists
     $observed_values = [];
     if (tableExists($conn, 'student_values')) {
         $vals_sql = "SELECT * FROM student_values WHERE student_id = ? AND school_year = ?";
@@ -211,11 +234,11 @@ if ($student_id) {
         }
     }
 
-    // Get all subjects for the student's grade level in the specific order
+    // Get all subjects for the student's grade level
     $grade_level = !empty($section) ? $section['GradeLevel'] : '';
     $section_name = !empty($section) ? $section['SectionName'] : '';
 
-    // Define the subjects in the specific order you want
+    // Define the subjects in the specific order
     $ordered_subjects = [
         'Filipino',
         'English', 
@@ -224,23 +247,19 @@ if ($student_id) {
         'Araling Panlipunan (AP)',
         'Values Education (VE)',
         'Technology and Livelihood Education (TLE)',
-        'MAPEH'
+        'Music',
+        'Arts',
+        'Physical Education',
+        'Health'
     ];
 
-    // Get all subjects for this grade level and section using prepared statement
-    // FIXED: Use assigned_subject table to get subjects for this section
+    // Get all subjects
     $subjects_query = "
-        SELECT DISTINCT s.SubjectID, s.SubjectName 
-        FROM subject s 
-        JOIN assigned_subject a ON s.SubjectID = a.subject_id
-        JOIN section sec ON a.section_id = sec.SectionID
-        WHERE sec.GradeLevel = ? 
-        AND sec.SectionName = ?
-        AND a.school_year = ?
-        ORDER BY s.SubjectID
+        SELECT SubjectID, SubjectName 
+        FROM subject 
+        ORDER BY SubjectID
     ";
     $subjects_stmt = $conn->prepare($subjects_query);
-    $subjects_stmt->bind_param("sss", $grade_level, $section_name, $current_year);
     $subjects_stmt->execute();
     $subjects_result = $subjects_stmt->get_result();
     $subjects_stmt->close();
@@ -260,28 +279,22 @@ if ($student_id) {
         }
     }
 
-    // Add MAPEH components if MAPEH exists
-    $mapeh_found = false;
-    $mapeh_components = [
-        'Music and Arts',
-        'PE and Health'
-    ];
-
-    foreach ($ordered_subject_list as $index => $subject) {
-        if ($subject['SubjectName'] == 'MAPEH') {
-            $mapeh_found = true;
-            // Insert MAPEH components after MAPEH
-            array_splice($ordered_subject_list, $index + 1, 0, [
-                ['SubjectID' => 'MAPEH_MUSICARTS', 'SubjectName' => '• Music and Arts'],
-                ['SubjectID' => 'MAPEH_PEHEALTH', 'SubjectName' => '• PE and Health']
-            ]);
-            break;
+    // Get MAPEH component IDs (Music, Arts, Physical Education, Health)
+    $mapeh_component_names = ['Music', 'Arts', 'Physical Education', 'Health'];
+    $mapeh_component_ids = [];
+    
+    foreach ($mapeh_component_names as $component_name) {
+        foreach ($all_subjects as $subject) {
+            if ($subject['SubjectName'] == $component_name) {
+                $mapeh_component_ids[] = $subject['SubjectID'];
+                break;
+            }
         }
     }
 
     // Validate grades when generating PDF directly
     if ($generate_pdf && $quarter) {
-        $missing_grades = validateQuarterGrades($grades, $quarter, $ordered_subject_list);
+        $missing_grades = validateQuarterGrades($grades, $quarter, $ordered_subject_list, $mapeh_component_ids);
         
         if (!empty($missing_grades)) {
             $_SESSION['error'] = "Cannot generate PDF for Quarter $quarter. The following subjects are missing grades:\n\n" . 
@@ -304,11 +317,12 @@ function calculateAge($birthdate) {
 }
 
 // Function to validate quarter grades
-function validateQuarterGrades($grades, $quarter, $ordered_subject_list) {
+function validateQuarterGrades($grades, $quarter, $ordered_subject_list, $mapeh_components = []) {
     $missing_grades = [];
+    $mapeh_component_ids = array_values($mapeh_components);
     
     foreach ($ordered_subject_list as $subject) {
-        // Skip MAPEH components as they're not graded individually
+        // Skip non-graded entries
         if (strpos($subject['SubjectName'], '•') === 0) {
             continue;
         }
@@ -354,6 +368,113 @@ function validateQuarterGrades($grades, $quarter, $ordered_subject_list) {
 function tableExists($conn, $table) {
     $result = $conn->query("SHOW TABLES LIKE '$table'");
     return $result && $result->num_rows > 0;
+}
+
+// Function to calculate MAPEH grade
+function calculateMAPEHGrade($grades, $mapeh_component_ids) {
+    $mapeh_grades = [
+        'q1' => null,
+        'q2' => null,
+        'q3' => null,
+        'q4' => null,
+        'final' => null
+    ];
+    
+    // Collect grades for each MAPEH component
+    $component_grades = [
+        'music' => ['q1' => null, 'q2' => null, 'q3' => null, 'q4' => null],
+        'arts' => ['q1' => null, 'q2' => null, 'q3' => null, 'q4' => null],
+        'pe' => ['q1' => null, 'q2' => null, 'q3' => null, 'q4' => null],
+        'health' => ['q1' => null, 'q2' => null, 'q3' => null, 'q4' => null]
+    ];
+    
+    // Map component IDs to names (expecting order: Music, Arts, Physical Education, Health)
+    $component_map = [];
+    foreach ($mapeh_component_ids as $index => $component_id) {
+        $component_name = '';
+        switch ($index) {
+            case 0: $component_name = 'music'; break;
+            case 1: $component_name = 'arts'; break;
+            case 2: $component_name = 'pe'; break;
+            case 3: $component_name = 'health'; break;
+        }
+        if ($component_name && $component_id) {
+            $component_map[$component_id] = $component_name;
+        }
+    }
+    
+    // Extract grades for each component
+    foreach ($grades as $grade) {
+        if (isset($component_map[$grade['subject']])) {
+            $component = $component_map[$grade['subject']];
+            
+            if (isset($grade['Q1']) && $grade['Q1'] !== '') {
+                $component_grades[$component]['q1'] = $grade['Q1'];
+            }
+            if (isset($grade['Q2']) && $grade['Q2'] !== '') {
+                $component_grades[$component]['q2'] = $grade['Q2'];
+            }
+            if (isset($grade['Q3']) && $grade['Q3'] !== '') {
+                $component_grades[$component]['q3'] = $grade['Q3'];
+            }
+            if (isset($grade['Q4']) && $grade['Q4'] !== '') {
+                $component_grades[$component]['q4'] = $grade['Q4'];
+            }
+        }
+    }
+    
+    // Calculate MAPEH for each quarter using the formula:
+    // group1 = (music+arts)/2, group2 = (pe+health)/2, MAPEH = (group1+group2)/2
+    for ($i = 1; $i <= 4; $i++) {
+        $quarter_key = 'q' . $i;
+
+        $music_grade = $component_grades['music'][$quarter_key];
+        $arts_grade = $component_grades['arts'][$quarter_key];
+        $pe_grade = $component_grades['pe'][$quarter_key];
+        $health_grade = $component_grades['health'][$quarter_key];
+
+        // Compute group averages with fallbacks if a single component is present
+        $music_arts_avg = null;
+        if ($music_grade !== null && $arts_grade !== null) {
+            $music_arts_avg = ($music_grade + $arts_grade) / 2;
+        } elseif ($music_grade !== null) {
+            $music_arts_avg = $music_grade;
+        } elseif ($arts_grade !== null) {
+            $music_arts_avg = $arts_grade;
+        }
+
+        $pe_health_avg = null;
+        if ($pe_grade !== null && $health_grade !== null) {
+            $pe_health_avg = ($pe_grade + $health_grade) / 2;
+        } elseif ($pe_grade !== null) {
+            $pe_health_avg = $pe_grade;
+        } elseif ($health_grade !== null) {
+            $pe_health_avg = $health_grade;
+        }
+
+        // Combine group averages
+        if ($music_arts_avg !== null && $pe_health_avg !== null) {
+            $mapeh_grades[$quarter_key] = round(($music_arts_avg + $pe_health_avg) / 2);
+        } elseif ($music_arts_avg !== null) {
+            $mapeh_grades[$quarter_key] = round($music_arts_avg);
+        } elseif ($pe_health_avg !== null) {
+            $mapeh_grades[$quarter_key] = round($pe_health_avg);
+        } else {
+            $mapeh_grades[$quarter_key] = null;
+        }
+    }
+    
+    // Calculate final MAPEH grade from available quarter values (average of present quarters)
+    $available = [];
+    for ($i = 1; $i <= 4; $i++) {
+        $q = $mapeh_grades['q' . $i];
+        if ($q !== null && $q !== '') $available[] = $q;
+    }
+    if (!empty($available)) {
+        $mapeh_grades['final'] = round(array_sum($available) / count($available));
+    }
+    
+    return $mapeh_grades;
 }
 ?>
 
@@ -583,7 +704,7 @@ function tableExists($conn, $table) {
         
         .attendance-table {
             font-size: 8pt;
-            width: 100%;
+            width: 90%;
         }
         
         .attendance-table th, .attendance-table td {
@@ -700,7 +821,7 @@ function tableExists($conn, $table) {
         /* Quarter 1 - Show: student info, quarter1 grades, quarter1 observed values */
         <?php if ($quarter == 1): ?>
         .student-info-value,
-        .subject-table td:nth-child(2), /* Q1 grades column */
+        .subject-table tr:not(:last-child) td:nth-child(2), .subject-table td.data-cell-1, /* Q1 grades column */
         .values-table .data-cell-1 /* Q1 observed values column */ {
             color: black !important;
             background: white !important;
@@ -709,7 +830,7 @@ function tableExists($conn, $table) {
 
         /* Quarter 2 - Show: quarter2 grades, quarter2 observed values */
         <?php if ($quarter == 2): ?>
-        .subject-table td:nth-child(3), /* Q2 grades column */
+        .subject-table tr:not(:last-child) td:nth-child(3), .subject-table td.data-cell-2, /* Q2 grades column */
         .values-table .data-cell-2 /* Q2 observed values column */ {
             color: black !important;
             background: white !important;
@@ -718,7 +839,7 @@ function tableExists($conn, $table) {
 
         /* Quarter 3 - Show: quarter3 grades, quarter3 observed values */
         <?php if ($quarter == 3): ?>
-        .subject-table td:nth-child(4), /* Q3 grades column */
+        .subject-table tr:not(:last-child) td:nth-child(4), .subject-table td.data-cell-3, /* Q3 grades column */
         .values-table .data-cell-3 /* Q3 observed values column */ {
             color: black !important;
             background: white !important;
@@ -726,18 +847,19 @@ function tableExists($conn, $table) {
         <?php endif; ?>
 
         /* Quarter 4 - Show: quarter4 grades, final grade, remarks, general average, quarter4 observed values, attendance */
-        <?php if ($quarter == 4): ?>
-        .attendance-table td:not(:first-child),
-        .subject-table td:nth-child(5), /* Q4 grades column */
-        .subject-table td:nth-child(6), /* Final grade column */
-        .subject-table td:nth-child(7), /* Remarks column */
-        .subject-table tr:last-child td:nth-child(6), /* General average value */
-        .subject-table tr:last-child td:nth-child(7), /* General average remarks */
-        .values-table .data-cell-4 /* Q4 observed values column */ {
-            color: black !important;
-            background: white !important;
-        }
-        <?php endif; ?>
+/* Quarter 4 - Show: quarter4 grades, final grade, remarks, general average, quarter4 observed values, attendance */
+<?php if ($quarter == 4): ?>
+.attendance-table td:not(:first-child),
+.subject-table tr:not(:last-child) td:nth-child(5), .subject-table td.data-cell-4, /* Q4 grades column */
+.subject-table td:nth-child(6), /* Final grade column */
+.subject-table td:nth-child(7), /* Remarks column */
+.subject-table tr:last-child td:nth-child(3), /* General average value - 3rd column in the last row */
+.subject-table tr:last-child td:nth-child(4), /* General average remarks - 4th column in the last row */
+.values-table .data-cell-4 /* Q4 observed values column */ {
+    color: black !important;
+    background: white !important;
+}
+<?php endif; ?>
 
         /* Hide static content in observed values */
         .values-table .static-cell {
@@ -854,19 +976,20 @@ function tableExists($conn, $table) {
             <?php endif; ?>
 
             /* Quarter 4 - Show: quarter4 grades, final grade, remarks, general average, quarter4 observed values, attendance */
-            <?php if ($quarter == 4): ?>
-            .attendance-table td:not(:first-child),
-            .subject-table td:nth-child(5), /* Q4 grades column */
-            .subject-table td:nth-child(6), /* Final grade column */
-            .subject-table td:nth-child(7), /* Remarks column */
-            .subject-table tr:last-child td:nth-child(6), /* General average value */
-            .subject-table tr:last-child td:nth-child(7), /* General average remarks */
-            .values-table td:nth-child(6) /* Q4 observed values column */ {
-                color: black !important;
-                background: white !important;
-            }
-            <?php endif; ?>
-
+/* Quarter 4 - Show: quarter4 grades, final grade, remarks, general average, quarter4 observed values, attendance */
+/* Quarter 4 - Show: quarter4 grades, final grade, remarks, general average, quarter4 observed values, attendance */
+<?php if ($quarter == 4): ?>
+.attendance-table td:not(:first-child),
+.subject-table td:nth-child(5), /* Q4 grades column */
+.subject-table td:nth-child(6), /* Final grade column */
+.subject-table td:nth-child(7), /* Remarks column */
+.subject-table tr:last-child td:nth-child(3), /* General average value - 3rd column in the last row */
+.subject-table tr:last-child td:nth-child(4), /* General average remarks - 4th column in the last row */
+.values-table td:nth-child(6) /* Q4 observed values column */ {
+    color: black !important;
+    background: white !important;
+}
+<?php endif; ?>
             /* Hide static content in observed values */
             .values-table .static-cell {
                 color: transparent !important;
@@ -1116,8 +1239,16 @@ function tableExists($conn, $table) {
                         <div class="card alert alert-info mb-0">
                             
                             <strong class="ms-2"><i class="fas fa-info-circle me-2"></i>Note:</strong>
-                            <p class="mb-0">- Select a student from your advisory class to view and generate their report card.</p>
+                            <div class="row">
+                            <div class="col-md-8">
+                                 <p class="mb-0">- Select a student from your advisory class to view and generate their report card.</p>
                             <p class="mb-0">- In printing, make sure that the right side of the card is facing into the printer. </p>
+                            </div>
+                            <div class="col-md-4 align-self-center  text-center">
+                                <img src="../img/print.png" alt="" class="img-fluid" style="max-height: 100px;">
+                            </div>
+                            </div>
+                           
                            </div>
                         <div class="card-body mt-3 py-4">
                             <?php
@@ -1139,13 +1270,11 @@ function tableExists($conn, $table) {
                                 unset($_SESSION['success']);
                             }
 
-                            // FIXED: Use the proper teacher_id variable
                             $adviserTeacherID = $teacher_id;
                             
                             if (!$adviserTeacherID) {
                                 echo "<div class='alert alert-warning'>You don't have any advisory class</div>";
                             } else {
-                                // FIXED: Use prepared statement for security
                                 $sec_sql = "SELECT SectionID, GradeLevel, SectionName FROM section WHERE AdviserID = ? ORDER BY GradeLevel, SectionName";
                                 $sec_stmt = $conn->prepare($sec_sql);
                                 $sec_stmt->bind_param("i", $adviserTeacherID);
@@ -1159,7 +1288,6 @@ function tableExists($conn, $table) {
                                     }
                                     $sec_stmt->close();
 
-                                    // Create placeholders for the IN clause
                                     $placeholders = str_repeat('?,', count($secIds) - 1) . '?';
                                     
                                     $students_query = "
@@ -1175,7 +1303,6 @@ function tableExists($conn, $table) {
                                     
                                     $students_stmt = $conn->prepare($students_query);
                                     
-                                    // Build types and bind parameters
                                     $types = str_repeat('i', count($secIds)) . 's';
                                     $params = array_merge($secIds, [$current_year]);
                                     $students_stmt->bind_param($types, ...$params);
@@ -1208,14 +1335,14 @@ function tableExists($conn, $table) {
                                 <i class="fas fa-eye"></i> View
                             </a>
                             <div class="btn-group">
-                                <button type="button" class="btn btn-success btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-                                    <i class="fas fa-file-pdf"></i> PDF
+                                <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="fas fa-print"></i> Print
                                 </button>
                                 <ul class="dropdown-menu">
-                                    <li><a class="dropdown-item" href="?student_id=<?= $row['StudentID'] ?>&generate_pdf=1&quarter=1">Quarter 1</a></li>
-                                    <li><a class="dropdown-item" href="?student_id=<?= $row['StudentID'] ?>&generate_pdf=1&quarter=2">Quarter 2</a></li>
-                                    <li><a class="dropdown-item" href="?student_id=<?= $row['StudentID'] ?>&generate_pdf=1&quarter=3">Quarter 3</a></li>
-                                    <li><a class="dropdown-item" href="?student_id=<?= $row['StudentID'] ?>&generate_pdf=1&quarter=4">Quarter 4</a></li>
+                                    <li><a class="dropdown-item print-link" href="?student_id=<?= $row['StudentID'] ?>&generate_pdf=1&quarter=1&save_temp=1">Quarter 1</a></li>
+                                    <li><a class="dropdown-item print-link" href="?student_id=<?= $row['StudentID'] ?>&generate_pdf=1&quarter=2&save_temp=1">Quarter 2</a></li>
+                                    <li><a class="dropdown-item print-link" href="?student_id=<?= $row['StudentID'] ?>&generate_pdf=1&quarter=3&save_temp=1">Quarter 3</a></li>
+                                    <li><a class="dropdown-item print-link" href="?student_id=<?= $row['StudentID'] ?>&generate_pdf=1&quarter=4&save_temp=1">Quarter 4</a></li>
                                 </ul>
                             </div>
                         </div>
@@ -1244,7 +1371,31 @@ function tableExists($conn, $table) {
         </div>
         </div>
 
+        <!-- Loading Modal -->
+        <div class="modal fade" id="loadingModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="loadingModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-body text-center py-5">
+                        <div class="spinner-border text-primary mb-3" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <h5 id="loadingModalLabel">Generating Report Card...</h5>
+                        <p class="text-muted mb-0">Please wait while we prepare your document.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+        <script>
+            // Show loading modal when print link is clicked
+            document.querySelectorAll('.print-link').forEach(function(link){
+                link.addEventListener('click', function(){
+                    const modal = new bootstrap.Modal(document.getElementById('loadingModal'));
+                    modal.show();
+                });
+            });
+        </script>
     
     <?php else: ?>
         <!-- REPORT CARD PAGE -->
@@ -1253,6 +1404,7 @@ function tableExists($conn, $table) {
         <div class="fixed-action-buttons no-print" style="display: none;">
             <div class="btn-group">
                 <button type="button" class="text-secondary btn" id="pdfButton" title="Save as PDF" style="font-size: 50px;"><i class="fas fa-file-pdf"></i></button>
+                <button type="button" class="text-secondary btn" id="printButton" title="Print (save to server)" style="font-size: 44px;"><i class="fas fa-print"></i></button>
                 <button type="button" class="text-secondary btn dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false" style="font-size: 30px;">
                     <span class="visually-hidden">Toggle Dropdown</span>
                 </button>
@@ -1282,10 +1434,10 @@ function tableExists($conn, $table) {
                     <div class="col-md-6">
                         <div class="report-title">REPORT ON ATTENDANCE</div>
                     
-                        <table class="table table-bordered attendance-table compact-table" style="height: 250px; vertical-align: middle;">
+                        <table class="table table-bordered attendance-table compact-table" style="height: 250px; vertical-align: middle; margin-left: 20px;">
                             <thead>
                                 <tr style="height: 30px;">
-                                    <th></th>
+                                    <th style="padding: 10px;"></th>
                                     <th>Jun</th>
                                     <th>Jul</th>
                                     <th>Aug</th>
@@ -1298,7 +1450,7 @@ function tableExists($conn, $table) {
                                     <th>Mar</th>
                                     <th>Apr</th>
                                     <th>May</th>
-                                    <th style="width: 60px;">Total</th>
+                                    <th>Total</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1340,6 +1492,21 @@ function tableExists($conn, $table) {
                                     ?>
                                     <td><?php echo $total_absent; ?></td>
                                 </tr>
+                                    <td>No. of days absent</td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+
                             </tbody>
                         </table>
 
@@ -1436,7 +1603,7 @@ function tableExists($conn, $table) {
                        
                             <div class="row">
                                 <div class="col-md-6 mt-3">
-                                    <p class="mb-0" style="text-decoration: underline;"><strong>&nbsp;&nbsp;&nbsp;JOEL D. ABREU&nbsp;&nbsp;&nbsp;</strong></p>
+                                    <p class="mb-0" style="text-decoration: underline;"><strong>&nbsp;&nbsp;&nbsp;<?php echo strtoupper($head_teacher_name); ?>&nbsp;&nbsp;&nbsp;</strong></p>
                                     <p class="mb-0" style="margin-left: 20px;"><em>School Head</em></p>
                                 </div>
                                 <div class="col-md-6 text-center">
@@ -1503,17 +1670,128 @@ function tableExists($conn, $table) {
         <?php
         $general_average = 0;
         $subject_count = 0;
+        $mapeh_already_processed = false;
+
+        // Calculate MAPEH grade if we have the components
+        $mapeh_grade = [];
+        if (!empty($mapeh_component_ids)) {
+            $mapeh_grade = calculateMAPEHGrade($grades, $mapeh_component_ids);
+        }
 
         foreach ($ordered_subject_list as $subject) {
             $grade_found = null;
             
-            // For MAPEH components, we need to handle them differently
-            if ($subject['SubjectID'] == 'MAPEH_MUSICARTS' || $subject['SubjectID'] == 'MAPEH_PEHEALTH') {
-                // These are sub-components, so we'll leave them blank or handle specially
-                $q1 = $q2 = $q3 = $q4 = $final = '';
+            // Check if this is a MAPEH component subject
+            $is_mapeh_component = in_array($subject['SubjectID'], $mapeh_component_ids);
+            
+            // Handle MAPEH - show combined row and list component rows underneath
+            if (in_array($subject['SubjectName'], ['Music', 'Arts', 'Physical Education', 'Health']) && !$mapeh_already_processed) {
+                $mapeh_already_processed = true;
+
+                // Combined MAPEH averages (from calculateMAPEHGrade)
+                $q1 = !empty($mapeh_grade['q1']) ? $mapeh_grade['q1'] : '';
+                $q2 = !empty($mapeh_grade['q2']) ? $mapeh_grade['q2'] : '';
+                $q3 = !empty($mapeh_grade['q3']) ? $mapeh_grade['q3'] : '';
+                $q4 = !empty($mapeh_grade['q4']) ? $mapeh_grade['q4'] : '';
+                $final = !empty($mapeh_grade['final']) ? $mapeh_grade['final'] : '';
+
                 $remarks = '';
+                if (!empty($final)) {
+                    $remarks = $final >= 75 ? 'Passed' : 'Failed';
+                    $general_average += $final;
+                    $subject_count++;
+                }
+
+                $cell_style = 'style="font-size: 9pt; margin: 0px; padding: 0px; text-align: left; padding-left: 10px; padding-right: 25px; vertical-align: middle;"';
+
+                // Print main MAPEH row
+                echo "<tr>
+                    <td $cell_style><strong>MAPEH</strong></td>
+                    <td style=\"text-align: center; font-size: 9pt;\">$q1</td>
+                    <td style=\"text-align: center; font-size: 9pt;\">$q2</td>
+                    <td style=\"text-align: center; font-size: 9pt;\">$q3</td>
+                    <td style=\"text-align: center; font-size: 9pt;\">$q4</td>
+                    <td style=\"text-align: center; font-size: 9pt;\">$final</td>
+                    <td style=\"text-align: center; font-size: 9pt;\">$remarks</td>
+                </tr>";
+
+                // Now print component rows: Music, Arts, Physical Education, Health
+                // Helper to find a grade record by subject id
+                $find_grade_by_id = function($sid) use ($grades) {
+                    if (!$sid) return null;
+                    foreach ($grades as $g) {
+                        if ($g['subject'] == $sid) return $g;
+                    }
+                    return null;
+                };
+
+                // Print two grouped component rows: Music+Arts and PE+Health
+                $comp_ids = $mapeh_component_ids;
+                $music_id = isset($comp_ids[0]) ? $comp_ids[0] : null;
+                $arts_id = isset($comp_ids[1]) ? $comp_ids[1] : null;
+                $pe_id = isset($comp_ids[2]) ? $comp_ids[2] : null;
+                $health_id = isset($comp_ids[3]) ? $comp_ids[3] : null;
+
+                $compute_pair = function($idA, $idB, $qfield) use ($find_grade_by_id) {
+                    $a = $find_grade_by_id($idA);
+                    $b = $find_grade_by_id($idB);
+                    $aval = ($a && isset($a[$qfield]) && $a[$qfield] !== '') ? $a[$qfield] : null;
+                    $bval = ($b && isset($b[$qfield]) && $b[$qfield] !== '') ? $b[$qfield] : null;
+                    if ($aval !== null && $bval !== null) return round(($aval + $bval) / 2);
+                    if ($aval !== null) return $aval;
+                    if ($bval !== null) return $bval;
+                    return '';
+                };
+
+                // Group 1: Music + Arts
+                $g1_q1 = $compute_pair($music_id, $arts_id, 'Q1');
+                $g1_q2 = $compute_pair($music_id, $arts_id, 'Q2');
+                $g1_q3 = $compute_pair($music_id, $arts_id, 'Q3');
+                $g1_q4 = $compute_pair($music_id, $arts_id, 'Q4');
+                $g1_vals = array_filter([$g1_q1, $g1_q2, $g1_q3, $g1_q4], function($v){ return $v !== '' && $v !== null; });
+                $g1_final = !empty($g1_vals) ? round(array_sum($g1_vals) / count($g1_vals)) : '';
+                $g1_remarks = $g1_final !== '' ? ($g1_final >= 75 ? 'Passed' : 'Failed') : '';
+
+                // Group 2: PE + Health
+                $g2_q1 = $compute_pair($pe_id, $health_id, 'Q1');
+                $g2_q2 = $compute_pair($pe_id, $health_id, 'Q2');
+                $g2_q3 = $compute_pair($pe_id, $health_id, 'Q3');
+                $g2_q4 = $compute_pair($pe_id, $health_id, 'Q4');
+                $g2_vals = array_filter([$g2_q1, $g2_q2, $g2_q3, $g2_q4], function($v){ return $v !== '' && $v !== null; });
+                $g2_final = !empty($g2_vals) ? round(array_sum($g2_vals) / count($g2_vals)) : '';
+                $g2_remarks = $g2_final !== '' ? ($g2_final >= 75 ? 'Passed' : 'Failed') : '';
+
+                $comp_style = 'style="font-size: 9pt; margin: 0px; padding: 7px; text-align: left; padding-left: 25px; padding-right: 25px; vertical-align: middle;"';
+
+                // Print Music and Arts row
+                echo "<tr>
+                        <td $comp_style>• Music and Arts</td>
+                        <td style=\"text-align: center; font-size: 9pt;\">$g1_q1</td>
+                        <td style=\"text-align: center; font-size: 9pt;\">$g1_q2</td>
+                        <td style=\"text-align: center; font-size: 9pt;\">$g1_q3</td>
+                        <td style=\"text-align: center; font-size: 9pt;\">$g1_q4</td>
+                        <td style=\"text-align: center; font-size: 9pt;\"></td>
+                        <td style=\"text-align: center; font-size: 9pt;\"></td>
+                    </tr>";
+
+                // Print PE and Health row
+                echo "<tr>
+                        <td $comp_style>• PE and Health</td>
+                        <td style=\"text-align: center; font-size: 9pt;\">$g2_q1</td>
+                        <td style=\"text-align: center; font-size: 9pt;\">$g2_q2</td>
+                        <td style=\"text-align: center; font-size: 9pt;\">$g2_q3</td>
+                        <td style=\"text-align: center; font-size: 9pt;\">$g2_q4</td>
+                        <td style=\"text-align: center; font-size: 9pt;\"></td>
+                        <td style=\"text-align: center; font-size: 9pt;\"></td>
+                    </tr>";
+
+                // Continue the loop (skip individual component processing elsewhere)
+                continue;
+            } elseif ($is_mapeh_component) {
+                // Skip individual MAPEH component display (they're combined into MAPEH row)
+                continue;
             } else {
-                // Regular subjects
+                // Regular subjects (non-MAPEH)
                 foreach ($grades as $grade) {
                     if ($grade['subject'] == $subject['SubjectID']) {
                         $grade_found = $grade;
@@ -1541,35 +1819,28 @@ function tableExists($conn, $table) {
                         $remarks = 'Failed';
                     }
                     
-                    // Only count regular subjects for general average (not MAPEH components)
-                    if ($subject['SubjectName'] != 'MAPEH') {
-                        $general_average += $final;
-                        $subject_count++;
-                    }
+                    // Count for general average
+                    $general_average += $final;
+                    $subject_count++;
                 }
-            }
-        
-            // Apply different styling for MAPEH components
-            $cell_style = '';
-            if (strpos($subject['SubjectName'], '•') === 0) {
-                $cell_style = 'style="padding: 7px; font-size: 10pt;"';
-            } else {
-                $cell_style = 'style="font-size: 9pt; margin: 0px; padding: 0px; text-align: left; padding-left: 10px; padding-right: 25px; vertical-align: middle;"';
-            }
             
-            echo "<tr>
-                <td $cell_style>{$subject['SubjectName']}</td>
-                <td style=\"text-align: center; font-size: 9pt;\">$q1</td>
-                <td style=\"text-align: center; font-size: 9pt;\">$q2</td>
-                <td style=\"text-align: center; font-size: 9pt;\">$q3</td>
-                <td style=\"text-align: center; font-size: 9pt;\">$q4</td>
-                <td style=\"text-align: center; font-size: 9pt;\">$final</td>
-                <td style=\"text-align: center; font-size: 9pt;\">$remarks</td>
-            </tr>";
+                // Apply styling for regular subjects
+                $cell_style = 'style="font-size: 9pt; margin: 0px; padding: 0px; text-align: left; padding-left: 10px; padding-right: 25px; vertical-align: middle;"';
+                
+                echo "<tr>
+                    <td $cell_style>{$subject['SubjectName']}</td>
+                    <td style=\"text-align: center; font-size: 9pt;\">$q1</td>
+                    <td style=\"text-align: center; font-size: 9pt;\">$q2</td>
+                    <td style=\"text-align: center; font-size: 9pt;\">$q3</td>
+                    <td style=\"text-align: center; font-size: 9pt;\">$q4</td>
+                    <td style=\"text-align: center; font-size: 9pt;\">$final</td>
+                    <td style=\"text-align: center; font-size: 9pt;\">$remarks</td>
+                </tr>";
+            }
         }
 
         // Calculate general average
-        $gen_avg = $subject_count > 0 ? round($general_average / $subject_count, 2) : '';
+        $gen_avg = $subject_count > 0 ? round($general_average / $subject_count) : '';
         $gen_remarks = '';
         if (!empty($gen_avg)) {
             if ($gen_avg >= 75) {
@@ -1588,12 +1859,12 @@ function tableExists($conn, $table) {
             <td></td>
             <td></td>
         </tr>
-        <tr>
-            <td></td>
-            <td colspan="4" class="static-cel"><Strong>General Average</Strong></td>
-            <td><?php echo $gen_avg; ?></td>
-            <td><?php echo $gen_remarks; ?></td>
-        </tr>
+<tr>
+    <td></td>
+    <td colspan="4" class="static-cell"><strong>General Average</strong></td>
+    <td class="general-average-value" style="text-align: center; font-size: 9pt;"><?php echo $gen_avg; ?></td>
+    <td class="general-average-remarks" style="text-align: center; font-size: 9pt;"><?php echo $gen_remarks; ?></td>
+</tr>
     </tbody>
 </table>        
                         <div class="legend mt-4" style="font-size: 11pt; margin-top: 50px;">
@@ -1722,178 +1993,195 @@ function tableExists($conn, $table) {
         </div>
           
     <script>
-    <?php if ($generate_pdf): ?>
-    // Force data-only styling for direct PDF generation
-    document.addEventListener('DOMContentLoaded', function() {
-        // Generate PDF immediately after applying styles
-        setTimeout(function() {
-            generatePDF();
-        }, 500);
-    });
-    <?php else: ?>
-    // Manual PDF generation for view mode
-    document.querySelectorAll('.pdf-quarter').forEach(function(element) {
-        element.addEventListener('click', function(e) {
-            e.preventDefault();
-            const quarter = this.getAttribute('data-quarter');
-            
-            // Validate before generating PDF
-            validateAndGeneratePDF(quarter);
-        });
-    });
+    <?php
+    // Build JS that supports both manual generation and server-saving flow
+    ?>
+    (function(){
+        const isAuto = <?php echo $generate_pdf ? 'true' : 'false'; ?>;
+        const autoSaveToServer = <?php echo $save_temp ? 'true' : 'false'; ?>;
+        const initialQuarter = <?php echo json_encode($quarter ?: 4); ?>;
 
-    function validateAndGeneratePDF(quarter) {
-        // Show loading immediately
-        const loadingOverlay = document.getElementById('pdfLoading');
-        loadingOverlay.style.display = 'flex';
-        
-        // Simple client-side validation
-        const quarterNum = parseInt(quarter);
-        if (quarterNum < 1 || quarterNum > 4) {
-            loadingOverlay.style.display = 'none';
-            showNotification('Invalid quarter selected.', 'error');
-            return;
+        function showNotification(message, type){
+            const notification = document.createElement('div');
+            notification.style.cssText = `position: fixed; top: 20px; right: 20px; padding: 15px 20px; background: ${type === 'success' ? '#28a745' : '#dc3545'}; color: white; border-radius: 5px; z-index: 10000; font-weight: bold;`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            setTimeout(()=> document.body.removeChild(notification), 3000);
         }
-        
-        // For more robust validation, you might want to make an AJAX call to check grades
-        // For now, we'll proceed with generation and let the server handle validation
-        generatePDF(quarter);
-    }
-    <?php endif; ?>
 
-    function generatePDF(quarter = null) {
-        // Use the quarter from parameter or from URL
-        const selectedQuarter = quarter || <?php echo json_encode($quarter); ?> || '1';
-        
-        // Only show loading for manual generation
-        <?php if (!$generate_pdf): ?>
-        const loadingOverlay = document.getElementById('pdfLoading');
-        loadingOverlay.style.display = 'flex';
-        <?php endif; ?>
-
-        // Student info for filename
-        const studentName = "<?php echo preg_replace('/[^a-zA-Z0-9]/', '_', $student['LastName'] . '_' . $student['FirstName']); ?>";
-        const filename = `Report_Card_${studentName}_Q${selectedQuarter}_<?php echo $current_year; ?>.pdf`;
-        
-        // Get the PDF content
-        const element = document.getElementById('pdf-content');
-        
-        // Add quarter class to body for proper styling
-        document.body.classList.add('quarter-' + selectedQuarter);
-        
-        // PDF options with reduced margins
-        const options = {
-            filename: filename,
-            image: { 
-                type: 'jpeg', 
-                quality: 0.98 
-            },
-            html2canvas: { 
-                scale: 2,
-                useCORS: true,
-                logging: false,
-                backgroundColor: '#FFFFFF',
-                scrollX: 0,
-                scrollY: 0,
-                windowWidth: document.documentElement.offsetWidth,
-                windowHeight: document.documentElement.offsetHeight
-            },
-            jsPDF: { 
-                unit: 'in', 
-                format: 'letter', 
-                orientation: 'landscape' 
-            },
-            pagebreak: { 
-                mode: ['avoid-all', 'css', 'legacy'],
-                before: '.page-break'
-            }
-        };
-
-        // Generate PDF
-        html2pdf()
-            .set(options)
-            .from(element)
-            .save()
-            .then(() => {
-                <?php if (!$generate_pdf): ?>
-                // Hide loading for manual generation
-                loadingOverlay.style.display = 'none';
-                
-                // Remove quarter class
-                document.body.classList.remove('quarter-' + selectedQuarter);
-                
-                // Success message for manual generation
-                showNotification('PDF saved successfully!', 'success');
-                
-                // Redirect back to list page after successful generation
-                setTimeout(() => {
-                    window.location.href = 'record.php';
-                }, 2000);
-                <?php else: ?>
-                // For direct PDF generation, redirect back to list page after generation
-                setTimeout(function() {
-                    window.location.href = 'record.php';
-                }, 1000);
-                <?php endif; ?>
-            })
-            .catch((error) => {
-                <?php if (!$generate_pdf): ?>
-                // Hide loading for manual generation
-                loadingOverlay.style.display = 'none';
-                
-                // Remove quarter class
-                document.body.classList.remove('quarter-' + selectedQuarter);
-                
-                // Error message for manual generation
-                showNotification('Error generating PDF. Please try again.', 'error');
-                
-                // Redirect back to list page after error
-                setTimeout(() => {
-                    window.location.href = 'record.php';
-                }, 3000);
-                <?php else: ?>
-                // Error handling for direct PDF generation - redirect to list page
-                console.error('PDF generation error:', error);
-                setTimeout(function() {
-                    window.location.href = 'record.php';
-                }, 1000);
-                <?php endif; ?>
-                console.error('PDF generation error:', error);
+        function bindManualButtons(){
+            document.querySelectorAll('.pdf-quarter').forEach(function(element){
+                element.addEventListener('click', function(e){
+                    e.preventDefault();
+                    const quarter = this.getAttribute('data-quarter');
+                    validateAndGeneratePDF(quarter, false);
+                });
             });
-    }
 
-    // Notification function (only for manual generation)
-    <?php if (!$generate_pdf): ?>
-    function showNotification(message, type) {
-        const notification = document.createElement('div');
-        notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 15px 20px;
-            background: ${type === 'success' ? '#28a745' : '#dc3545'};
-            color: white;
-            border-radius: 5px;
-            z-index: 10000;
-            font-weight: bold;
-        `;
-        notification.textContent = message;
-        
-        document.body.appendChild(notification);
-        
-        setTimeout(() => {
-            document.body.removeChild(notification);
-        }, 3000);
-    }
-    <?php endif; ?>
+            // Default manual PDF (download)
+            const pdfBtn = document.getElementById('pdfButton');
+            if (pdfBtn) pdfBtn.addEventListener('click', function(){
+                validateAndGeneratePDF(initialQuarter || 4, false);
+            });
 
-    if (typeof html2pdf === 'undefined') {
-        <?php if (!$generate_pdf): ?>
-        document.getElementById('pdfButton').style.display = 'none';
-        showNotification('PDF library not loaded. Please refresh the page.', 'error');
-        <?php endif; ?>
-        console.warn('html2pdf library not loaded. PDF functionality disabled.');
-    }
+            // Print button - save to server and open
+            const printBtn = document.getElementById('printButton');
+            if (printBtn) printBtn.addEventListener('click', function(){
+                validateAndGeneratePDF(initialQuarter || 4, true);
+            });
+
+            // Print links from students list
+            document.querySelectorAll('.print-link').forEach(function(link){
+                link.addEventListener('click', function(e){
+                    e.preventDefault();
+                    const href = this.getAttribute('href');
+                    // Extract quarter from URL
+                    const match = href.match(/quarter=(\d+)/);
+                    const quarter = match ? match[1] : 4;
+                    // Navigate to the student report first
+                    const studentMatch = href.match(/student_id=(\d+)/);
+                    if (studentMatch) {
+                        const studentId = studentMatch[1];
+                        // Redirect to load the page first, which will auto-generate
+                        window.location.href = `?student_id=${studentId}&generate_pdf=1&quarter=${quarter}&save_temp=1`;
+                    }
+                });
+            });
+        }
+
+        function validateAndGeneratePDF(quarter, saveToServer){
+            const loadingOverlay = document.getElementById('pdfLoading');
+            if (loadingOverlay) loadingOverlay.style.display = 'flex';
+            const quarterNum = parseInt(quarter);
+            if (isNaN(quarterNum) || quarterNum < 1 || quarterNum > 4) {
+                if (loadingOverlay) loadingOverlay.style.display = 'none';
+                showNotification('Invalid quarter selected.', 'error');
+                return;
+            }
+            generatePDF(quarterNum, saveToServer);
+        }
+
+        function generatePDF(quarter, saveToServer){
+            const selectedQuarter = quarter || initialQuarter || 1;
+            const loadingOverlay = document.getElementById('pdfLoading');
+            if (loadingOverlay) loadingOverlay.style.display = 'flex';
+
+            const studentName = "<?php echo preg_replace('/[^a-zA-Z0-9]/', '_', $student['LastName'] . '_' . $student['FirstName']); ?>";
+            const filename = `Report_Card_${studentName}_Q${selectedQuarter}_<?php echo $current_year; ?>.pdf`;
+            const element = document.getElementById('pdf-content');
+            document.body.classList.add('quarter-' + selectedQuarter);
+
+            const options = {
+                filename: filename,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true, logging: false, backgroundColor: '#FFFFFF', scrollX: 0, scrollY: 0, windowWidth: document.documentElement.offsetWidth, windowHeight: document.documentElement.offsetHeight },
+                jsPDF: { unit: 'in', format: 'letter', orientation: 'landscape' },
+                pagebreak: { mode: ['avoid-all', 'css', 'legacy'], before: '.page-break' }
+            };
+
+            const shouldSaveServer = saveToServer || autoSaveToServer;
+
+            // If we want to save to the server, create the PDF blob and upload it
+            if (shouldSaveServer) {
+                try {
+                    html2pdf().set(options).from(element).toPdf().get('pdf').then(function(pdf){
+                        const pdfBlob = pdf.output('blob');
+                        const form = new FormData();
+                        form.append('file', pdfBlob, filename);
+
+                        fetch('save_temp_pdf.php', { method: 'POST', body: form })
+                        .then(res => res.json())
+                        .then(data => {
+                            if (loadingOverlay) loadingOverlay.style.display = 'none';
+                            document.body.classList.remove('quarter-' + selectedQuarter);
+                            if (data && data.success) {
+                                // Open the generated file (relative path from teacher folder)
+                                const fileUrl = data.url;
+                                window.open(fileUrl, '_blank');
+
+                                // Register unload handler to delete the temp file
+                                const tempFile = data.filename;
+                                function sendDelete(){
+                                    const payload = JSON.stringify({ filename: tempFile });
+                                    const url = 'delete_temp_pdf.php';
+                                    if (navigator.sendBeacon) {
+                                        const blob = new Blob([payload], { type: 'application/json' });
+                                        navigator.sendBeacon(url, blob);
+                                    } else {
+                                        // fallback synchronous XHR
+                                        var xhr = new XMLHttpRequest();
+                                        try {
+                                            xhr.open('POST', url, false);
+                                            xhr.setRequestHeader('Content-Type', 'application/json');
+                                            xhr.send(payload);
+                                        } catch(e) {}
+                                    }
+                                }
+                                window.addEventListener('beforeunload', sendDelete);
+                                // Also add a click handler for the 'Back to list' link if present to delete immediately
+                                const backLink = document.querySelector('.fixed-action-buttons a[href="record.php"]');
+                                if (backLink) backLink.addEventListener('click', sendDelete);
+                            } else {
+                                showNotification('Failed to save PDF on server.', 'error');
+                            }
+                        }).catch(err => {
+                            if (loadingOverlay) loadingOverlay.style.display = 'none';
+                            document.body.classList.remove('quarter-' + selectedQuarter);
+                            console.error(err);
+                            showNotification('Error uploading PDF to server.', 'error');
+                        });
+                    }).catch(function(err){
+                        if (loadingOverlay) loadingOverlay.style.display = 'none';
+                        document.body.classList.remove('quarter-' + selectedQuarter);
+                        console.error(err);
+                        showNotification('Error creating PDF.', 'error');
+                    });
+                } catch(e) {
+                    if (loadingOverlay) loadingOverlay.style.display = 'none';
+                    document.body.classList.remove('quarter-' + selectedQuarter);
+                    console.error(e);
+                    showNotification('PDF library error.', 'error');
+                }
+
+                // If this was server-side auto-generation, after uploading we can optionally redirect back
+                if (isAuto && autoSaveToServer) {
+                    setTimeout(function(){ window.location.href = 'record.php'; }, 1000);
+                }
+
+                return;
+            }
+
+            // Default behavior: download client-side
+            html2pdf().set(options).from(element).save().then(() => {
+                if (loadingOverlay) loadingOverlay.style.display = 'none';
+                document.body.classList.remove('quarter-' + selectedQuarter);
+                showNotification('PDF saved successfully!', 'success');
+                setTimeout(()=> { window.location.href = 'record.php'; }, 2000);
+            }).catch(err => {
+                if (loadingOverlay) loadingOverlay.style.display = 'none';
+                document.body.classList.remove('quarter-' + selectedQuarter);
+                console.error(err);
+                showNotification('Error generating PDF. Please try again.', 'error');
+            });
+        }
+
+        // Init
+        if (typeof html2pdf === 'undefined'){
+            const pdfBtn = document.getElementById('pdfButton');
+            if (pdfBtn) pdfBtn.style.display = 'none';
+            console.warn('html2pdf library not loaded. PDF functionality disabled.');
+        }
+
+        if (isAuto) {
+            // Auto-generate: saveToServer if requested
+            window.addEventListener('DOMContentLoaded', function(){
+                // Wait longer and ensure all images/elements are loaded
+                setTimeout(function(){ generatePDF(initialQuarter, autoSaveToServer); }, 3500);
+            });
+        } else {
+            bindManualButtons();
+        }
+    })();
     </script>
     <?php endif; ?>
 </body>

@@ -201,7 +201,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'restore') {
 <body>
 <?php include __DIR__ . '/../navs/headNav.php'; ?>
 <div class="container mt-5">
-  <h2>Database Management</h2>
+  <h2>Backup & Restore</h2>
   
   <!-- Display messages -->
   <?php if (!empty($reset_result['message'])): ?>
@@ -216,9 +216,9 @@ if (isset($_POST['action']) && $_POST['action'] === 'restore') {
     <!-- Reset School Year Card -->
     <div class="col-md-6">
       <div class="card mb-3">
-        <div class="card-header">Reset School Year</div>
+        <div class="card-header">Add New School Year</div>
         <div class="card-body">
-          <p>Reset the current school year. This will set all other school years to inactive.</p>
+          <p>This will set current school years to inactive.</p>
           <p><strong>Current Active:</strong> 
             <?php if (!empty($current_school['school_name'])): ?>
               <?php echo htmlspecialchars($current_school['school_name']); ?> - <?php echo htmlspecialchars($current_school['school_year']); ?>
@@ -227,7 +227,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'restore') {
             <?php endif; ?>
           </p>
           <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#resetSchoolYearModal">
-            Reset School Year
+            Add New School Year
           </button>
         </div>
       </div>
@@ -268,7 +268,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'restore') {
   </div>
 
   <!-- Reset School Year Modal -->
-  <div class="modal fade" id="resetSchoolYearModal" tabindex="-1" aria-labelledby="resetSchoolYearModalLabel" aria-hidden="true">
+  <div class="modal fade" id="resetSchoolYearModal" tabindex="-1" aria-labelledby="resetSchoolYearModalLabel" aria-hidden="true" data-current-year="<?php echo htmlspecialchars($current_school['school_year']); ?>">
     <div class="modal-dialog">
       <div class="modal-content">
         <div class="modal-header">
@@ -296,12 +296,12 @@ if (isset($_POST['action']) && $_POST['action'] === 'restore') {
               <input type="password" class="form-control" id="admin_password" name="admin_password" placeholder="Enter your password" required>
             </div>
             <div class="alert alert-warning">
-              <strong>Warning:</strong> This will set all other school years to inactive. Only one school year can be active at a time.
+              <strong>Warning:</strong> This will set this school year to inactive. Only one school year can be active at a time.
             </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-            <button type="button" class="btn btn-warning" id="confirmResetBtn">Reset School Year</button>
+            <button type="button" class="btn btn-warning" id="confirmResetBtn">Add New School Year</button>
           </div>
         </form>
         <!-- Confirmation Modal -->
@@ -313,11 +313,11 @@ if (isset($_POST['action']) && $_POST['action'] === 'restore') {
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
               </div>
               <div class="modal-body">
-                Are you sure you want to reset the school year? This action cannot be undone and will set all other school years to inactive.
+                Are you sure you want to add this school year? This action cannot be undone and will set current school years to inactive.
               </div>
               <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-warning" id="finalConfirmBtn">Yes, Reset</button>
+                <button type="button" class="btn btn-warning" id="finalConfirmBtn">Yes, Add</button>
               </div>
             </div>
           </div>
@@ -333,6 +333,27 @@ if (isset($_POST['action']) && $_POST['action'] === 'restore') {
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+  // Automatically calculate next school year when modal is shown
+  document.getElementById('resetSchoolYearModal').addEventListener('show.bs.modal', function() {
+    // Get the original current year from data attribute (not from input which changes)
+    const currentYearInput = this.getAttribute('data-current-year');
+    
+    if (currentYearInput && currentYearInput.match(/^\d{4}-\d{4}$/)) {
+      // Parse current year (e.g., "2025-2026")
+      const parts = currentYearInput.split('-');
+      const startYear = parseInt(parts[0]);
+      const endYear = parseInt(parts[1]);
+      
+      // Calculate next school year
+      const nextStartYear = startYear + 1;
+      const nextEndYear = endYear + 1;
+      const nextSchoolYear = nextStartYear + '-' + nextEndYear;
+      
+      // Set the next school year in the input
+      document.getElementById('school_year').value = nextSchoolYear;
+    }
+  });
+
   // Show confirmation modal before submitting reset form
   document.getElementById('confirmResetBtn').addEventListener('click', function(e) {
     e.preventDefault();

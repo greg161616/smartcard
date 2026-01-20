@@ -188,14 +188,50 @@ function getStudentGradesStatus($conn, $teacherId, $schoolYear) {
 }
 
 function getSubjectGradeStatus($conn, $teacherId, $subjectId, $schoolYear) {
-    // Check if teacher has any grade upload logs for this subject
+    // First, get teacher's name for log checking
+    $teacherSql = "SELECT CONCAT(t.fName, ' ', t.lName) as teacherName 
+                   FROM teacher t 
+                   WHERE t.TeacherID = ?";
+    $stmt = $conn->prepare($teacherSql);
+    $stmt->bind_param("i", $teacherId);
+    $stmt->execute();
+    $teacherResult = $stmt->get_result();
+    
+    if ($teacherResult->num_rows === 0) {
+        return 'pending';
+    }
+    
+    $teacherData = $teacherResult->fetch_assoc();
+    $teacherName = $teacherData['teacherName'];
+    
+    // Get subject name for log checking
+    $subjectSql = "SELECT SubjectName FROM subject WHERE SubjectID = ?";
+    $stmt = $conn->prepare($subjectSql);
+    $stmt->bind_param("i", $subjectId);
+    $stmt->execute();
+    $subjectResult = $stmt->get_result();
+    
+    if ($subjectResult->num_rows === 0) {
+        return 'pending';
+    }
+    
+    $subjectData = $subjectResult->fetch_assoc();
+    $subjectName = $subjectData['SubjectName'];
+    
+    // Check if there's a successful upload log for this teacher and subject
+    // Based on the logs in your database, they contain: "uploaded_by":"Jerome Cabral (ID: 2)"
+    // So we need to check for teacher name in the logs
     $uploadSql = "SELECT COUNT(*) as count FROM system_logs 
-                  WHERE (details LIKE ? OR details LIKE ?)
+                  WHERE details LIKE ?
+                  AND details LIKE ?
                   AND action LIKE '%Grade Upload%'
                   AND log_level = 'success'";
     $stmt = $conn->prepare($uploadSql);
-    $teacherPattern = "%\"teacherID\":{$teacherId}%";
-    $subjectPattern = "%\"subject_id\":{$subjectId}%";
+    
+    // Look for teacher ID in the format "(ID: X)" and subject name in the message
+    $teacherPattern = "%(ID: {$teacherId})%";
+    $subjectPattern = "%{$subjectName}%";
+    
     $stmt->bind_param("ss", $teacherPattern, $subjectPattern);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -205,7 +241,26 @@ function getSubjectGradeStatus($conn, $teacherId, $subjectId, $schoolYear) {
         return 'upload';
     }
     
-    // Check if teacher has manual grade entries for this subject
+    // Also check for teacher name if ID pattern doesn't work
+    $uploadSql2 = "SELECT COUNT(*) as count FROM system_logs 
+                   WHERE details LIKE ?
+                   AND details LIKE ?
+                   AND action LIKE '%Grade Upload%'
+                   AND log_level = 'success'";
+    $stmt = $conn->prepare($uploadSql2);
+    $teacherNamePattern = "%{$teacherName}%";
+    $subjectPattern = "%{$subjectName}%";
+    
+    $stmt->bind_param("ss", $teacherNamePattern, $subjectPattern);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $uploadData2 = $result->fetch_assoc();
+    
+    if ($uploadData2['count'] > 0) {
+        return 'upload';
+    }
+    
+    // Only if NO upload log exists, check for manual entries in grades_details
     $manualSql = "SELECT COUNT(*) as count FROM grades_details 
                   WHERE teacherID = ? AND subjectID = ? AND school_year = ?";
     $stmt = $conn->prepare($manualSql);
@@ -321,18 +376,41 @@ function getDetailedSubjectStatus($conn, $teacherId, $subjectId, $schoolYear) {
 }
 
 function getUploadDetails($conn, $teacherId, $subjectId) {
+    // Get teacher's name
+    $teacherSql = "SELECT CONCAT(t.fName, ' ', t.lName) as teacherName 
+                   FROM teacher t 
+                   WHERE t.TeacherID = ?";
+    $stmt = $conn->prepare($teacherSql);
+    $stmt->bind_param("i", $teacherId);
+    $stmt->execute();
+    $teacherResult = $stmt->get_result();
+    $teacherData = $teacherResult->fetch_assoc();
+    $teacherName = $teacherData['teacherName'];
+    
+    // Get subject name
+    $subjectSql = "SELECT SubjectName FROM subject WHERE SubjectID = ?";
+    $stmt = $conn->prepare($subjectSql);
+    $stmt->bind_param("i", $subjectId);
+    $stmt->execute();
+    $subjectResult = $stmt->get_result();
+    $subjectData = $subjectResult->fetch_assoc();
+    $subjectName = $subjectData['SubjectName'];
+    
     $sql = "SELECT action, details, created_at 
             FROM system_logs 
             WHERE (details LIKE ? OR details LIKE ?)
+            AND details LIKE ?
             AND action LIKE '%Grade Upload%'
             AND log_level = 'success'
             ORDER BY created_at DESC 
             LIMIT 1";
     
     $stmt = $conn->prepare($sql);
-    $teacherPattern = "%\"teacherID\":{$teacherId}%";
-    $subjectPattern = "%\"subject_id\":{$subjectId}%";
-    $stmt->bind_param("ss", $teacherPattern, $subjectPattern);
+    $teacherIdPattern = "%(ID: {$teacherId})%";
+    $teacherNamePattern = "%{$teacherName}%";
+    $subjectPattern = "%{$subjectName}%";
+    
+    $stmt->bind_param("sss", $teacherIdPattern, $teacherNamePattern, $subjectPattern);
     $stmt->execute();
     $result = $stmt->get_result();
     

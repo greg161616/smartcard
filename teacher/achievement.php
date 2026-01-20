@@ -326,93 +326,17 @@ $students_result = $students_stmt->get_result();
         <?php endif; ?>
         
         <div class="row">
-            <!-- Add Achievement Form -->
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="card-title mb-0"><i class="fas fa-trophy me-2"></i>Add Student Achievement</h5>
-                    </div>
-                    <div class="card-body">
-                        <form method="POST" action="">
-                            <div class="mb-3">
-                                <label for="student_id" class="form-label">Student</label>
-                                <select class="form-select" id="student_id" name="student_id" required>
-                                    <option value="">Select Student</option>
-                                    <?php 
-                                    if ($students_result && $students_result->num_rows > 0):
-                                        while ($student = $students_result->fetch_assoc()): 
-                                    ?>
-                                        <option value="<?php echo $student['StudentID']; ?>">
-                                            <?php echo $student['LastName'] . ', ' . $student['FirstName'] . ' ' . $student['Middlename']; ?>
-                                        </option>
-                                    <?php 
-                                        endwhile;
-                                    else:
-                                    ?>
-                                        <option value="">No students found in your advisory</option>
-                                    <?php endif; ?>
-                                </select>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label for="achievement_type" class="form-label">Achievement Type</label>
-                                <select class="form-select" id="achievement_type" name="achievement_type" required>
-                                    <option value="">Select Type</option>
-                                    <option value="Sports">Sports</option>
-                                    <option value="Journalism">Journalism</option>
-                                    <option value="Academic Contest">Academic Contest</option>
-                                    <option value="Arts">Arts</option>
-                                    <option value="Leadership">Leadership</option>
-                                    <option value="Community Service">Community Service</option>
-                                    <option value="Other">Other</option>
-                                </select>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label for="event_name" class="form-label">Event Name</label>
-                                <input type="text" class="form-control" id="event_name" name="event_name" required>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label for="description" class="form-label">Description</label>
-                                <textarea class="form-control" id="description" name="description" rows="3"></textarea>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label for="achievement_date" class="form-label">Date of Achievement</label>
-                                <input type="date" class="form-control" id="achievement_date" name="achievement_date" required>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label for="level" class="form-label">Level</label>
-                                <select class="form-select" id="level" name="level" required>
-                                    <option value="">Select Level</option>
-                                    <option value="School">School</option>
-                                    <option value="District">District</option>
-                                    <option value="Regional">Regional</option>
-                                    <option value="National">National</option>
-                                    <option value="International">International</option>
-                                </select>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label for="award" class="form-label">Award/Recognition</label>
-                                <input type="text" class="form-control" id="award" name="award" required>
-                            </div>
-                            
-                            <button type="submit" name="add_achievement" class="btn btn-primary w-100">
-                                <i class="fas fa-plus-circle me-2"></i>Add Achievement
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            </div>
-            
             <!-- Achievements Table -->
-            <div class="col-md-8">
+            <div class="col-md-12">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4><i class="fas fa-list me-2"></i>Student Achievements</h4>
+                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addAchievementModal">
+                        <i class="fas fa-plus-circle me-2"></i>Add Student Achievement
+                    </button>
+                </div>
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="card-title mb-0"><i class="fas fa-list me-2"></i>Student Achievements</h5>
+                        <h5 class="card-title mb-0"><i class="fas fa-trophy me-2"></i>Recorded Achievements</h5>
                         <span class="badge bg-light text-dark"><?php echo ($achievements_result ? $achievements_result->num_rows : 0); ?> records</span>
                     </div>
                     <div class="card-body">
@@ -451,7 +375,9 @@ $students_result = $students_stmt->get_result();
                                                         <i class="fas fa-eye"></i>
                                                     </button>
                                                     <button class="btn btn-sm btn-outline-danger delete-achievement" 
-                                                            data-id="<?php echo $achievement['AchievementID']; ?>">
+                                                            data-id="<?php echo $achievement['AchievementID']; ?>"
+                                                            data-student-name="<?php echo htmlspecialchars($achievement['LastName'] . ', ' . $achievement['FirstName']); ?>"
+                                                            data-event-name="<?php echo htmlspecialchars($achievement['event_name']); ?>">
                                                         <i class="fas fa-trash"></i>
                                                     </button>
                                                 </td>
@@ -472,7 +398,98 @@ $students_result = $students_stmt->get_result();
         </div>
     </div>
     
-    <!-- Achievement Details Modal -->
+    <!-- Add Achievement Modal -->
+    <div class="modal fade" id="addAchievementModal" tabindex="-1" aria-labelledby="addAchievementModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addAchievementModalLabel"><i class="fas fa-trophy me-2"></i>Add Student Achievement</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form method="POST" action="" id="addAchievementForm">
+                        <div class="row">
+                            <div class="mb-3 col-md-6">
+                            <label for="student_id" class="form-label">Student</label>
+                            <select class="form-select" id="student_id" name="student_id" required>
+                                <option value="">Select Student</option>
+                                <?php 
+                                // Reset students pointer for modal
+                                $students_stmt->execute();
+                                $students_result = $students_stmt->get_result();
+                                if ($students_result && $students_result->num_rows > 0):
+                                    while ($student = $students_result->fetch_assoc()): 
+                                ?>
+                                    <option value="<?php echo $student['StudentID']; ?>">
+                                        <?php echo $student['LastName'] . ', ' . $student['FirstName'] . ' ' . $student['Middlename']; ?>
+                                    </option>
+                                <?php 
+                                    endwhile;
+                                else:
+                                ?>
+                                    <option value="">No students found in your advisory</option>
+                                <?php endif; ?>
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3 col-md-6">
+                            <label for="achievement_type" class="form-label">Achievement Type</label>
+                            <select class="form-select" id="achievement_type" name="achievement_type" required>
+                                <option value="">Select Type</option>
+                                <option value="Sports">Sports</option>
+                                <option value="Journalism">Journalism</option>
+                                <option value="Academic Contest">Academic Contest</option>
+                                <option value="Arts">Arts</option>
+                                <option value="Leadership">Leadership</option>
+                                <option value="Community Service">Community Service</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        </div>
+                        <div class="row">
+                            <div class="mb-3 col-md-6">
+                            <label for="event_name" class="form-label">Event Name</label>
+                            <input type="text" class="form-control" id="event_name" name="event_name" required>
+                            </div>
+                            <div class="mb-3 col-md-6">
+                            <label for="achievement_date" class="form-label">Date of Achievement</label>
+                            <input type="date" class="form-control" id="achievement_date" name="achievement_date" required>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Description</label>
+                            <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+                        </div>
+                        <div class="row">                
+                        <div class="mb-3 col-md-6">
+                            <label for="award" class="form-label">Award/Recognition</label>
+                            <input type="text" class="form-control" id="award" name="award" required>
+                        </div>
+                        <div class="mb-3 col-md-6">
+                            <label for="level" class="form-label">Level</label>
+                            <select class="form-select" id="level" name="level" required>
+                                <option value="">Select Level</option>
+                                <option value="School">School</option>
+                                <option value="District">District</option>
+                                <option value="Regional">Regional</option>
+                                <option value="National">National</option>
+                                <option value="International">International</option>
+                            </select>
+                        </div>
+                        </div>
+
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" form="addAchievementForm" name="add_achievement" class="btn btn-primary">
+                        <i class="fas fa-plus-circle me-2"></i>Add Achievement
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
     <div class="modal fade" id="achievementModal" tabindex="-1" aria-labelledby="achievementModalLabel" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
@@ -485,6 +502,31 @@ $students_result = $students_stmt->get_result();
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Delete Confirmation Modal -->
+    <div class="modal fade" id="deleteAchievementModal" tabindex="-1" aria-labelledby="deleteAchievementModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="deleteAchievementModalLabel"><i class="fas fa-exclamation-triangle me-2 text-danger"></i>Confirm Delete</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete this achievement?</p>
+                    <div class="alert alert-info mb-0">
+                        <p class="mb-1"><strong>Student:</strong> <span id="deleteAchievementStudent"></span></p>
+                        <p class="mb-0"><strong>Event:</strong> <span id="deleteAchievementEvent"></span></p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirmDeleteAchievement">
+                        <i class="fas fa-trash me-2"></i>Delete Achievement
+                    </button>
                 </div>
             </div>
         </div>
@@ -512,26 +554,49 @@ $students_result = $students_stmt->get_result();
             });
             
             // Delete achievement
+            var deleteAchievementId = null;
+            var deleteAchievementRow = null;
+            
             $('.delete-achievement').click(function() {
-                var achievementId = $(this).data('id');
-                var row = $(this).closest('tr');
+                deleteAchievementId = $(this).data('id');
+                deleteAchievementRow = $(this).closest('tr');
+                var studentName = $(this).data('student-name');
+                var eventName = $(this).data('event-name');
                 
-                if (confirm('Are you sure you want to delete this achievement?')) {
+                // Set modal content
+                $('#deleteAchievementStudent').text(studentName);
+                $('#deleteAchievementEvent').text(eventName);
+                
+                // Show confirmation modal
+                var modal = new bootstrap.Modal(document.getElementById('deleteAchievementModal'), {});
+                modal.show();
+            });
+            
+            // Confirm delete
+            $('#confirmDeleteAchievement').click(function() {
+                if (deleteAchievementId) {
                     $.ajax({
                         url: '',
                         type: 'POST',
                         data: {
                             delete_achievement: true,
-                            achievement_id: achievementId
+                            achievement_id: deleteAchievementId
                         },
                         success: function(response) {
                             if (response === 'success') {
-                                row.fadeOut(300, function() {
+                                deleteAchievementRow.fadeOut(300, function() {
                                     $(this).remove();
                                     // Update record count
                                     var recordCount = $('tbody tr').length;
                                     $('.card-header .badge').text(recordCount + ' records');
                                 });
+                                // Close modal
+                                var modal = bootstrap.Modal.getInstance(document.getElementById('deleteAchievementModal'));
+                                if (modal) {
+                                    modal.hide();
+                                }
+                                deleteAchievementId = null;
+                                deleteAchievementRow = null;
                             } else if (response === 'unauthorized') {
                                 alert('You are not authorized to delete this achievement.');
                             } else {
@@ -548,6 +613,20 @@ $students_result = $students_stmt->get_result();
             // Set today's date as default for achievement date
             var today = new Date().toISOString().split('T')[0];
             $('#achievement_date').val(today);
+            
+            // Close modal on successful form submission
+            $('#addAchievementForm').on('submit', function() {
+                setTimeout(function() {
+                    if ($('.alert-success').length > 0) {
+                        var modal = bootstrap.Modal.getInstance(document.getElementById('addAchievementModal'));
+                        if (modal) {
+                            modal.hide();
+                        }
+                        // Reset form
+                        $('#addAchievementForm')[0].reset();
+                    }
+                }, 500);
+            });
         });
     </script>
 </body>
