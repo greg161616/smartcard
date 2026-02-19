@@ -224,7 +224,7 @@ if ($stmt) {
                 <!-- Stats Cards -->
                 <div class="row g-4">
                     <!-- Students Card -->
-                    <div class="col-xl-3 col-lg-4 col-md-6">
+                    <div class="col-xl-4 col-lg-4 col-md-6">
                         <div class="card stat-card students">
                             <div class="card-body text-center">
                                 <div class="stat-icon text-primary">
@@ -240,7 +240,7 @@ if ($stmt) {
                     </div>
 
                     <!-- Teachers Card -->
-                    <div class="col-xl-3 col-lg-4 col-md-6">
+                    <div class="col-xl-4 col-lg-4 col-md-6">
                         <div class="card stat-card teachers">
                             <div class="card-body text-center">
                                 <div class="stat-icon text-success">
@@ -254,7 +254,7 @@ if ($stmt) {
                     </div>
 
                     <!-- Sections Card -->
-                    <div class="col-xl-3 col-lg-4 col-md-6">
+                    <div class="col-xl-4 col-lg-4 col-md-6">
                         <div class="card stat-card sections">
                             <div class="card-body text-center">
                                 <div class="stat-icon text-info">
@@ -265,21 +265,6 @@ if ($stmt) {
                                 <small class="text-muted">
                                     <?php echo !empty($active_school_year) ? 'Active in ' . htmlspecialchars($active_school_year) : 'Active classes'; ?>
                                 </small>
-                            </div>
-                        </div>
-                    </div>
-
-
-                    <!-- Today's Attendance Card -->
-                    <div class="col-xl-3 col-lg-4 col-md-6">
-                        <div class="card stat-card attendance">
-                            <div class="card-body text-center">
-                                <div class="stat-icon text-danger">
-                                    <i class="fas fa-clipboard-check"></i>
-                                </div>
-                                <h2 class="stat-number text-danger"><?php echo $today_logs; ?></h2>
-                                <p class="stat-title">Today's Attendance</p>
-                                <small class="text-muted">For <?php echo date('M j, Y'); ?></small>
                             </div>
                         </div>
                     </div>

@@ -33,7 +33,7 @@ if (isset($_SESSION['user_id'])) {
     
     .header {
         height: 70px;
-        background: rgb(143, 139, 139);
+        background: rgb(255, 255, 255);
         display: flex;
         align-items: center;
         position: relative;
@@ -56,12 +56,12 @@ if (isset($_SESSION['user_id'])) {
     
     .dropdown-item:hover {
         background: rgb(232, 234, 235);
-        color: #007b8a;
+        color: #ffffff;
     }
     .admin-sidebar {
         width: var(--sidebar-width);
         min-height: 100vh;
-        background: #b3e6f7;
+        background: #ffffff;
         position: fixed;
         left: 0;
         top: 0;
@@ -100,18 +100,13 @@ if (isset($_SESSION['user_id'])) {
     }
     .admin-sidebar .nav-link:hover,
     .admin-sidebar .nav-link.active {
-        background: #e0f7fa;
-        color: #007b8a;
-        border-radius: 8px;
-    }
-    .admin-sidebar .logout-link {
-        border: #007b8a solid 2px;
-        margin-bottom: 20px;
+        background: #f0f0f0;
+        color: #222;
         border-radius: 8px;
     }
     .admin-sidebar .logout-link:hover {
-        background: #e0f7fa;
-        color: #007b8a;
+        background: #f0f0f0;
+        color: #222;
     }
     body {
         background: rgb(236, 240, 243);
@@ -119,8 +114,8 @@ if (isset($_SESSION['user_id'])) {
         transition: margin-left 0.3s ease;
     }
     a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active {
-        background: #e0f7fa !important;
-        color: #007b8a !important;
+        background: #f0f0f0 !important;
+        color: #222 !important;
         border-radius: 8px;
     }
     
@@ -156,8 +151,8 @@ if (isset($_SESSION['user_id'])) {
         font-size: 14px;
     }
     .profile-dropdown-content a:hover {
-        background-color: #e0f7fa;
-        color: #007b8a;
+        background-color: #f0f0f0;
+        color: #222;
     }
     .profile-dropdown-content hr {
         margin: 5px 0;
@@ -213,6 +208,7 @@ if (isset($_SESSION['user_id'])) {
     .sidebar-content {
         flex: 1;
         overflow-y: auto;
+        overflow-x: hidden;
         padding: 10px 0;
     }
     
@@ -222,23 +218,23 @@ if (isset($_SESSION['user_id'])) {
     }
     
     .sidebar-content::-webkit-scrollbar-track {
-        background: #a0d8ef;
+        background: #aaaaaa;
         border-radius: 10px;
     }
     
     .sidebar-content::-webkit-scrollbar-thumb {
-        background: #007b8a;
+        background: #aaaaaa;
         border-radius: 10px;
     }
     
     .sidebar-content::-webkit-scrollbar-thumb:hover {
-        background: #005f6b;
+        background: #aaaaaa;
     }
     
     /* Firefox scrollbar */
     .sidebar-content {
         scrollbar-width: thin;
-        scrollbar-color: #007b8a #a0d8ef;
+        scrollbar-color: #aaaaaa #f0f0f0;
     }
     
     /* Mobile responsive styles */
@@ -356,6 +352,16 @@ if (isset($_SESSION['user_id'])) {
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    const adminSidebar = document.getElementById('adminSidebar');
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const sidebarOverlay = document.getElementById('sidebarOverlay');
+    
+    // Ensure sidebar starts collapsed on desktop
+    if (window.innerWidth > 768) {
+        adminSidebar.classList.add('collapsed');
+        document.body.classList.add('sidebar-collapsed');
+    }
+
     // Active link highlighting
     const links = document.querySelectorAll('.admin-sidebar .nav-link');
     const currentUrl = window.location.pathname.replace(/\\/g, '/');
@@ -365,9 +371,6 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     
     // Mobile sidebar toggle functionality
-    const sidebarToggle = document.getElementById('sidebarToggle');
-    const adminSidebar = document.getElementById('adminSidebar');
-    const sidebarOverlay = document.getElementById('sidebarOverlay');
     
     function toggleSidebar() {
       adminSidebar.classList.toggle('mobile-open');

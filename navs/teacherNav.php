@@ -50,19 +50,24 @@ if (isset($_SESSION['email']) && $_SESSION['role'] === 'teacher') {
   <link href="https://fonts.googleapis.com/css2?family=Inter&display=swap" rel="stylesheet" />
   <style>
   :root {
-  --sidebar-width: 180px;
-  --mobile-breakpoint: 768px;
-}
+    --sidebar-width: 180px;
+    --sidebar-collapsed-width: 70px;
+    --mobile-breakpoint: 768px;
+    --bg-sidebar: #fcfcfc;
+    --bg-sidebar-hover: #5a6268;
+    --accent: #ffffff;
+  }
 
-.header {
+  .header {
     height: 70px;
     background: rgb(143, 139, 139);
     display: flex;
     align-items: center;
     position: relative;
     z-index: 1001;
-}
-.profile-circle {
+  }
+
+  .profile-circle {
     width: 60px;
     height: 60px;
     border-radius: 50%;
@@ -71,116 +76,21 @@ if (isset($_SESSION['email']) && $_SESSION['role'] === 'teacher') {
     cursor: pointer;
     position: relative;
     transition: transform 0.2s ease;
-}
+  }
 
-.profile-circle:hover {
+  .profile-circle:hover {
     transform: scale(1.05);
-}
+  }
 
-.profile-tooltip {
-    visibility: hidden;
-    width: 180px;
-    background-color: #007b8a;
-    color: white;
-    text-align: center;
-    border-radius: 6px;
-    padding: 8px;
-    position: absolute;
-    z-index: 1102;
-    bottom: -45px;
-    right: 0;
-    font-size: 13px;
-    font-weight: 500;
-    white-space: nowrap;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-    box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
-}
-
-.profile-tooltip::after {
-    content: "";
-    position: absolute;
-    top: -5px;
-    right: 10px;
-    border-width: 0 5px 5px 5px;
-    border-style: solid;
-    border-color: transparent transparent #007b8a transparent;
-}
-
-.profile-dropdown:hover .profile-tooltip {
-    visibility: visible;
-    opacity: 1;
-}
-.dropdown-item:hover {
-    background: rgb(232, 234, 235);
-    color: #007b8a;
-}
-.admin-sidebar {
-    width: var(--sidebar-width);
-    height: 100vh;
-    background: #b3e6f7;
-    position: fixed;
-    left: 0;
-    top: 0;
-    z-index: 1000;
-    display: flex;
-    flex-direction: column;
-    transition: transform 0.3s ease;
-}
-.admin-sidebar .logo {
-    width: 70px;
-    margin: 24px auto 8px auto;
-    display: block;
-    cursor: pointer;
-    transition: transform 0.3s ease;
-}
-.admin-sidebar .school-name {
-    font-weight: bold;
-    font-size: 20px;
-    margin-top: 8px;
-    color: rgb(0, 0, 0);
-    font-family: 'Merriweather', serif;
-    text-align: center;
-}
-.admin-sidebar .nav-link {
-    color: #222;
-    text-decoration: none;
-    font-size: 17px;
-    display: block;
-    margin-bottom: 5px;
-    padding: 10px 15px;
-    transition: all 0.3s ease;
-}
-.admin-sidebar .nav-link:hover,
-.admin-sidebar .nav-link.active {
-    background: #e0f7fa;
-    color: #007b8a;
-    border-radius: 8px;
-}
-body {
-    background: rgb(236, 240, 243);
-    margin-left: var(--sidebar-width) !important;
-    transition: margin-left 0.3s ease;
-}
-a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active {
-    background: #e0f7fa !important;
-    color: #007b8a !important;
-    border-radius: 8px;
-}
-.logo{
-    border-radius: 50%;
-    width: 70px;
-}
-
-/* Profile dropdown styles - FIXED */
-.profile-dropdown {
+  .profile-dropdown {
     position: relative;
     display: inline-block;
     height: 100%;
     display: flex;
     align-items: center;
-}
-.profile-dropdown-content {
+  }
+
+  .profile-dropdown-content {
     position: absolute;
     background-color: white;
     min-width: 160px;
@@ -188,125 +98,237 @@ a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active 
     z-index: 1100;
     border-radius: 8px;
     right: 0;
-    top: 100%; /* Changed from 70px to 100% */
+    top: 100%;
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.3s ease, visibility 0.3s ease;
     pointer-events: none;
-}
-.profile-dropdown-content a {
+  }
+
+  .profile-dropdown-content a {
     color: black;
     padding: 12px 16px;
     text-decoration: none;
     display: block;
     text-align: left;
     font-size: 14px;
-}
-.profile-dropdown-content a:hover {
+  }
+
+  .profile-dropdown-content a:hover {
     background-color: #e0f7fa;
     color: #007b8a;
-}
-.profile-dropdown-content hr {
+  }
+
+  .profile-dropdown-content hr {
     margin: 5px 0;
-}
-.profile-dropdown:hover .profile-dropdown-content {
+  }
+
+  .profile-dropdown:hover .profile-dropdown-content {
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
-}
+  }
 
-/* Bridge element to prevent gap between profile and dropdown */
-.profile-dropdown::after {
+  .profile-dropdown::after {
     content: '';
     position: absolute;
     top: 100%;
     left: 0;
     width: 100%;
-    height: 10px; /* Creates a bridge between profile and dropdown */
+    height: 10px;
     background: transparent;
-}
+  }
 
-/* Sidebar layout */
-.sidebar-header {
+  /* Sidebar styles */
+  .admin-sidebar {
+    width: var(--sidebar-width);
+    height: 100vh;
+    background: var(--bg-sidebar);
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    transition: width 0.3s ease, transform 0.3s ease;
+    overflow-x: hidden;
+    white-space: nowrap;
+    box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+  }
+
+  /* Collapsed state (desktop) */
+  .admin-sidebar.collapsed {
+    width: var(--sidebar-collapsed-width);
+  }
+
+  .admin-sidebar.collapsed .school-name,
+  .admin-sidebar.collapsed .sidebar-header div:last-child div:last-child,
+  .admin-sidebar.collapsed .nav-link span,
+  .admin-sidebar.collapsed .sidebar-footer {
+    display: none;
+  }
+
+  .admin-sidebar.collapsed .nav-link {
+    justify-content: center;
+    padding: 10px 0;
+  }
+
+  .admin-sidebar.collapsed .nav-link i {
+    margin-right: 0;
+    font-size: 24px;
+  }
+
+  .admin-sidebar.collapsed .logo {
+    width: 50px;
+    margin: 20px auto;
+  }
+
+  .admin-sidebar .logo {
+    width: 70px;
+    margin: 24px auto 8px auto;
+    display: block;
+    cursor: pointer;
+    transition: transform 0.3s ease;
+    border-radius: 50%;
+  }
+
+  .admin-sidebar .school-name {
+    font-weight: bold;
+    font-size: 20px;
+    margin-top: 8px;
+    color: rgb(0, 0, 0);
+    font-family: 'Merriweather', serif;
+    text-align: center;
+  }
+
+  .admin-sidebar .nav-link {
+    color: #222;
+    text-decoration: none;
+    font-size: 17px;
+    display: flex;
+    align-items: center;
+    margin-bottom: 5px;
+    padding: 10px 15px;
+    transition: all 0.3s ease;
+    position: relative;
+  }
+
+  .admin-sidebar .nav-link:hover,
+  .admin-sidebar .nav-link.active {
+    background: var(--bg-sidebar-hover);
+    color: var(--accent);
+    border-radius: 8px;
+  }
+
+  .admin-sidebar .nav-link i {
+    font-size: 20px;
+    margin-right: 12px;
+    min-width: 24px;
+  }
+
+  /* Tooltip for collapsed mode */
+  .admin-sidebar.collapsed .nav-link:hover::after {
+    content: attr(data-label);
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--accent);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    white-space: nowrap;
+    z-index: 1100;
+    margin-left: 10px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  }
+
+  .admin-sidebar.collapsed .nav-link:hover::before {
+    content: '';
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    border-width: 5px 5px 5px 0;
+    border-style: solid;
+    border-color: transparent var(--accent) transparent transparent;
+    margin-left: 0;
+    z-index: 1100;
+  }
+
+  body {
+    background: rgb(236, 240, 243);
+    margin-left: var(--sidebar-width);
+    transition: margin-left 0.3s ease;
+  }
+
+  body.sidebar-collapsed {
+    margin-left: var(--sidebar-collapsed-width);
+  }
+
+  /* Sidebar layout */
+  .sidebar-header {
     flex-shrink: 0;
     padding: 10px 0;
-}
+  }
 
-.sidebar-content {
+  .sidebar-content {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 10px 0;
-}
+  }
 
-.sidebar-footer {
+  .sidebar-footer {
     flex-shrink: 0;
     padding: 10px 0;
     border-top: 1px solid #a0d8ef;
-    background: #b3e6f7;
-}
+    background: var(--bg-sidebar);
+  }
 
-/* Custom scrollbar for sidebar */
-.sidebar-content::-webkit-scrollbar {
+  /* Custom scrollbar for sidebar */
+  .sidebar-content::-webkit-scrollbar {
     width: 6px;
-}
+  }
 
-.sidebar-content::-webkit-scrollbar-track {
+  .sidebar-content::-webkit-scrollbar-track {
     background: #a0d8ef;
     border-radius: 10px;
-}
+  }
 
-.sidebar-content::-webkit-scrollbar-thumb {
-    background: #007b8a;
+  .sidebar-content::-webkit-scrollbar-thumb {
+    background: var(--accent);
     border-radius: 10px;
-}
+  }
 
-.sidebar-content::-webkit-scrollbar-thumb:hover {
-    background: #005f6b;
-}
+  .sidebar-content::-webkit-scrollbar-thumb:hover {
+    background: #ffffff;
+  }
 
-/* Firefox scrollbar */
-.sidebar-content {
+  .sidebar-content {
     scrollbar-width: thin;
-    scrollbar-color: #007b8a #a0d8ef;
-}
+    scrollbar-color: var(--accent) #ffffff;
+  }
 
-/* Rotate caret icon when expanded */
-.nav-link[aria-expanded="true"] .bi-caret-down-fill {
-    transform: rotate(180deg);
-}
-.bi-caret-down-fill {
-    transition: transform 0.3s ease;
-}
-
-/* Ensure sidebar takes full height */
-html, body {
-    height: 100%;
-    margin: 0;
-    padding: 0;
-}
-
-/* Logout link styling */
-.logout-link {
-    color: #000000ff !important;
-    font-weight: 500;
-}
-.logout-link:hover {
-    color: #615b5cff !important;
-}
-
-/* Mobile toggle button */
-.mobile-toggle {
-    display: none;
+  /* Toggle button */
+  .sidebar-toggle {
     background: none;
     border: none;
     font-size: 24px;
     color: #333;
     cursor: pointer;
     margin-right: 15px;
-}
+    display: block;
+    transition: transform 0.2s;
+  }
 
-/* Overlay for mobile */
-.sidebar-overlay {
+  .sidebar-toggle:hover {
+    transform: scale(1.1);
+  }
+
+  /* Overlay for mobile */
+  .sidebar-overlay {
     display: none;
     position: fixed;
     top: 0;
@@ -315,64 +337,101 @@ html, body {
     height: 100%;
     background: rgba(0, 0, 0, 0.5);
     z-index: 999;
-}
+  }
 
-/* Mobile responsive styles */
-@media (max-width: 768px) {
+  /* Mobile responsive styles */
+  @media (max-width: 768px) {
     :root {
-        --sidebar-width: 250px;
+      --sidebar-width: 250px;
     }
     
     body {
-        margin-left: 0 !important;
+      margin-left: 0 !important;
+    }
+    
+    body.sidebar-collapsed {
+      margin-left: 0;
     }
     
     .admin-sidebar {
-        transform: translateX(-100%);
-        /* Add 70px margin-top for mobile */
-        top: 70px;
-        height: calc(100% - 70px);
+      transform: translateX(-100%);
+      top: 70px;
+      height: calc(100% - 70px);
+      width: var(--sidebar-width);
     }
     
     .admin-sidebar.mobile-open {
-        transform: translateX(0);
+      transform: translateX(0);
     }
     
-    .mobile-toggle {
-        display: block;
+    /* Override collapsed styles on mobile */
+    .admin-sidebar.collapsed {
+      width: var(--sidebar-width);
+    }
+    
+    .admin-sidebar.collapsed .school-name,
+    .admin-sidebar.collapsed .sidebar-header div:last-child div:last-child,
+    .admin-sidebar.collapsed .nav-link span,
+    .admin-sidebar.collapsed .sidebar-footer {
+      display: block;
+    }
+    
+    .admin-sidebar.collapsed .nav-link {
+      justify-content: flex-start;
+      padding: 10px 15px;
+    }
+    
+    .admin-sidebar.collapsed .nav-link i {
+      margin-right: 12px;
+      font-size: 20px;
+    }
+    
+    .admin-sidebar.collapsed .logo {
+      width: 70px;
+      margin: 24px auto 8px auto;
+    }
+    
+    /* Hide tooltips on mobile */
+    .admin-sidebar.collapsed .nav-link:hover::after,
+    .admin-sidebar.collapsed .nav-link:hover::before {
+      display: none;
+    }
+    
+    .sidebar-toggle {
+      display: block;
     }
     
     .sidebar-overlay.active {
-        display: block;
+      display: block;
     }
     
     .header {
-        padding-left: 15px;
-        padding-right: 15px;
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        z-index: 1001;
+      padding-left: 15px;
+      padding-right: 15px;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1001;
     }
     
     .profile-dropdown-content {
-        right: 10px;
-        top: 100%;
+      right: 10px;
+      top: 100%;
     }
     
-    /* Adjust the main content to account for fixed header */
     body {
-        padding-top: 70px;
+      padding-top: 70px;
     }
-}
+  }
   </style>
 </head>
 <body>
 
 <nav class="header navbar navbar-expand navbar-light bg-light px-4">
-  <button class="mobile-toggle" id="sidebarToggle">
-    <i class="bi bi-list"></i>
+  <!-- Toggle button with dynamic icon -->
+  <button class="sidebar-toggle" id="sidebarToggle">
+    <i class="bi bi-list" id="toggleIcon"></i>
   </button>
   <div class="ms-auto">
     <div class="profile-dropdown" id="profileDropdown">
@@ -396,49 +455,61 @@ html, body {
         </div>
         <div>
             <div class="school-name">SMARTCARD</div>
-            <div style="font-size:13px;color:#555;text-align:center; padding: 0 10px;">Student Academic Performance Management System</div>
         </div>
     </div>
 
     <!-- Scrollable Sidebar Content -->
     <div class="sidebar-content">
         <nav class="nav flex-column">
-            <a class="nav-link" href="../teacher/tdashboard.php" style="text-decoration:none; font-size: 14px;">
-                <i class="bi bi-speedometer2" style="font-size:20px;margin-right:12px;"></i> Dashboard
+            <a class="nav-link" href="../teacher/tdashboard.php" data-label="Dashboard">
+                <i class="bi bi-speedometer2"></i><span> Dashboard</span>
             </a>
-            <a class="nav-link" href="../teacher/list.php" style="font-size: 14px; text-decoration:none;">
-                <i class="bi bi-clipboard" style="font-size:20px;margin-right:12px;"></i> Student list
+            <a class="nav-link" href="../teacher/list.php" data-label="Student list">
+                <i class="bi bi-clipboard"></i><span> Student list</span>
             </a>
-            <a class="nav-link" href="../teacher/select_class.php" style="font-size: 14px; text-decoration:none;">
-                <i class="bi bi-calendar-check" style="font-size:20px;margin-right:12px;"></i> Attendance
+            <a class="nav-link" href="../teacher/select_class.php" data-label="Attendance">
+                <i class="bi bi-calendar-check"></i><span> Attendance</span>
             </a>
-            <a class="nav-link" href="../teacher/grading_sheet.php" style="font-size: 14px; text-decoration:none;">
-                <i class="bi bi-book" style="font-size:20px;margin-right:12px;"></i> Grades
+            <a class="nav-link" href="../teacher/grading_sheet.php" data-label="Grades">
+                <i class="bi bi-book"></i><span> Grades</span>
             </a>
-            <a class="nav-link" href="../teacher/values.php" style="font-size: 14px; text-decoration:none;">
-                <i class="bi bi-card-list" style="font-size:20px;margin-right:12px;"></i> Values
+            <a class="nav-link" href="../teacher/values.php" data-label="Values">
+                <i class="bi bi-card-list"></i><span> Values</span>
             </a>
-            <a class="nav-link" href="../teacher/record.php" style="font-size: 14px; text-decoration:none;">
-                <i class="bi bi-folder" style="font-size:20px;margin-right:12px;"></i> Card
+            <a class="nav-link" href="../teacher/record.php" data-label="Card">
+                <i class="bi bi-folder"></i><span> Card</span>
             </a>
-            <a class="nav-link" href="../teacher/achievement.php" style="font-size: 14px; text-decoration:none;">
-                <i class="bi bi-award" style="font-size:20px;margin-right:12px;"></i> Achievements
+            <a class="nav-link" href="../teacher/achievement.php" data-label="Achievements">
+                <i class="bi bi-award"></i><span> Achievements</span>
             </a>
-            <a class="nav-link" href="../teacher/announcement.php" style="font-size: 14px; text-decoration:none;">
-                <i class="bi bi-bell" style="font-size:20px;margin-right:12px;"></i> Announcements
+            <a class="nav-link" href="../teacher/announcement.php" data-label="Announcements">
+                <i class="bi bi-bell"></i><span><small> Announcements</small></span>
             </a>
         </nav>
     </div>
 
-    <!-- Sidebar Footer with Logout -->
+    <!-- Sidebar Footer (hidden when collapsed) -->
     <div class="sidebar-footer">
         <div class="text-center">
+            <!-- Optional footer content -->
         </div>
     </div>
 </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    const sidebar = document.getElementById('adminSidebar');
+    const toggleBtn = document.getElementById('sidebarToggle');
+    const toggleIcon = document.getElementById('toggleIcon');
+    const overlay = document.getElementById('sidebarOverlay');
+    const body = document.body;
+
+    // Ensure sidebar starts collapsed on desktop
+    if (window.innerWidth > 768) {
+        sidebar.classList.add('collapsed');
+        body.classList.add('sidebar-collapsed');
+    }
+
     // Active link highlighting
     const links = document.querySelectorAll('.admin-sidebar .nav-link');
     const currentUrl = window.location.pathname.replace(/\\/g, '/');
@@ -446,48 +517,90 @@ document.addEventListener('DOMContentLoaded', function () {
         const linkPath = link.pathname.replace(/\\/g, '/');
         link.classList.toggle('active', currentUrl.endsWith(linkPath));
     });
-    
-    // Mobile sidebar toggle functionality
-    const sidebarToggle = document.getElementById('sidebarToggle');
-    const adminSidebar = document.getElementById('adminSidebar');
-    const sidebarOverlay = document.getElementById('sidebarOverlay');
-    
-    function toggleSidebar() {
-      adminSidebar.classList.toggle('mobile-open');
-      sidebarOverlay.classList.toggle('active');
-    }
-    
-    sidebarToggle.addEventListener('click', toggleSidebar);
-    sidebarOverlay.addEventListener('click', toggleSidebar);
-    
-    // Profile dropdown functionality - hover behavior
-    const profileDropdown = document.getElementById('profileDropdown');
 
-    profileDropdown.addEventListener('mouseenter', function() {
-      this.classList.add('active');
-    });
-    
-    profileDropdown.addEventListener('mouseleave', function() {
-      this.classList.remove('active');
-    });
-    
-    // Close sidebar when clicking on a link (for mobile)
-    if (window.innerWidth <= 768) {
-      const sidebarLinks = document.querySelectorAll('.admin-sidebar .nav-link');
-      sidebarLinks.forEach(link => {
-        link.addEventListener('click', function() {
-          adminSidebar.classList.remove('mobile-open');
-          sidebarOverlay.classList.remove('active');
-        });
-      });
+    // Function to check if we are on mobile
+    function isMobile() {
+        return window.innerWidth <= 768;
     }
-    
+
+    // Update toggle icon based on sidebar state and screen size
+    function updateToggleIcon() {
+        if (isMobile()) {
+            toggleIcon.className = 'bi bi-list';
+        } else {
+            // Desktop: if collapsed, show right arrow (to expand), else show left arrow (to collapse)
+            if (sidebar.classList.contains('collapsed')) {
+                toggleIcon.className = 'bi bi-list';
+            } else {
+                toggleIcon.className = 'bi bi-x';
+            }
+        }
+    }
+
+    // Toggle sidebar based on screen size
+    function toggleSidebar() {
+        if (isMobile()) {
+            // Mobile: slide sidebar in/out
+            sidebar.classList.toggle('mobile-open');
+            overlay.classList.toggle('active');
+            // On mobile, icon stays as list
+            toggleIcon.className = 'bi bi-list';
+        } else {
+            // Desktop: collapse/expand
+            sidebar.classList.toggle('collapsed');
+            body.classList.toggle('sidebar-collapsed');
+            updateToggleIcon();
+        }
+    }
+
+    // Event listener for toggle button
+    toggleBtn.addEventListener('click', toggleSidebar);
+
+    // Close sidebar when clicking overlay (mobile)
+    overlay.addEventListener('click', function() {
+        sidebar.classList.remove('mobile-open');
+        overlay.classList.remove('active');
+    });
+
+    // Close sidebar on link click (mobile only)
+    if (isMobile()) {
+        links.forEach(link => {
+            link.addEventListener('click', function() {
+                sidebar.classList.remove('mobile-open');
+                overlay.classList.remove('active');
+            });
+        });
+    }
+
     // Handle window resize
     window.addEventListener('resize', function() {
-      if (window.innerWidth > 768) {
-        adminSidebar.classList.remove('mobile-open');
-        sidebarOverlay.classList.remove('active');
-      }
+        if (isMobile()) {
+            // On mobile, remove collapsed class and adjust body margin
+            sidebar.classList.remove('collapsed');
+            body.classList.remove('sidebar-collapsed');
+            // Close mobile menu if open (optional, but keeps UI clean)
+            sidebar.classList.remove('mobile-open');
+            overlay.classList.remove('active');
+            toggleIcon.className = 'bi bi-list';
+        } else {
+            // On desktop, remove mobile-open class if present
+            sidebar.classList.remove('mobile-open');
+            overlay.classList.remove('active');
+            // Ensure icon matches current collapsed state
+            updateToggleIcon();
+        }
+    });
+
+    // Initial icon update
+    updateToggleIcon();
+
+    // Profile dropdown hover behavior
+    const profileDropdown = document.getElementById('profileDropdown');
+    profileDropdown.addEventListener('mouseenter', function() {
+        this.classList.add('active');
+    });
+    profileDropdown.addEventListener('mouseleave', function() {
+        this.classList.remove('active');
     });
 });
 </script>

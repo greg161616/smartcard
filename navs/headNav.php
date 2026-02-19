@@ -40,7 +40,7 @@ $picStmt->close();
 
 .header {
     height: 70px;
-    background:rgb(143, 139, 139);
+    background:rgb(255, 255, 255);
     display: flex;
     align-items: center;
     position: fixed;
@@ -63,12 +63,12 @@ $picStmt->close();
 }
 .dropdown-item:hover {
     background: rgb(232, 234, 235);
-    color: #007b8a;
+    color: #ffffff;
 }
 .admin-sidebar {
     width: var(--sidebar-width);
     height: 100vh;
-    background: #b3e6f7;
+    background: #ffffff;
     position: fixed;
     left: 0;
     top: 0;
@@ -100,8 +100,8 @@ $picStmt->close();
 }
 .admin-sidebar .nav-link:hover,
 .admin-sidebar .nav-link.active {
-    background: #e0f7fa;
-    color: #007b8a;
+    background: #f0f0f0;
+    color: #222;
     border-radius: 8px;
 }
 body {
@@ -111,8 +111,8 @@ body {
     padding-top: 70px;
 }
 a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active {
-    background: #e0f7fa !important;
-    color: #007b8a !important;
+    background: #8b8b8b !important;
+    color: #949494 !important;
     border-radius: 8px;
 }
 
@@ -148,8 +148,8 @@ a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active 
     font-size: 14px;
 }
 .profile-dropdown-content a:hover {
-    background-color: #e0f7fa;
-    color: #007b8a;
+    background-color: #f0f0f0;
+    color: #222;
 }
 .profile-dropdown-content hr {
     margin: 5px 0;
@@ -177,6 +177,7 @@ a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active 
 .sidebar-content {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     padding-bottom: 60px;
 }
 
@@ -185,10 +186,10 @@ a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active 
     bottom: 0;
     left: 0;
     width: var(--sidebar-width);
-    background: #b3e6f7;
+    background: #6c757d;
     padding: 10px 0;
     text-align: center;
-    border-top: 1px solid #a0d8ef;
+    border-top: 1px solid #8b8b8b;
     transition: width 0.3s ease;
 }
 
@@ -198,17 +199,17 @@ a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active 
 }
 
 .sidebar-content::-webkit-scrollbar-track {
-    background: #a0d8ef;
+    background: #8b8b8b;
     border-radius: 10px;
 }
 
 .sidebar-content::-webkit-scrollbar-thumb {
-    background: #007b8a;
+    background: #8b8b8b;
     border-radius: 10px;
 }
 
 .sidebar-content::-webkit-scrollbar-thumb:hover {
-    background: #005f6b;
+    background: #8b8b8b;
 }
 
 /* Rotate caret icon when expanded */
