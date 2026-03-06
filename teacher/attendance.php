@@ -30,10 +30,9 @@ if (!$teacherID) {
 // 3) Read date & optional sectionID
 $date      = $_REQUEST['date']      ?? date('Y-m-d');
 $sectionID = isset($_REQUEST['sectionID']) ? intval($_REQUEST['sectionID']) : null;
-$viewMode  = isset($_REQUEST['view']) && $_REQUEST['view'] === 'true';
 $schoolYear = $_REQUEST['school_year'] ?? '';
 
-// 4) FIXED: Fetch all sections this teacher teaches using assigned_subject table
+// 4) Fetch all sections this teacher teaches
 $stmt = $conn->prepare("
     SELECT DISTINCT
         sec.SectionID,
@@ -72,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['attendance'])) {
     $saveDate   = $_POST['date'];
     $saveSectID = intval($_POST['sectionID']);
     
-    // Validate that the section belongs to this teacher
+    // Validate section
     $validSection = false;
     foreach ($sections as $sec) {
         if ($sec['SectionID'] == $saveSectID) {
@@ -99,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['attendance'])) {
         $p1->close();
 
         if ($studentID) {
-            // Check if student is enrolled in the selected section
+            // Check enrollment
             $pCheck = $conn->prepare("
                 SELECT COUNT(*) 
                 FROM section_enrollment 
@@ -112,21 +111,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['attendance'])) {
             $pCheck->close();
             
             if ($enrolled) {
-                // now include sectionID
                 $p2 = $conn->prepare("
                     REPLACE INTO attendance
                       (StudentID, Date, Status, TeacherID, SectionID)
                     VALUES 
                       (?,       ?,    ?,      ?,         ?)
                 ");
-                $p2->bind_param(
-                  "issii",
-                  $studentID,
-                  $saveDate,
-                  $status,
-                  $teacherID,
-                  $saveSectID
-                );
+                $p2->bind_param("issii", $studentID, $saveDate, $status, $teacherID, $saveSectID);
                 $p2->execute();
                 $p2->close();
             }
@@ -139,29 +130,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['attendance'])) {
     exit;
 }
 
-// 7) If viewing attendance for a specific section, get the students
+// 7) Prepare data for both views
+$attendanceStatus = [];
 $students = [];
-if ($selected && $viewMode) {
-    $stmt = $conn->prepare("
-        SELECT 
-            s.StudentID,
-            s.LRN,
-            CONCAT(s.FirstName, ' ', COALESCE(s.MiddleName, ''), ' ', s.LastName) as StudentName,
-            s.Sex,
-            a.Status
-        FROM student s
-        JOIN section_enrollment se ON s.StudentID = se.StudentID AND se.status = 'active'
-        LEFT JOIN attendance a ON s.StudentID = a.StudentID AND a.Date = ? AND a.SectionID = ?
-        WHERE se.SectionID = ?
-        ORDER BY s.Sex DESC, s.LastName, s.FirstName
+$attendanceRecords = []; // for main display
+
+if ($selected) {
+    // Fetch existing statuses for this section/date
+    $a1 = $conn->prepare("
+        SELECT s.LRN, a.Status
+          FROM attendance a
+          JOIN student s ON a.StudentID = s.StudentID
+         WHERE a.Date      = ?
+           AND a.TeacherID = ?
+           AND a.SectionID = ?
     ");
-    $stmt->bind_param("sii", $date, $sectionID, $sectionID);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    while ($r = $result->fetch_assoc()) {
-        $students[] = $r;
+    $a1->bind_param("sii", $date, $teacherID, $sectionID);
+    $a1->execute();
+    $res = $a1->get_result();
+    while ($r = $res->fetch_assoc()) {
+        $attendanceStatus[$r['LRN']] = $r['Status'];
     }
-    $stmt->close();
+    $a1->close();
+
+    // Fetch students in this section (for the modal form)
+    $s1 = $conn->prepare("
+        SELECT st.LRN, st.FirstName, st.MiddleName, st.LastName
+          FROM section_enrollment se
+          JOIN student st ON se.StudentID = st.StudentID
+         WHERE se.SectionID = ? AND se.status = 'active'
+         ORDER BY st.LastName, st.FirstName
+    ");
+    $s1->bind_param("i", $sectionID);
+    $s1->execute();
+    $res2 = $s1->get_result();
+    $students = $res2->fetch_all(MYSQLI_ASSOC);
+    $s1->close();
+
+    // Fetch attendance records for main display (view mode)
+    $viewStmt = $conn->prepare("
+        SELECT 
+            s.LRN, 
+            s.FirstName, 
+            s.MiddleName, 
+            s.LastName,
+            a.Status,
+            a.Date
+        FROM student s
+        LEFT JOIN attendance a ON s.StudentID = a.StudentID 
+            AND a.Date = ? 
+            AND a.SectionID = ?
+            AND a.TeacherID = ?
+        JOIN section_enrollment se ON s.StudentID = se.StudentID 
+            AND se.SectionID = ?
+        WHERE se.status = 'active'
+        ORDER BY s.LastName, s.FirstName
+    ");
+    $viewStmt->bind_param("siii", $date, $sectionID, $teacherID, $sectionID);
+    $viewStmt->execute();
+    $viewResult = $viewStmt->get_result();
+    $attendanceRecords = $viewResult->fetch_all(MYSQLI_ASSOC);
+    $viewStmt->close();
 }
 ?>
 <!DOCTYPE html>
@@ -173,6 +202,10 @@ if ($selected && $viewMode) {
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <!-- DataTables CSS -->
+  <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css">
+  <!-- SweetAlert2 CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
   <style>
     body { background: #f0f2f5; }
     .card-container { max-width: 900px; margin: 60px auto; }
@@ -183,23 +216,12 @@ if ($selected && $viewMode) {
     .badge-present { background-color: #198754; }
     .badge-absent { background-color: #dc3545; }
     .badge-excused { background-color: #6c757d; }
-    .view-mode-table th, .view-mode-table td {
-      padding: 0.5rem;
-      font-size: 0.9rem;
-    }
-    .nav-tabs .nav-link.active {
-      font-weight: 600;
-    }
-    .back-button {
-      margin-right: 15px;
-    }
-    
-    /* New attendance icon styles */
+    /* Attendance icon styles (for modal) */
     .attendance-icon {
       width: 36px;
       height: 36px;
       border-radius: 50%;
-      display: flex;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
@@ -225,14 +247,6 @@ if ($selected && $viewMode) {
       color: #374151;
       border: 2px solid #9ca3af;
     }
-    .attendance-header {
-      background-color: #b4b8b6ff;
-      padding: 1rem;
-      border-radius: 10px 10px 0 0;
-    }
-    .student-row:hover {
-      background-color: #f8f9fa;
-    }
     .status-indicator {
       display: inline-block;
       width: 10px;
@@ -248,9 +262,46 @@ if ($selected && $viewMode) {
       border: none;
       box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
-    .summary-icon {
-      font-size: 1.5rem;
-      margin-right: 10px;
+    /* DataTable scrollable card */
+    .dataTables_wrapper {
+      margin-bottom: 1rem;
+    }
+    /* Remove default DataTable controls except search */
+    .dataTables_paginate,
+    .dataTables_info,
+    .dataTables_length {
+      display: none !important;
+    }
+    .dataTables_filter {
+      margin-bottom: 1rem;
+      text-align: left;
+    }
+    .dataTables_filter label {
+      font-weight: 500;
+    }
+    .dataTables_filter input {
+      margin-left: 0.5rem;
+      border: 1px solid #ced4da;
+      border-radius: 0.375rem;
+      padding: 0.375rem 0.75rem;
+      width: 250px;
+      max-width: 100%;
+    }
+    .dataTables_scrollBody {
+      max-height: 400px !important;
+      overflow-y: auto !important;
+      overflow-x: auto !important;
+    }
+    /* Modal body scroll */
+    .modal-body {
+      max-height: 70vh;
+      overflow-y: auto;
+    }
+    /* Date picker styling */
+    .date-picker-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
   </style>
 </head>
@@ -261,14 +312,9 @@ if ($selected && $viewMode) {
       <!-- == STEP 1: Section Selection == -->
       <div class="card shadow-sm">
         <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-          <h5 class="mb-0">Select Class to Take Attendance</h5>
+          <h5 class="mb-0">Select Class to View/Take Attendance</h5>
           <form method="get" class="d-flex">
-            <input 
-              type="date" 
-              name="date" 
-              value="<?= htmlspecialchars($date) ?>" 
-              class="form-control form-control-sm me-2" 
-              required>
+            <input type="date" name="date" value="<?= htmlspecialchars($date) ?>" class="form-control form-control-sm me-2" required>
             <button type="submit" class="btn btn-light btn-sm">
               <i class="bi bi-arrow-clockwise"></i>
             </button>
@@ -276,9 +322,7 @@ if ($selected && $viewMode) {
         </div>
         <div class="card-body">
           <?php if (empty($sections)): ?>
-            <div class="alert alert-warning mb-0">
-              You don't have any classes assigned.
-            </div>
+            <div class="alert alert-warning mb-0">You don't have any classes assigned.</div>
           <?php else: ?>
             <div class="row g-4">
               <?php foreach ($sections as $sec): ?>
@@ -289,20 +333,12 @@ if ($selected && $viewMode) {
                         Grade <?= htmlspecialchars($sec['GradeLevel']) ?> -
                         <?= htmlspecialchars($sec['SectionName']) ?>
                       </h5>
-                      <p class="card-text mt-auto">
-                        Date: <?= htmlspecialchars($date) ?>
-                      </p>
+                      <p class="card-text mt-auto">Date: <?= htmlspecialchars($date) ?></p>
                     </div>
                     <div class="card-footer bg-transparent d-flex justify-content-between">
-                      <a 
-                        href="?sectionID=<?= urlencode($sec['SectionID']) ?>&date=<?= urlencode($date) ?>&school_year=<?= urlencode($schoolYear) ?>"
-                        class="btn btn-success btn-sm">
-                        <i class="bi bi-check-circle"></i> Take Attendance
-                      </a>
-                      <a 
-                        href="?sectionID=<?= urlencode($sec['SectionID']) ?>&date=<?= urlencode($date) ?>&view=true&school_year=<?= urlencode($schoolYear) ?>"
-                        class="btn btn-info btn-sm">
-                        <i class="bi bi-eye"></i> View
+                      <a href="?sectionID=<?= urlencode($sec['SectionID']) ?>&date=<?= urlencode($date) ?>&school_year=<?= urlencode($schoolYear) ?>"
+                         class="btn btn-success btn-sm">
+                        <i class="bi bi-check-circle"></i> View / Take Attendance
                       </a>
                     </div>
                   </div>
@@ -315,452 +351,279 @@ if ($selected && $viewMode) {
 
     <?php else: ?>
       <!-- Back Button -->
-      <div class="mb-3 justify-content-end d-flex me-4">
-        <a href="select_class.php?date=<?= urlencode($date) ?>&school_year=<?= urlencode($schoolYear) ?>" class="text-secondary" title="Back to Class Selection">
-          <i class="fas fa-times" style="font-size: 26px;"></i>
+      <div class="mb-3 d-flex justify-content-between align-items-center">
+        <a href="select_class.php?date=<?= urlencode($date) ?>&school_year=<?= urlencode($schoolYear) ?>" class="btn btn-outline-secondary">
+          <i class="fas fa-arrow-left"></i> Back to Classes
         </a>
+        <div class="date-picker-container">
+          <form method="get" class="d-inline-block">
+            <input type="hidden" name="sectionID" value="<?= $sectionID ?>">
+            <input type="hidden" name="school_year" value="<?= htmlspecialchars($schoolYear) ?>">
+            <input type="date" name="date" value="<?= htmlspecialchars($date) ?>" class="form-control form-control-sm" onchange="this.form.submit()">
+          </form>
+          <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#takeAttendanceModal">
+            <i class="bi bi-pencil-square"></i> Take Attendance
+          </button>
+        </div>
       </div>
 
-      <!-- Navigation tabs -->
-      <ul class="nav nav-tabs mb-3">
-        <li class="nav-item">
-          <a class="nav-link <?= !$viewMode ? 'active' : '' ?>" 
-             href="?sectionID=<?= $sectionID ?>&date=<?= $date ?>&school_year=<?= urlencode($schoolYear) ?>">
-            <i class="bi bi-pencil-square"></i> Take Attendance
-          </a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link <?= $viewMode ? 'active' : '' ?>" 
-             href="?sectionID=<?= $sectionID ?>&date=<?= $date ?>&view=true&school_year=<?= urlencode($schoolYear) ?>">
-            <i class="bi bi-eye"></i> View Attendance
-          </a>
-        </li>
-      </ul>
-
-      <h2>
-        <?= $viewMode ? 'Viewing' : 'Taking' ?> Attendance for 
-        Grade <?= htmlspecialchars($selected['GradeLevel']) ?> -
-        <?= htmlspecialchars($selected['SectionName']) ?>
-        <small class="text-muted">(<?= htmlspecialchars($date) ?>)</small>
-      </h2>
-
-      <?php if (!$viewMode): ?>
-        <!-- == STEP 2: Attendance Form with Clickable Icons == -->
-        <?php
-          // Fetch existing statuses, now filtering by sectionID
-          $attendanceStatus = [];
-          $a1 = $conn->prepare("
-            SELECT s.LRN, a.Status
-              FROM attendance a
-              JOIN student s ON a.StudentID = s.StudentID
-             WHERE a.Date      = ?
-               AND a.TeacherID = ?
-               AND a.SectionID = ?
-          ");
-          $a1->bind_param("sii", $date, $teacherID, $sectionID);
-          $a1->execute();
-          $res = $a1->get_result();
-          while ($r = $res->fetch_assoc()) {
-              $attendanceStatus[$r['LRN']] = $r['Status'];
-          }
-          $a1->close();
-
-          // Fetch students in this section
-          $s1 = $conn->prepare("
-            SELECT st.LRN, st.FirstName, st.MiddleName, st.LastName
-              FROM section_enrollment se
-              JOIN student st ON se.StudentID = st.StudentID
-             WHERE se.SectionID = ? AND se.status = 'active'
-             ORDER BY st.LastName, st.FirstName
-          ");
-          $s1->bind_param("i", $sectionID);
-          $s1->execute();
-          $res2 = $s1->get_result();
-          $students = $res2->fetch_all(MYSQLI_ASSOC);
-          $s1->close();
-        ?>
-
-        <!-- Status Legend -->
-        <div class="row mb-3">
-          <div class="col-md-12">
-            <div class="card summary-card">
-              <div class="card-body">
-                <div class="row text-center">
-                  <div class="col-md-4">
-                    <span class="status-indicator indicator-present"></span>
-                    <strong>Present</strong>
-                  </div>
-                  <div class="col-md-4">
-                    <span class="status-indicator indicator-absent"></span>
-                    <strong>Absent</strong>
-                  </div>
-                  <div class="col-md-4">
-                    <span class="status-indicator indicator-excused"></span>
-                    <strong>Excused</strong>
-                  </div>
+      <!-- Status Legend -->
+      <div class="row mb-3">
+        <div class="col-md-12">
+          <div class="card summary-card">
+            <div class="card-body">
+              <h5 class="card-title">
+                Attendance for Grade <?= htmlspecialchars($selected['GradeLevel']) ?> - <?= htmlspecialchars($selected['SectionName']) ?>
+                <small class="text-muted">(<?= htmlspecialchars($date) ?>)</small>
+              </h5>
+              <div class="row text-center mt-3">
+                <div class="col-md-4">
+                  <span class="status-indicator indicator-present"></span> <strong>Present</strong>
                 </div>
-                <div class="text-center mt-2 text-muted">
-                  <small><i>Click the icons to cycle through statuses</i></small>
+                <div class="col-md-4">
+                  <span class="status-indicator indicator-absent"></span> <strong>Absent</strong>
+                </div>
+                <div class="col-md-4">
+                  <span class="status-indicator indicator-excused"></span> <strong>Excused</strong>
                 </div>
               </div>
             </div>
           </div>
         </div>
+      </div>
 
-        <form id="attendance-form" class="mt-3">
-          <!-- include both date & sectionID -->
-          <input type="hidden" name="date"      value="<?= htmlspecialchars($date) ?>">
-          <input type="hidden" name="sectionID" value="<?= htmlspecialchars($sectionID) ?>">
-          <?php if (empty($students)): ?>
-            <div class="alert alert-warning">No students enrolled in this section.</div>
+      <!-- Main View: Attendance Records Table (Read‑Only) -->
+      <div class="card">
+        <div class="card-body p-0">
+          <?php if (empty($attendanceRecords)): ?>
+            <div class="alert alert-info m-3">No attendance records found for this date.</div>
           <?php else: ?>
-            <div class="attendance-header mb-3">
-              <div class="row">
-                <div class="col-md-2"><strong>LRN</strong></div>
-                <div class="col-md-6"><strong>Student Name</strong></div>
-                <div class="col-md-4"><strong>Attendance Status</strong></div>
-              </div>
+            <table id="attendance-view-table" class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>LRN</th>
+                  <th>Student Name</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php foreach ($attendanceRecords as $record):
+                  $status = $record['Status'];
+                  $name = trim("{$record['LastName']}, {$record['FirstName']} " . ($record['MiddleName'] ? "{$record['MiddleName']}" : ""));
+                  if ($status === 'present') {
+                    $badgeClass = 'badge-present';
+                    $statusText = '<i class="fas fa-check-circle me-1"></i> Present';
+                  } elseif ($status === 'absent') {
+                    $badgeClass = 'badge-absent';
+                    $statusText = '<i class="fas fa-times-circle me-1"></i> Absent';
+                  } elseif ($status === 'excused') {
+                    $badgeClass = 'badge-excused';
+                    $statusText = '<i class="fas fa-minus-circle me-1"></i> Excused';
+                  } else {
+                    $badgeClass = 'bg-secondary';
+                    $statusText = '<i class="fas fa-question-circle me-1"></i> No Record';
+                  }
+                ?>
+                  <tr>
+                    <td><?= htmlspecialchars($record['LRN']) ?></td>
+                    <td><?= htmlspecialchars($name) ?></td>
+                    <td><span class="badge attendance-badge <?= $badgeClass ?>"><?= $statusText ?></span></td>
+                  </tr>
+                <?php endforeach; ?>
+              </tbody>
+            </table>
+          <?php endif; ?>
+        </div>
+      </div>
+
+      <!-- Modal: Take Attendance (Interactive Form) -->
+      <div class="modal fade" id="takeAttendanceModal" tabindex="-1" aria-labelledby="takeAttendanceModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="takeAttendanceModalLabel">
+                Take Attendance – Grade <?= htmlspecialchars($selected['GradeLevel']) ?> - <?= htmlspecialchars($selected['SectionName']) ?>
+                (<?= htmlspecialchars($date) ?>)
+              </h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            
-            <div class="list-group" id="student-list">
-              <?php foreach ($students as $index => $st): 
-                $lrn    = $st['LRN'];
-                $name   = trim("{$st['LastName']}, {$st['FirstName']} " . ($st['MiddleName'] ? "{$st['MiddleName']}" : ""));
-                $status = $attendanceStatus[$lrn] ?? 'present';
-                
-                // Determine initial icon and class
-                $statusClasses = [
-                  'present' => 'status-present',
-                  'absent'  => 'status-absent',
-                  'excused' => 'status-excused'
-                ];
-                
-                $statusIcons = [
-                  'present' => '<i class="fas fa-check"></i>',
-                  'absent'  => '<i class="fas fa-times"></i>',
-                  'excused' => '<i class="fas fa-minus"></i>'
-                ];
-              ?>
-                <div class="list-group-item list-group-item-action student-row" data-index="<?= $index ?>">
-                  <div class="row align-items-center">
-                    <div class="col-md-2">
-                      <span class="fw-bold"><?= htmlspecialchars($lrn) ?></span>
-                    </div>
-                    <div class="col-md-6">
-                      <?= htmlspecialchars($name) ?>
-                    </div>
-                    <div class="col-md-4">
-                      <div class="d-flex align-items-center">
-                        <input type="hidden" 
-                               name="attendance[<?= htmlspecialchars($lrn) ?>]" 
-                               value="<?= htmlspecialchars($status) ?>"
-                               id="status-input-<?= $lrn ?>">
+            <div class="modal-body">
+              <form id="attendance-form">
+                <input type="hidden" name="date" value="<?= htmlspecialchars($date) ?>">
+                <input type="hidden" name="sectionID" value="<?= htmlspecialchars($sectionID) ?>">
+                <?php if (empty($students)): ?>
+                  <div class="alert alert-warning">No students enrolled in this section.</div>
+                <?php else: ?>
+                  <table id="attendance-modal-table" class="table table-hover align-middle">
+                    <thead class="table-light">
+                      <tr>
+                        <th>LRN</th>
+                        <th>Student Name</th>
+                        <th>Attendance Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <?php foreach ($students as $st):
+                        $lrn    = $st['LRN'];
+                        $name   = trim("{$st['LastName']}, {$st['FirstName']} " . ($st['MiddleName'] ? "{$st['MiddleName']}" : ""));
+                        $status = $attendanceStatus[$lrn] ?? 'present';
                         
-                        <div class="attendance-icon <?= $statusClasses[$status] ?>"
-                             data-lrn="<?= htmlspecialchars($lrn) ?>"
-                             data-status="<?= htmlspecialchars($status) ?>"
-                             onclick="cycleStatus(this)">
-                          <?= $statusIcons[$status] ?>
-                        </div>
-                        
-                        <div class="ms-3 status-text" id="status-text-<?= $lrn ?>">
-                          <span class="badge 
-                            <?php 
-                              if ($status == 'present') echo 'bg-success';
-                              elseif ($status == 'absent') echo 'bg-danger';
-                              else echo 'bg-secondary';
-                            ?>">
-                            <?= ucfirst($status) ?>
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              <?php endforeach; ?>
+                        $statusClasses = [
+                          'present' => 'status-present',
+                          'absent'  => 'status-absent',
+                          'excused' => 'status-excused'
+                        ];
+                        $statusIcons = [
+                          'present' => '<i class="fas fa-check"></i>',
+                          'absent'  => '<i class="fas fa-times"></i>',
+                          'excused' => '<i class="fas fa-minus"></i>'
+                        ];
+                      ?>
+                        <tr>
+                          <td><?= htmlspecialchars($lrn) ?></td>
+                          <td><?= htmlspecialchars($name) ?></td>
+                          <td>
+                            <div class="d-flex align-items-center">
+                              <input type="hidden" name="attendance[<?= htmlspecialchars($lrn) ?>]" value="<?= htmlspecialchars($status) ?>" id="status-input-<?= $lrn ?>">
+                              <div class="attendance-icon <?= $statusClasses[$status] ?>"
+                                   data-lrn="<?= htmlspecialchars($lrn) ?>"
+                                   data-status="<?= htmlspecialchars($status) ?>"
+                                   onclick="cycleStatus(this)">
+                                <?= $statusIcons[$status] ?>
+                              </div>
+                              <div class="ms-3 status-text" id="status-text-<?= $lrn ?>">
+                                <span class="badge <?= ($status == 'present') ? 'bg-success' : (($status == 'absent') ? 'bg-danger' : 'bg-secondary') ?>">
+                                  <?= ucfirst($status) ?>
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      <?php endforeach; ?>
+                    </tbody>
+                  </table>
+                <?php endif; ?>
+              </form>
             </div>
-            
-            <!-- Summary Stats -->
-            <div class="mt-4 mb-4">
-              <div class="row text-center">
-                <div class="col-md-4">
-                  <div class="card bg-light">
-                    <div class="card-body">
-                      <i class="fas fa-check-circle text-success summary-icon"></i>
-                      <h5 id="present-count"><?= count(array_filter($attendanceStatus, fn($s) => $s == 'present')) + (count($students) - count($attendanceStatus)) ?></h5>
-                      <p class="text-muted mb-0">Present</p>
-                    </div>
-                  </div>
-                </div>
-                <div class="col-md-4">
-                  <div class="card bg-light">
-                    <div class="card-body">
-                      <i class="fas fa-times-circle text-danger summary-icon"></i>
-                      <h5 id="absent-count"><?= count(array_filter($attendanceStatus, fn($s) => $s == 'absent')) ?></h5>
-                      <p class="text-muted mb-0">Absent</p>
-                    </div>
-                  </div>
-                </div>
-                <div class="col-md-4">
-                  <div class="card bg-light">
-                    <div class="card-body">
-                      <i class="fas fa-minus-circle text-secondary summary-icon"></i>
-                      <h5 id="excused-count"><?= count(array_filter($attendanceStatus, fn($s) => $s == 'excused')) ?></h5>
-                      <p class="text-muted mb-0">Excused</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <div class="d-flex justify-content-end py-2 mt-3">
-              <a href="select_class.php?date=<?= urlencode($date) ?>&school_year=<?= urlencode($schoolYear) ?>" class="btn btn-secondary me-2 mb-5">
-                <i class="bi bi-arrow-left"></i> Back
-              </a>
-              <button type="button" id="save-attendance" class="btn btn-success mb-5">
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="button" class="btn btn-success" id="save-attendance-modal">
                 <i class="bi bi-save"></i> Save Attendance
               </button>
             </div>
-          <?php endif; ?>
-        </form>
+          </div>
+        </div>
+      </div>
 
-        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-        <script>
-          // Define status cycle order
-          const statusCycle = ['present', 'absent', 'excused'];
+      <!-- Scripts -->
+      <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+      <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+      <script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+      <script>
+        // Status cycling (used in modal)
+        const statusCycle = ['present', 'absent', 'excused'];
+        function cycleStatus(element) {
+          const lrn = element.getAttribute('data-lrn');
+          const currentStatus = element.getAttribute('data-status');
+          const currentIndex = statusCycle.indexOf(currentStatus);
+          const nextIndex = (currentIndex + 1) % statusCycle.length;
+          const nextStatus = statusCycle[nextIndex];
           
-          function cycleStatus(element) {
-            const lrn = element.getAttribute('data-lrn');
-            const currentStatus = element.getAttribute('data-status');
-            
-            // Get next status in cycle
-            const currentIndex = statusCycle.indexOf(currentStatus);
-            const nextIndex = (currentIndex + 1) % statusCycle.length;
-            const nextStatus = statusCycle[nextIndex];
-            
-            // Update element attributes
-            element.setAttribute('data-status', nextStatus);
-            element.setAttribute('class', `attendance-icon status-${nextStatus}`);
-            
-            // Update icon
-            const icons = {
-              'present': '<i class="fas fa-check"></i>',
-              'absent': '<i class="fas fa-times"></i>',
-              'excused': '<i class="fas fa-minus"></i>'
-            };
-            element.innerHTML = icons[nextStatus];
-            
-            // Update hidden input
-            document.getElementById(`status-input-${lrn}`).value = nextStatus;
-            
-            // Update status text
-            const badgeClass = {
-              'present': 'bg-success',
-              'absent': 'bg-danger',
-              'excused': 'bg-secondary'
-            };
-            const statusText = document.getElementById(`status-text-${lrn}`);
-            statusText.innerHTML = `<span class="badge ${badgeClass[nextStatus]}">${nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1)}</span>`;
-            
-            // Update summary counts
-            updateSummaryCounts();
-          }
+          element.setAttribute('data-status', nextStatus);
+          element.setAttribute('class', `attendance-icon status-${nextStatus}`);
+          const icons = {
+            'present': '<i class="fas fa-check"></i>',
+            'absent': '<i class="fas fa-times"></i>',
+            'excused': '<i class="fas fa-minus"></i>'
+          };
+          element.innerHTML = icons[nextStatus];
+          document.getElementById(`status-input-${lrn}`).value = nextStatus;
           
-          function updateSummaryCounts() {
-            let present = 0, absent = 0, excused = 0;
-            
-            // Get all status inputs
-            const statusInputs = document.querySelectorAll('[id^="status-input-"]');
-            statusInputs.forEach(input => {
-              if (input.value === 'present') present++;
-              else if (input.value === 'absent') absent++;
-              else if (input.value === 'excused') excused++;
+          const badgeClass = {
+            'present': 'bg-success',
+            'absent': 'bg-danger',
+            'excused': 'bg-secondary'
+          };
+          const statusText = document.getElementById(`status-text-${lrn}`);
+          statusText.innerHTML = `<span class="badge ${badgeClass[nextStatus]}">${nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1)}</span>`;
+        }
+
+        // Initialize DataTables
+        document.addEventListener('DOMContentLoaded', function() {
+          if ($('#attendance-view-table').length) {
+            $('#attendance-view-table').DataTable({
+              paging: false,
+              scrollY: '400px',
+              scrollCollapse: true,
+              searching: true,
+              info: false,
+              ordering: true,
+              language: { emptyTable: "No records found", search: "Search students:" }
             });
-            
-            // Update counts
-            document.getElementById('present-count').textContent = present;
-            document.getElementById('absent-count').textContent = absent;
-            document.getElementById('excused-count').textContent = excused;
           }
-          
-          // Initialize summary counts
-          document.addEventListener('DOMContentLoaded', updateSummaryCounts);
-          
-          // Save attendance
-          $(function(){
-            $('#save-attendance').click(function(){
-              $.post('', $('#attendance-form').serialize())
-                .done(function(res){
-                  const j = JSON.parse(res);
-                  alert(j.message);
-                  if (j.status === 'success') {
-                    // Redirect back to class selection with date and school year
-                    window.location.href = 'select_class.php?date=' + encodeURIComponent($('input[name="date"]').val()) + '&school_year=' + encodeURIComponent('<?= $schoolYear ?>');
-                  }
-                })
-                .fail(function(){
-                  alert('Error submitting attendance.');
-                });
-            });
-            
-            // Keyboard shortcuts
-            $(document).keydown(function(e) {
-              if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                $('#save-attendance').click();
+          // Initialize or adjust DataTable for the modal when opened so search works
+          $('#takeAttendanceModal').on('shown.bs.modal', function() {
+            if (!$.fn.DataTable.isDataTable('#attendance-modal-table')) {
+              $('#attendance-modal-table').DataTable({
+                paging: false,
+                searching: true,
+                info: false,
+                ordering: false,
+                scrollY: '50vh',
+                scrollCollapse: true,
+                language: { search: "Search students:" }
+              });
+            } else {
+              $('#attendance-modal-table').DataTable().columns.adjust().draw();
+            }
+          });
+        });
+
+        // Save attendance from modal
+        $(function(){
+          $('#save-attendance-modal').click(function(){
+            Swal.fire({
+              title: 'Are you sure?',
+              text: "Do you want to save the attendance for this class?",
+              icon: 'question',
+              showCancelButton: true,
+              confirmButtonColor: '#28a745',
+              cancelButtonColor: '#6c757d',
+              confirmButtonText: 'Yes, save it!'
+            }).then((result) => {
+              if (result.isConfirmed) {
+                Swal.fire({ title: 'Saving...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+                $.post('', $('#attendance-form').serialize())
+                  .done(function(res){
+                    const j = JSON.parse(res);
+                    if (j.status === 'success') {
+                      Swal.fire({ icon: 'success', title: 'Success!', text: j.message, timer: 2000, showConfirmButton: false })
+                        .then(() => {
+                          // Close modal and reload page to reflect changes
+                          $('#takeAttendanceModal').modal('hide');
+                          location.reload();
+                        });
+                    } else {
+                      Swal.fire({ icon: 'error', title: 'Error', text: j.message });
+                    }
+                  })
+                  .fail(() => Swal.fire({ icon: 'error', title: 'Error', text: 'Error submitting attendance.' }));
               }
             });
           });
-        </script>
 
-      <?php else: ?>
-        <!-- == VIEW ATTENDANCE MODE == -->
-        <?php
-          // Fetch attendance records for the selected date and section
-          $viewStmt = $conn->prepare("
-            SELECT 
-                s.LRN, 
-                s.FirstName, 
-                s.MiddleName, 
-                s.LastName,
-                a.Status,
-                a.Date
-            FROM student s
-            LEFT JOIN attendance a ON s.StudentID = a.StudentID 
-                AND a.Date = ? 
-                AND a.SectionID = ?
-                AND a.TeacherID = ?
-            JOIN section_enrollment se ON s.StudentID = se.StudentID 
-                AND se.SectionID = ?
-            WHERE se.status = 'active'
-            ORDER BY s.LastName, s.FirstName
-          ");
-          $viewStmt->bind_param("siii", $date, $sectionID, $teacherID, $sectionID);
-          $viewStmt->execute();
-          $viewResult = $viewStmt->get_result();
-          $attendanceRecords = $viewResult->fetch_all(MYSQLI_ASSOC);
-          $viewStmt->close();
-        ?>
-
-        <div class="card mt-3">
-          <div class="card-header bg-light d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">Attendance Records for <?= htmlspecialchars($date) ?></h5>
-            <span class="badge bg-primary"><?= count($attendanceRecords) ?> Students</span>
-          </div>
-          <div class="card-body p-0">
-            <?php if (empty($attendanceRecords)): ?>
-              <div class="p-4 text-center text-muted">
-                <i class="bi bi-calendar-x" style="font-size: 2rem;"></i>
-                <p class="mt-2">No attendance records found for this date.</p>
-              </div>
-            <?php else: ?>
-              <div class="table-responsive">
-                <table class="table table-hover view-mode-table mb-0">
-                  <thead class="table-light">
-                    <tr>
-                      <th>LRN</th>
-                      <th>Name</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <?php 
-                    $presentCount = 0;
-                    $absentCount = 0;
-                    $excusedCount = 0;
-                    $noRecordCount = 0;
-                    
-                    foreach ($attendanceRecords as $record): 
-                      $status = $record['Status'];
-                      $name = trim("{$record['LastName']}, {$record['FirstName']} " . ($record['MiddleName'] ? "{$record['MiddleName']}" : ""));
-                      
-                      // Count statuses
-                      if ($status === 'present') {
-                        $presentCount++;
-                        $badgeClass = 'badge-present';
-                        $statusText = '<i class="fas fa-check-circle me-1"></i> Present';
-                      } elseif ($status === 'absent') {
-                        $absentCount++;
-                        $badgeClass = 'badge-absent';
-                        $statusText = '<i class="fas fa-times-circle me-1"></i> Absent';
-                      } elseif ($status === 'excused') {
-                        $excusedCount++;
-                        $badgeClass = 'badge-excused';
-                        $statusText = '<i class="fas fa-minus-circle me-1"></i> Excused';
-                      } else {
-                        $noRecordCount++;
-                        $badgeClass = 'bg-secondary';
-                        $statusText = '<i class="fas fa-question-circle me-1"></i> No Record';
-                      }
-                    ?>
-                      <tr>
-                        <td><?= htmlspecialchars($record['LRN']) ?></td>
-                        <td><?= htmlspecialchars($name) ?></td>
-                        <td>
-                          <span class="badge attendance-badge <?= $badgeClass ?>">
-                            <?= $statusText ?>
-                          </span>
-                        </td>
-                      </tr>
-                    <?php endforeach; ?>
-                  </tbody>
-                </table>
-              </div>
-            <?php endif; ?>
-          </div>
-          <?php if (!empty($attendanceRecords)): ?>
-            <div class="card-footer">
-              <div class="row">
-                <div class="col-md-3">
-                  <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i> <?= $presentCount ?> Present</span>
-                </div>
-                <div class="col-md-3">
-                  <span class="badge bg-danger"><i class="fas fa-times-circle me-1"></i> <?= $absentCount ?> Absent</span>
-                </div>
-                <div class="col-md-3">
-                  <span class="badge bg-secondary"><i class="fas fa-minus-circle me-1"></i> <?= $excusedCount ?> Excused</span>
-                </div>
-                <div class="col-md-3">
-                  <span class="badge bg-warning text-dark"><i class="fas fa-question-circle me-1"></i> <?= $noRecordCount ?> No Record</span>
-                </div>
-              </div>
-            </div>
-          <?php endif; ?>
-        </div>
-
-        <!-- Date navigation -->
-        <div class="card mt-3">
-          <div class="card-header bg-light">
-            <h6 class="mb-0">View Attendance for Different Date</h6>
-          </div>
-          <div class="card-body">
-            <form method="get" class="row g-2">
-              <input type="hidden" name="sectionID" value="<?= $sectionID ?>">
-              <input type="hidden" name="view" value="true">
-              <input type="hidden" name="school_year" value="<?= htmlspecialchars($schoolYear) ?>">
-              <div class="col-md-8">
-                <input type="date" name="date" value="<?= htmlspecialchars($date) ?>" 
-                       class="form-control" required>
-              </div>
-              <div class="col-md-4">
-                <button type="submit" class="btn btn-primary w-100">
-                  <i class="bi bi-search"></i> View
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-
-        <!-- Back button at the bottom -->
-        <div class="mt-3">
-          <a href="select_class.php?date=<?= urlencode($date) ?>&school_year=<?= urlencode($schoolYear) ?>" class="btn btn-secondary">
-            <i class="bi bi-arrow-left"></i> Back to Class Selection
-          </a>
-        </div>
-      <?php endif; ?>
+          // Keyboard shortcut Ctrl+S to open modal (if on the view page)
+          $(document).keydown(function(e) {
+            if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              $('#takeAttendanceModal').modal('show');
+            }
+          });
+        });
+      </script>
     <?php endif; ?>
-
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

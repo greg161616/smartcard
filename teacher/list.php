@@ -184,29 +184,15 @@ if (!empty($selectedSection)) {
     $stmt->bind_param("is", $teacherId, $selectedSchoolYear);
 }
 $stmt->execute();
-$res = $stmt->get_result();
+$studentsResult = $stmt->get_result();
 
-// Separate students by gender
-$maleStudents = [];
-$femaleStudents = [];
-
-if ($res && $res->num_rows > 0) {
-    while ($row = $res->fetch_assoc()) {
-        if ($row['Sex'] == 'Male') {
-            $maleStudents[] = $row;
-        } else {
-            $femaleStudents[] = $row;
-        }
+// Fetch all students into an array (no need to split by gender)
+$students = [];
+if ($studentsResult && $studentsResult->num_rows > 0) {
+    while ($row = $studentsResult->fetch_assoc()) {
+        $students[] = $row;
     }
 }
-
-// Debug: Check what sections and students we're getting
-error_log("Teacher ID: " . $teacherId);
-error_log("Sections found: " . count($sections));
-error_log("School Years found: " . count($schoolYears));
-error_log("Selected School Year: " . $selectedSchoolYear);
-error_log("Male students: " . count($maleStudents));
-error_log("Female students: " . count($femaleStudents));
 
 $stmt->close();
 ?>
@@ -219,6 +205,10 @@ $stmt->close();
   <link rel="icon" type="image/png" href="../img/logo.png">
   <!-- Bootstrap CSS -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- DataTables CSS -->
+  <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css">
+  <!-- RowGroup CSS (part of DataTables) -->
+  <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/rowgroup/1.3.1/css/rowGroup.bootstrap5.min.css">
   <style>
     .required:after {
       content: " *";
@@ -229,9 +219,6 @@ $stmt->close();
     }
     .clickable-row:hover {
       background-color: #f5f5f5;
-    }
-    .action-cell {
-      cursor: default;
     }
     .modal-body .row {
       margin-bottom: 15px;
@@ -248,30 +235,19 @@ $stmt->close();
       border-radius: 5px;
       margin-bottom: 20px;
     }
-    .gender-section {
-      margin-bottom: 10px;
-    }
-    .gender-header {
-      border-radius: 10px;
-      margin: 15px;
-    }
-    .table th {
-      white-space: nowrap;
-    }
-    .empty-table-message {
-      padding: 20px;
-      text-align: center;
-      color: #6c757d;
-      font-style: italic;
-    }
     .dashboard-header {
-            background: #2c3e50;
-            color: white;
-            padding: 2rem 0;
-            margin-bottom: 2rem;
-        }
-    .filter-row {
-      margin-bottom: 15px;
+      background: #2c3e50;
+      color: white;
+      padding: 2rem 0;
+      margin-bottom: 2rem;
+    }
+    /* Style for group header rows (added by RowGroup) */
+    .dt-rowGroup {
+      background-color: #e9ecef !important;
+      font-weight: bold;
+    }
+    .dt-rowGroup td {
+      padding: 8px 10px;
     }
   </style>
 </head>
@@ -284,7 +260,6 @@ $stmt->close();
             <div class="row align-items-center">
                 <div class="col-md-8">
                     <h1 class="display-5 fw-bold">Welcome, <?php echo htmlspecialchars($teacher_name); ?>!</h1>
-                    
                     <p class="lead mb-0">Student List - <?php echo date('F j, Y'); ?></p>
                 </div>
                 <div class="col-md-4 text-end">
@@ -306,7 +281,7 @@ $stmt->close();
     <?php endif; ?>
 
     <!-- Class and School Year Selection Filter -->
-    <div class="filter-container">
+    <div class="filter-container container">
       <form method="POST" id="filterForm">
         <div class="row align-items-end">
           <div class="col-md-3">
@@ -331,7 +306,6 @@ $stmt->close();
             </select>
           </div>
           <div class="col-md-auto">
-            
             <button type="submit" class="btn btn-primary">Apply Filters</button>
             <button type="button" class="btn btn-secondary" onclick="resetFilters()">Reset Filters</button>
           </div>
@@ -346,14 +320,11 @@ $stmt->close();
       </div>
     <?php else: ?>
       
-      <!-- Male Students Table -->
-      <div class="gender-section container">
-        <div class="gender-header">
-          <h3 class="mb-0">Males</h3>
-        </div>
-        <?php if (!empty($maleStudents)): ?>
+      <!-- Single Table with RowGroup -->
+      <div class="container card py-2">
+        <?php if (!empty($students)): ?>
           <div class="table-responsive">
-            <table class="table table-bordered table-hover align-middle">
+            <table id="studentTable" class="table table-bordered table-hover align-middle">
               <thead>
                 <tr>
                   <th>LRN</th>
@@ -363,7 +334,7 @@ $stmt->close();
                 </tr>
               </thead>
               <tbody>
-                <?php foreach ($maleStudents as $row): ?>
+                <?php foreach ($students as $row): ?>
                   <tr class="clickable-row" data-id="<?= $row['StudentID'] ?>">
                     <td><?= htmlspecialchars($row['LRN']) ?></td>
                     <td><?= htmlspecialchars($row['FullName']) ?></td>
@@ -376,42 +347,7 @@ $stmt->close();
           </div>
         <?php else: ?>
           <div class="empty-table-message">
-            <p>No male students found for the selected filters.</p>
-          </div>
-        <?php endif; ?>
-      </div>
-
-      <!-- Female Students Table -->
-      <div class="gender-section container">
-        <div class="gender-header">
-          <h3 class="mb-0">Females</h3>
-        </div>
-        <?php if (!empty($femaleStudents)): ?>
-          <div class="table-responsive">
-            <table class="table table-bordered table-hover align-middle">
-              <thead>
-                <tr>
-                  <th >LRN</th>
-                  <th>Full Name</th>
-                  <th>Sex</th>
-                  <th>Email</th>
-                </tr>
-              </thead>
-              <tbody>
-                <?php foreach ($femaleStudents as $row): ?>
-                  <tr class="clickable-row" data-id="<?= $row['StudentID'] ?>">
-                    <td><?= htmlspecialchars($row['LRN']) ?></td>
-                    <td><?= htmlspecialchars($row['FullName']) ?></td>
-                    <td><?= htmlspecialchars($row['Sex']) ?></td>
-                    <td><?= htmlspecialchars($row['Email']) ?></td>
-                  </tr>
-                <?php endforeach; ?>
-              </tbody>
-            </table>
-          </div>
-        <?php else: ?>
-          <div class="empty-table-message">
-            <p>No female students found for the selected filters.</p>
+            <p>No students found for the selected filters.</p>
           </div>
         <?php endif; ?>
       </div>
@@ -437,12 +373,50 @@ $stmt->close();
     </div>
   </div>
 
-  <!-- Bootstrap JS Bundle with Popper -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- jQuery -->
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <!-- Bootstrap JS Bundle -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- DataTables -->
+  <script type="text/javascript" src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+  <script type="text/javascript" src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
+  <!-- RowGroup extension -->
+  <script type="text/javascript" src="https://cdn.datatables.net/rowgroup/1.3.1/js/dataTables.rowGroup.min.js"></script>
   <script>
     $(document).ready(function() {
-      // Function to load student details
+      // Initialize DataTable with RowGroup on the Sex column (index 2)
+      if ($('#studentTable').length) {
+        $('#studentTable').DataTable({
+          pageLength: 10,
+          lengthMenu: [5, 10, 25, 50, 100],
+          rowGroup: {
+            // Group by the third column (Sex) – index 2
+            dataSrc: 2,
+            // Optional: customize the grouping row text
+            startRender: function (rows, group) {
+              return group + ' Students';
+            }
+          },
+          language: {
+            search: "Search students:",
+            lengthMenu: "Show _MENU_ students",
+            info: "Showing _START_ to _END_ of _TOTAL_ students"
+          },
+          // Optional: order by name within groups (default sort by first column)
+          order: [[2, 'asc'], [1, 'asc']]
+        });
+      }
+
+      // View Student Details using event delegation (works after DataTables redraw)
+      $(document).on('click', '.clickable-row', function(e) {
+        // Don't trigger if clicking on buttons
+        if ($(e.target).is('button') || $(e.target).closest('td.action-cell').length) {
+          return;
+        }
+        var studentId = $(this).data('id');
+        viewStudent(studentId);
+      });
+
       function viewStudent(studentId) {
         // Show loading indicator
         $('#studentDetails').html('<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>');
@@ -465,16 +439,6 @@ $stmt->close();
           }
         });
       }
-
-      // View Student Details when clicking row
-      $('.clickable-row').click(function(e) {
-        // Don't trigger if clicking on buttons or inside action cell
-        if ($(e.target).is('button') || $(e.target).closest('td.action-cell').length) {
-          return;
-        }
-        var studentId = $(this).data('id');
-        viewStudent(studentId);
-      });
     });
 
     function resetFilters() {
