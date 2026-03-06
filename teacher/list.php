@@ -252,8 +252,6 @@ $stmt->close();
       margin-bottom: 10px;
     }
     .gender-header {
-      background-color: #d9e9f5ff;
-      padding: 10px;
       border-radius: 10px;
       margin: 15px;
     }
@@ -310,8 +308,8 @@ $stmt->close();
     <!-- Class and School Year Selection Filter -->
     <div class="filter-container">
       <form method="POST" id="filterForm">
-        <div class="row filter-row">
-          <div class="col-md-6">
+        <div class="row align-items-end">
+          <div class="col-md-3">
             <label for="section_filter" class="form-label">Filter by Class:</label>
             <select class="form-select" id="section_filter" name="section_filter">
               <option value="">All My Classes</option>
@@ -322,7 +320,7 @@ $stmt->close();
               <?php endforeach; ?>
             </select>
           </div>
-          <div class="col-md-6">
+          <div class="col-md-3">
             <label for="school_year_filter" class="form-label">Filter by School Year:</label>
             <select class="form-select" id="school_year_filter" name="school_year_filter">
               <?php foreach ($schoolYears as $year): ?>
@@ -332,9 +330,8 @@ $stmt->close();
               <?php endforeach; ?>
             </select>
           </div>
-        </div>
-        <div class="row">
-          <div class="col-12">
+          <div class="col-md-auto">
+            
             <button type="submit" class="btn btn-primary">Apply Filters</button>
             <button type="button" class="btn btn-secondary" onclick="resetFilters()">Reset Filters</button>
           </div>
@@ -348,31 +345,11 @@ $stmt->close();
         <p class="mb-0">You are not currently assigned as an adviser or teacher for any classes.</p>
       </div>
     <?php else: ?>
-
-      <!-- Display current filter info -->
-      <div class="alert alert-info">
-        <strong>Current Filter:</strong> 
-        School Year: <span class="badge bg-primary"><?= htmlspecialchars($selectedSchoolYear) ?></span>
-        <?php if (!empty($selectedSection)): ?>
-          | Class: <span class="badge bg-secondary">
-            <?php 
-              $selectedSectionName = '';
-              foreach ($sections as $section) {
-                if ($section['SectionID'] == $selectedSection) {
-                  $selectedSectionName = $section['SectionDisplay'];
-                  break;
-                }
-              }
-              echo htmlspecialchars($selectedSectionName);
-            ?>
-          </span>
-        <?php endif; ?>
-      </div>
-
+      
       <!-- Male Students Table -->
-      <div class="gender-section">
+      <div class="gender-section container">
         <div class="gender-header">
-          <h3 class="mb-0 ms-3">Males(<?= count($maleStudents) ?>)</h3>
+          <h3 class="mb-0">Males</h3>
         </div>
         <?php if (!empty($maleStudents)): ?>
           <div class="table-responsive">
@@ -383,8 +360,6 @@ $stmt->close();
                   <th>Full Name</th>
                   <th>Sex</th>
                   <th>Email</th>
-                  <th>Grade Level</th>
-                  <th>Section</th>
                 </tr>
               </thead>
               <tbody>
@@ -394,8 +369,6 @@ $stmt->close();
                     <td><?= htmlspecialchars($row['FullName']) ?></td>
                     <td><?= htmlspecialchars($row['Sex']) ?></td>
                     <td><?= htmlspecialchars($row['Email']) ?></td>
-                    <td><?= htmlspecialchars($row['GradeLevel']) ?></td>
-                    <td><?= htmlspecialchars($row['SectionName']) ?></td>
                   </tr>
                 <?php endforeach; ?>
               </tbody>
@@ -409,21 +382,19 @@ $stmt->close();
       </div>
 
       <!-- Female Students Table -->
-      <div class="gender-section">
+      <div class="gender-section container">
         <div class="gender-header">
-          <h3 class="mb-0 ms-3">Females(<?= count($femaleStudents) ?>)</h3>
+          <h3 class="mb-0">Females</h3>
         </div>
         <?php if (!empty($femaleStudents)): ?>
           <div class="table-responsive">
             <table class="table table-bordered table-hover align-middle">
               <thead>
                 <tr>
-                  <th>LRN</th>
+                  <th >LRN</th>
                   <th>Full Name</th>
                   <th>Sex</th>
                   <th>Email</th>
-                  <th>Grade Level</th>
-                  <th>Section</th>
                 </tr>
               </thead>
               <tbody>
@@ -433,8 +404,6 @@ $stmt->close();
                     <td><?= htmlspecialchars($row['FullName']) ?></td>
                     <td><?= htmlspecialchars($row['Sex']) ?></td>
                     <td><?= htmlspecialchars($row['Email']) ?></td>
-                    <td><?= htmlspecialchars($row['GradeLevel']) ?></td>
-                    <td><?= htmlspecialchars($row['SectionName']) ?></td>
                   </tr>
                 <?php endforeach; ?>
               </tbody>

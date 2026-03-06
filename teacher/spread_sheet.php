@@ -456,6 +456,9 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
         .max-score-input {
             width: 60px;
             font-size: 0.8rem;
+            border: 1px solid #ced4da; /* keep border for max inputs */
+            border-radius: 0.2rem;
+            text-align: center;
         }
 
         .learner-name-col,
@@ -474,10 +477,26 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
             text-align: center;
         }
         
+        /* Input styling - borderless with bottom border on focus */
+        .ww-input, .pt-input, .qa-input {
+            border: none !important;
+            background-color: transparent;
+            text-align: center;
+            padding: 0.25rem;
+            width: 100%;
+            box-shadow: none !important;
+            outline: none;
+            border-bottom: 2px solid transparent;
+            transition: border-bottom-color 0.2s, background-color 0.2s;
+        }
+        .ww-input:focus, .pt-input:focus, .qa-input:focus {
+            border-bottom-color: #007bff;
+            background-color: #f0f7ff;
+        }
         
         .error-highlight {
-            border: 2px solid #dc3545 !important;
-            background-color: #f8d7da;
+            background-color: #ffe6e6 !important;
+            border-bottom-color: #dc3545 !important;
         }
         
         .error-tooltip {
@@ -550,8 +569,6 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                             <option value="4">Quarter 4</option>
                             <option value="Summary">Summary</option>
                         </select>
-                    </div>
-                    <div id="saveStatus" class="col-auto" role="alert">
                     </div>
                     <div class="col-auto ms-auto me-3">
                         <a
@@ -698,6 +715,8 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
 
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- SweetAlert2 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     
     <script>
 // PHP data passed to JavaScript
@@ -1226,24 +1245,95 @@ function collectStudentData(row) {
 }
 
 function showSaveStatus(type, message) {
-    const saveStatus = document.getElementById('saveStatus');
-    
     if (type === 'success') {
-        saveStatus.className = 'col-auto justify-content-end alert alert-success';
-        saveStatus.innerHTML = '<i class="fas fa-check-circle me-2"></i>' + message;
+        Swal.fire({
+            icon: 'success',
+            title: 'Success',
+            text: message,
+            timer: 3000,
+            showConfirmButton: false,
+            toast: true,
+            position: 'top-end'
+        });
     } else {
-        saveStatus.className = 'col-auto justify-content-end alert alert-danger';
-        saveStatus.innerHTML = '<i class="fas fa-exclamation-circle me-2"></i>' + message;
+        Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: message,
+            confirmButtonText: 'OK'
+        });
     }
-    
-    saveStatus.classList.remove('d-none');
-    
-    setTimeout(() => {
-        saveStatus.classList.add('d-none');
-    }, 5000);
 }
 
-// Event Listeners
+// ==================== KEYBOARD NAVIGATION ====================
+function navigateToInput(currentInput, direction) {
+    const currentRow = currentInput.closest('tr');
+    const tbody = currentRow.parentNode;
+    // Get all student rows (excluding gender dividers)
+    const rows = Array.from(tbody.children).filter(tr => !tr.classList.contains('gender-divider'));
+    const rowIndex = rows.indexOf(currentRow);
+    if (rowIndex === -1) return;
+
+    // Get all inputs in current row
+    const inputsInRow = Array.from(currentRow.querySelectorAll('input.ww-input, input.pt-input, input.qa-input'));
+    const colIndex = inputsInRow.indexOf(currentInput);
+    if (colIndex === -1) return;
+
+    let targetRow, targetInput;
+
+    switch (direction) {
+        case 'left':
+            if (colIndex > 0) {
+                targetInput = inputsInRow[colIndex - 1];
+            } else {
+                // Move to previous row's last input
+                if (rowIndex > 0) {
+                    const prevRow = rows[rowIndex - 1];
+                    const prevInputs = Array.from(prevRow.querySelectorAll('input.ww-input, input.pt-input, input.qa-input'));
+                    targetInput = prevInputs[prevInputs.length - 1];
+                }
+            }
+            break;
+        case 'right':
+            if (colIndex < inputsInRow.length - 1) {
+                targetInput = inputsInRow[colIndex + 1];
+            } else {
+                // Move to next row's first input
+                if (rowIndex < rows.length - 1) {
+                    const nextRow = rows[rowIndex + 1];
+                    const nextInputs = Array.from(nextRow.querySelectorAll('input.ww-input, input.pt-input, input.qa-input'));
+                    targetInput = nextInputs[0];
+                }
+            }
+            break;
+        case 'up':
+            if (rowIndex > 0) {
+                const prevRow = rows[rowIndex - 1];
+                const prevInputs = Array.from(prevRow.querySelectorAll('input.ww-input, input.pt-input, input.qa-input'));
+                if (colIndex < prevInputs.length) {
+                    targetInput = prevInputs[colIndex];
+                }
+            }
+            break;
+        case 'down':
+        case 'enter':
+            if (rowIndex < rows.length - 1) {
+                const nextRow = rows[rowIndex + 1];
+                const nextInputs = Array.from(nextRow.querySelectorAll('input.ww-input, input.pt-input, input.qa-input'));
+                if (colIndex < nextInputs.length) {
+                    targetInput = nextInputs[colIndex];
+                }
+            }
+            break;
+    }
+
+    if (targetInput) {
+        targetInput.focus();
+        targetInput.select(); // optional: select the text for quick overwrite
+    }
+}
+
+// ==================== EVENT LISTENERS ====================
 document.addEventListener('DOMContentLoaded', function() {
     loadQuarterData(1);
     
@@ -1305,6 +1395,36 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             
             hasUnsavedChanges = true;
+        }
+    });
+    
+    // Keyboard navigation for score inputs
+    document.addEventListener('keydown', function(e) {
+        const target = e.target;
+        if (target.tagName === 'INPUT' && (target.classList.contains('ww-input') || target.classList.contains('pt-input') || target.classList.contains('qa-input'))) {
+            // Arrow keys
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                navigateToInput(target, 'left');
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                navigateToInput(target, 'right');
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                navigateToInput(target, 'up');
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                navigateToInput(target, 'down');
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                navigateToInput(target, 'enter');
+            }
+        }
+
+        // Ctrl+S save
+        if (e.ctrlKey && e.key === 's') {
+            e.preventDefault();
+            saveGrades();
         }
     });
     
