@@ -447,5 +447,6 @@ $stmt->close();
       document.getElementById('filterForm').submit();
     }
   </script>
+</div><!-- /.page-content -->
 </body>
 </html>

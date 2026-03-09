@@ -629,5 +629,6 @@ $students_result = $students_stmt->get_result();
             });
         });
     </script>
+</div><!-- /.page-content -->
 </body>
 </html>

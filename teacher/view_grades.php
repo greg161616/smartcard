@@ -406,5 +406,6 @@ while ($row = $res2->fetch_assoc()) {
         });
     }
   </script>
+</div><!-- /.page-content -->
 </body>
 </html>

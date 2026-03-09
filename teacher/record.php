@@ -2184,5 +2184,6 @@ function calculateMAPEHGrade($grades, $mapeh_component_ids) {
     })();
     </script>
     <?php endif; ?>
+</div><!-- /.page-content -->
 </body>
 </html>

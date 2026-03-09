@@ -816,37 +816,63 @@ while ($row = $announcements_result->fetch_assoc()) {
 // Class Distribution Chart - Stacked Bar Graph with Patterns
 <?php if (!empty($section_counts)): ?>
 const classCtx = document.getElementById('classDistributionChart').getContext('2d');
+
+// Prepare labels and data arrays from PHP
+const classLabels = [<?php echo "'" . implode("','", array_keys($section_counts)) . "'"; ?>];
+const maleData = [<?php 
+    $male_data = [];
+    foreach ($section_counts as $section) {
+        $male_data[] = $section['male'];
+    }
+    echo implode(',', $male_data); 
+?>];
+const femaleData = [<?php 
+    $female_data = [];
+    foreach ($section_counts as $section) {
+        $female_data[] = $section['female'];
+    }
+    echo implode(',', $female_data); 
+?>];
+
+// Compute totals and y-axis max (10% padding, rounded up to nearest 10)
+const totals = classLabels.map((_, i) => (parseFloat(maleData[i] || 0) + parseFloat(femaleData[i] || 0)));
+const maxTotal = totals.length ? Math.max(...totals) : 0;
+const yMax = maxTotal <= 0 ? 10 : Math.ceil((maxTotal * 1.1) / 10) * 10;
+
+// Compute initial bar thickness based on container width and number of labels
+function computeBarThickness() {
+    const containerWidth = classCtx.canvas.parentElement.clientWidth || classCtx.canvas.width || 600;
+    const labelsCount = Math.max(1, classLabels.length);
+    const categoryWidth = containerWidth / labelsCount;
+    // 70% of category width, capped at 50
+    return Math.min(50, Math.max(8, Math.floor(categoryWidth * 0.7)));
+}
+
+let initialBarThickness = computeBarThickness();
+
 const classChart = new Chart(classCtx, {
     type: 'bar',
     data: {
-        labels: [<?php echo "'" . implode("','", array_keys($section_counts)) . "'"; ?>],
+        labels: classLabels,
         datasets: [
             {
                 label: 'Male',
-                data: [<?php 
-                    $male_data = [];
-                    foreach ($section_counts as $section) {
-                        $male_data[] = $section['male'];
-                    }
-                    echo implode(',', $male_data); 
-                ?>],
+                data: maleData,
                 backgroundColor: 'rgba(52, 152, 219, 0.8)', // Semi-transparent blue
                 borderColor: 'rgba(41, 128, 185, 1)',
                 borderWidth: 1,
+                barThickness: initialBarThickness,
+                maxBarThickness: 70,
                 stack: 'Stack 1'
             }, 
             {
                 label: 'Female',
-                data: [<?php 
-                    $female_data = [];
-                    foreach ($section_counts as $section) {
-                        $female_data[] = $section['female'];
-                    }
-                    echo implode(',', $female_data); 
-                ?>],
-                    backgroundColor: 'rgba(255, 182, 193, 0.8)',
-                    borderColor: 'rgba(255, 182, 193, 1)',
+                data: femaleData,
+                backgroundColor: 'rgba(255, 182, 193, 0.8)',
+                borderColor: 'rgba(255, 182, 193, 1)',
                 borderWidth: 1,
+                barThickness: initialBarThickness,
+                maxBarThickness: 70,
                 stack: 'Stack 1'
             }
         ]
@@ -904,13 +930,16 @@ const classChart = new Chart(classCtx, {
                 }
             }
         },
-        scales: {
+            scales: {
             x: {
                 stacked: true,
                 grid: {
                     display: false,
                     drawBorder: false
                 },
+                // Make bars fuller but constrained by maxBarThickness
+                categoryPercentage: 0.85,
+                barPercentage: 0.9,
                 ticks: {
                     color: '#2c3e50',
                     font: {
@@ -924,7 +953,7 @@ const classChart = new Chart(classCtx, {
             y: {
                 stacked: true,
                 beginAtZero: true,
-                max: 100,
+                max: yMax,
                 ticks: {
                     color: '#7f8c8d',
                     stepSize: 20, // 20, 40, 60, 80, 100, 120
@@ -963,6 +992,33 @@ const classChart = new Chart(classCtx, {
     }
 });
 <?php endif; ?>
+// Recompute bar thickness and y-max on window resize to keep chart readable
+function adjustClassChart() {
+    if (typeof classChart === 'undefined' || !classChart) return;
+    const newBar = computeBarThickness();
+    classChart.data.datasets.forEach(ds => {
+        ds.barThickness = newBar;
+        ds.maxBarThickness = 50;
+    });
+    // recompute yMax in case data changed or container size affects perception
+    const totals = classChart.data.labels.map((_, i) => {
+        const m = parseFloat(classChart.data.datasets[0].data[i] || 0);
+        const f = parseFloat(classChart.data.datasets[1].data[i] || 0);
+        return m + f;
+    });
+    const maxTotal = totals.length ? Math.max(...totals) : 0;
+    const newYMax = maxTotal <= 0 ? 10 : Math.ceil((maxTotal * 1.1) / 10) * 10;
+    if (classChart.options && classChart.options.scales && classChart.options.scales.y) {
+        classChart.options.scales.y.max = newYMax;
+    }
+    classChart.update();
+}
+
+window.addEventListener('resize', function(){
+    // debounce
+    clearTimeout(window._classChartResizeTimeout);
+    window._classChartResizeTimeout = setTimeout(adjustClassChart, 120);
+});
         // Grade Overview Chart - MODIFIED to handle section and quarter filtering
         <?php if (!empty($sections)): ?>
         // Prepare data structure for JavaScript
@@ -1168,5 +1224,6 @@ const classChart = new Chart(classCtx, {
             }
         });
     </script>
+</div><!-- /.page-content -->
 </body>
 </html>

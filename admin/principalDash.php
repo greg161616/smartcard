@@ -1278,6 +1278,8 @@ function updateStudentsChart(sectionsData) {
                     backgroundColor: 'rgba(52, 152, 219, 0.9)',
                     borderColor: 'rgba(41, 128, 185, 1)',
                     borderWidth: 1,
+                    barThickness: 16,
+                    maxBarThickness: 28,
                     stack: 'Stack 0'
                 },
                 {
@@ -1286,6 +1288,8 @@ function updateStudentsChart(sectionsData) {
                     backgroundColor: 'rgba(255, 182, 193, 0.8)',
                     borderColor: 'rgba(255, 182, 193, 1)',
                     borderWidth: 1,
+                    barThickness: 16,
+                    maxBarThickness: 28,
                     stack: 'Stack 0'
                 }
             ]
@@ -1518,9 +1522,12 @@ callbacks: {
             x: {
                 stacked: true,
                 grid: {
-                    display: false,
-                    drawBorder: false
+                    display: true,
+                    drawBorder: true,
                 },
+                // Increase category and bar percentages for fuller bars (not super thin)
+                categoryPercentage: 0.,
+                barPercentage: 0.8,
                 ticks: {
                     font: {
                         size: 10
@@ -1562,6 +1569,7 @@ callbacks: {
         }
     };
 }
+
 
 function getAvgGradeChartOptions() {
     return {
@@ -1704,14 +1712,18 @@ function initializeCharts(data) {
                         backgroundColor: 'rgba(52, 152, 219, 0.9)',
                         borderColor: 'rgba(41, 128, 185, 1)',
                         borderWidth: 1,
+                        barThickness: 50,
+                        maxBarThickness: 50,
                         stack: 'Stack 0'
                     },
                     {
                         label: 'Female Students',
                         data: femaleData,
-                    backgroundColor: 'rgba(255, 182, 193, 0.8)',
-                    borderColor: 'rgba(255, 182, 193, 1)',
+                        backgroundColor: 'rgba(255, 182, 193, 0.8)',
+                        borderColor: 'rgba(255, 182, 193, 1)',
                         borderWidth: 1,
+                        barThickness: 50,
+                        maxBarThickness: 50,
                         stack: 'Stack 0'
                     }
                 ]

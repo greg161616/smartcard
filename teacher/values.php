@@ -632,6 +632,7 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 'save_values') {
             }
         });
     </script>
+</div><!-- /.page-content -->
 </body>
 </html>
 

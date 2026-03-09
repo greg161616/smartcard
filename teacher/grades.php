@@ -514,5 +514,6 @@ if ($qstmt) {
             xhr.send(formData);
         });
     </script>
+</div><!-- /.page-content -->
 </body>
 </html>

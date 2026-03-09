@@ -231,25 +231,25 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                             <th class="text-center">QA (<?= htmlspecialchars($qaPercentage) ?>%)</th>
                             <th class="text-center">PS</th>
                             <th class="text-center">WS</th>
-                            <th class="text-center">Initial Grade</th>
-                            <th class="text-center">Quarterly Grade</th>
+                            <th class="text-center" style="font-size: smaller;">Initial Grade</th>
+                            <th class="text-center" style="font-size: x-small;">Quarterly Grade</th>
                         </tr>
-                        <tr class="sticky-header-row-2">
+                        <tr class="sticky-header-row-2 ">
                             <th class="sticky-col-1"></th>
                             <th class="sticky-col-2">Highest possible score</th>
                             <?php for ($i = 1; $i <= 10; $i++): 
                                 $wwValue = isset($highestScores[$quarter]["ww$i"]) ? $highestScores[$quarter]["ww$i"] : 0;
                             ?>
-                            <th class="text-center">
+                            <th class="text-center fs-6">
                                 <div class="d-flex flex-column align-items-center">
                                     <span><?= $i ?></span>
                                     <input type="number" class="form-control form-control-sm max-score-input ww-max" data-quarter="<?= $quarter ?>" data-index="<?= $i ?>" value="<?= $wwValue ?>" min="0">
                                 </div>
                             </th>
                             <?php endfor; ?>
-                            <th class="text-center"><span class="ww-header-total" data-quarter="<?= $quarter ?>">0</span></th>
-                            <th class="text-center"><span class="ww-header-ps" data-quarter="<?= $quarter ?>">100.00</span></th>
-                            <th class="text-center"><span class="ww-header-ws" data-quarter="<?= $quarter ?>">0</span>%</th>
+                            <th class="text-center" style="font-size: smaller;"><span class="ww-header-total" data-quarter="<?= $quarter ?>">0</span></th>
+                            <th class="text-center" style="font-size: smaller;"><span class="ww-header-ps" data-quarter="<?= $quarter ?>">100.00</span></th>
+                            <th class="text-center" style="font-size: smaller;"><span class="ww-header-ws" data-quarter="<?= $quarter ?>">0</span>%</th>
                             <?php for ($i = 1; $i <= 10; $i++): 
                                 $ptValue = isset($highestScores[$quarter]["pt$i"]) ? $highestScores[$quarter]["pt$i"] : 0;
                             ?>
@@ -260,9 +260,9 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                                 </div>
                             </th>
                             <?php endfor; ?>
-                            <th class="text-center"><span class="pt-header-total" data-quarter="<?= $quarter ?>">0</span></th>
-                            <th class="text-center"><span class="pt-header-ps" data-quarter="<?= $quarter ?>">100.00</span></th>
-                            <th class="text-center"><span class="pt-header-ws" data-quarter="<?= $quarter ?>">0</span>%</th>
+                            <th class="text-center" style="font-size: smaller;"><span class="pt-header-total" data-quarter="<?= $quarter ?>">0</span></th>
+                            <th class="text-center" style="font-size: smaller;"><span class="pt-header-ps" data-quarter="<?= $quarter ?>">100.00</span></th>
+                            <th class="text-center" style="font-size: smaller;"><span class="pt-header-ws" data-quarter="<?= $quarter ?>">0</span>%</th>
                             <th class="text-center">
                                 <div class="d-flex flex-column align-items-center">
                                     <span>QA</span>
@@ -270,8 +270,8 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                                     <input type="number" class="form-control form-control-sm max-score-input qa-max" data-quarter="<?= $quarter ?>" value="<?= $qaValue ?>" min="0">
                                 </div>
                             </th>
-                            <th class="text-center"><span class="qa-header-ps" data-quarter="<?= $quarter ?>">100.00</span></th>
-                            <th class="text-center"><span class="qa-header-ws" data-quarter="<?= $quarter ?>">0</span>%</th>
+                            <th class="text-center" style="font-size: smaller;"><span class="qa-header-ps" data-quarter="<?= $quarter ?>">100.00</span></th>
+                            <th class="text-center" style="font-size: smaller;"><span class="qa-header-ws" data-quarter="<?= $quarter ?>">0</span>%</th>
                             <th class="text-center"></th>
                             <th class="text-center"></th>
                         </tr>
@@ -281,7 +281,7 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                         <?php if (!empty($maleStudents)): ?>
                         <tr class="gender-divider bg-light">
                             <td colspan="2" class="fw-bold py-2 sticky-col-2">
-                                <i class="fas fa-square me-2"></i>Male Students (<?= count($maleStudents) ?>)
+                            Male Students (<?= count($maleStudents) ?>)
                             </td>
                         </tr>
                         <?php foreach ($maleStudents as $index => $student): 
@@ -329,7 +329,7 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                         <?php if (!empty($femaleStudents)): ?>
                         <tr class="gender-divider bg-light">
                             <td colspan="2" class="fw-bold py-2 sticky-col-2">
-                                <i class="fas fa-square me-2"></i>Female Students (<?= count($femaleStudents) ?>)
+                                Female Students (<?= count($femaleStudents) ?>)
                             </td>
                         </tr>
                         <?php foreach ($femaleStudents as $index => $student): 
@@ -398,6 +398,12 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
             border: 1px solid #dee2e6;
             border-radius: 0.375rem;
             position: relative;
+            cursor: grab; /* 👈 grab cursor for drag scrolling */
+        }
+        
+        .table-container.grabbing {
+            cursor: grabbing; /* 👈 grabbing when dragging */
+            user-select: none;
         }
         
         .sticky-table {
@@ -410,13 +416,13 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
         .sticky-header-row-1 {
             position: sticky;
             top: 0;
-            z-index: 100;
+            z-index: 70;
             background-color: #f8f9fa;
         }
         
         .sticky-header-row-2 {
             position: sticky;
-            top: 80px; /* Height of first header row */
+            top: 0px; /* Height of first header row */
             z-index: 99;
             background-color: #f8f9fa;
         }
@@ -515,6 +521,18 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
             color: #dc3545 !important;
             font-weight: 600;
         }
+
+        /* Hide number input spinners (up/down arrows) */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+            appearance: textfield;
+        }
+        
         /* Summary table styles */
         #Summary .table-container {
             max-height: 400px;
@@ -1333,9 +1351,55 @@ function navigateToInput(currentInput, direction) {
     }
 }
 
+// ==================== DRAG TO SCROLL ====================
+let isDragging = false;
+let startX;
+let scrollLeftStart;
+
+function initDragScroll() {
+    const containers = document.querySelectorAll('.table-container');
+    
+    containers.forEach(container => {
+        // Mouse down: start drag if not on an input
+        container.addEventListener('mousedown', (e) => {
+            // Don't start drag if clicking on an input or select
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON') {
+                return;
+            }
+            
+            e.preventDefault(); // prevent text selection
+            isDragging = true;
+            container.classList.add('grabbing');
+            startX = e.pageX - container.offsetLeft;
+            scrollLeftStart = container.scrollLeft;
+        });
+        
+        // Mouse move: update scroll if dragging
+        container.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            e.preventDefault();
+            const x = e.pageX - container.offsetLeft;
+            const walk = (x - startX) * 2; // scroll speed multiplier
+            container.scrollLeft = scrollLeftStart - walk;
+        });
+        
+        // Mouse up / leave: stop dragging
+        container.addEventListener('mouseup', () => {
+            isDragging = false;
+            container.classList.remove('grabbing');
+        });
+        
+        container.addEventListener('mouseleave', () => {
+            isDragging = false;
+            container.classList.remove('grabbing');
+        });
+    });
+}
+
 // ==================== EVENT LISTENERS ====================
 document.addEventListener('DOMContentLoaded', function() {
     loadQuarterData(1);
+    initDragScroll(); // 👈 initialize drag scrolling
     
     document.getElementById('quarterSelect').addEventListener('change', function() {
         const selectedQuarter = this.value;
@@ -1436,5 +1500,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
     </script>
+</div><!-- /.page-content -->
 </body>
 </html>

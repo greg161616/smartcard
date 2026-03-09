@@ -352,9 +352,6 @@ if ($selected) {
     <?php else: ?>
       <!-- Back Button -->
       <div class="mb-3 d-flex justify-content-between align-items-center">
-        <a href="select_class.php?date=<?= urlencode($date) ?>&school_year=<?= urlencode($schoolYear) ?>" class="btn btn-outline-secondary">
-          <i class="fas fa-arrow-left"></i> Back to Classes
-        </a>
         <div class="date-picker-container">
           <form method="get" class="d-inline-block">
             <input type="hidden" name="sectionID" value="<?= $sectionID ?>">
@@ -365,6 +362,9 @@ if ($selected) {
             <i class="bi bi-pencil-square"></i> Take Attendance
           </button>
         </div>
+          <a href="select_class.php?date=<?= urlencode($date) ?>&school_year=<?= urlencode($schoolYear) ?>">
+          <i class="bi bi-x-lg btn btn-outline-secondary"></i>
+          </a>
       </div>
 
       <!-- Status Legend -->
@@ -394,7 +394,7 @@ if ($selected) {
 
       <!-- Main View: Attendance Records Table (Read‑Only) -->
       <div class="card">
-        <div class="card-body p-0">
+        <div class="card-body p-2">
           <?php if (empty($attendanceRecords)): ?>
             <div class="alert alert-info m-3">No attendance records found for this date.</div>
           <?php else: ?>
@@ -625,5 +625,6 @@ if ($selected) {
       </script>
     <?php endif; ?>
   </div>
+</div><!-- /.page-content -->
 </body>
 </html>

@@ -5,478 +5,444 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'head') {
     exit;
 }
 
-
-// Get admin's profile picture
 $user_id = $_SESSION['user_id'];
-$profilePicturePath = '../img/default.jpg'; // Default fallback
+$profilePicturePath = '../img/default.jpg';
 
-// Fetch profile picture from database
 $picStmt = $conn->prepare("SELECT path FROM profile_picture WHERE user_id = ? ORDER BY uploaded_at DESC LIMIT 1");
 $picStmt->bind_param("i", $user_id);
 $picStmt->execute();
 $picResult = $picStmt->get_result();
 if ($picResult->num_rows > 0) {
-    $profilePicture = $picResult->fetch_assoc();
-    $profilePicturePath = $profilePicture['path'];
+    $profilePicturePath = $picResult->fetch_assoc()['path'];
 }
 $picStmt->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Balaytigue National High School</title>
-  <link rel="icon" type="image/png" href="../img/logo.png" />
+  <link rel="icon" type="image/png" href="../img/logo.png"/>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@700&display=swap" rel="stylesheet" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@700&display=swap" rel="stylesheet"/>
+
   <style>
-:root {
-  --sidebar-width: 200px;
-  --mobile-breakpoint: 768px;
-}
-
-.header {
-    height: 70px;
-    background:rgb(255, 255, 255);
-    display: flex;
-    align-items: center;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 1000;
-}
-.profile-circle {
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
-    object-fit: cover;
-    display: block;
-    cursor: pointer;
-    transition: transform 0.2s ease;
-}
-.profile-circle:hover {
-    transform: scale(1.05);
-}
-.dropdown-item:hover {
-    background: rgb(232, 234, 235);
-    color: #ffffff;
-}
-.admin-sidebar {
-    width: var(--sidebar-width);
-    height: 100vh;
-    background: #ffffff;
-    position: fixed;
-    left: 0;
-    top: 0;
-    z-index: 1001;
-    display: flex;
-    flex-direction: column;
-    transition: transform 0.3s ease;
-}
-.admin-sidebar .logo {
-    width: 70px;
-    margin: 24px auto 8px auto;
-    display: block;
-}
-.admin-sidebar .school-name {
-    font-weight: bold;
-    font-size: 20px;
-    margin-top: 8px;
-    color:rgb(0, 0, 0);
-    font-family: 'Merriweather', serif;
-    text-align: center;
-}
-.admin-sidebar .nav-link {
-    color: #222;
-    text-decoration: none;
-    font-size: 17px;
-    display: block;
-    margin-bottom: 5px;
-    transition: all 0.3s ease;
-}
-.admin-sidebar .nav-link:hover,
-.admin-sidebar .nav-link.active {
-    background: #f0f0f0;
-    color: #222;
-    border-radius: 8px;
-}
-body {
-    background:rgb(236, 240, 243);
-    margin-left: var(--sidebar-width) !important;
-    transition: margin-left 0.3s ease;
-    padding-top: 70px;
-}
-a[style*="text-decoration:none"]:hover, a[style*="text-decoration:none"].active {
-    background: #8b8b8b !important;
-    color: #949494 !important;
-    border-radius: 8px;
-}
-
-/* Profile dropdown styles - FIXED VERSION */
-.profile-dropdown {
-    position: relative;
-    display: inline-block;
-    height: 100%;
-    display: flex;
-    align-items: center;
-}
-.profile-dropdown-content {
-    position: absolute;
-    background-color: white;
-    min-width: 160px;
-    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
-    z-index: 1100;
-    border-radius: 8px;
-    right: 0;
-    top: 100%;
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.3s ease, visibility 0.3s ease;
-    pointer-events: none;
-    padding: 5px 0;
-}
-.profile-dropdown-content a {
-    color: black;
-    padding: 12px 16px;
-    text-decoration: none;
-    display: block;
-    text-align: left;
-    font-size: 14px;
-}
-.profile-dropdown-content a:hover {
-    background-color: #f0f0f0;
-    color: #222;
-}
-.profile-dropdown-content hr {
-    margin: 5px 0;
-}
-
-/* Hover functionality for desktop */
-@media (min-width: 769px) {
-    .profile-dropdown:hover .profile-dropdown-content {
-        opacity: 1;
-        visibility: visible;
-        pointer-events: auto;
-    }
-}
-
-/* Click functionality for mobile */
-@media (max-width: 768px) {
-    .profile-dropdown.active .profile-dropdown-content {
-        opacity: 1;
-        visibility: visible;
-        pointer-events: auto;
-    }
-}
-
-/* Scrollable sidebar styles */
-.sidebar-content {
-    flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding-bottom: 60px;
-}
-
-.sidebar-footer {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    width: var(--sidebar-width);
-    background: #6c757d;
-    padding: 10px 0;
-    text-align: center;
-    border-top: 1px solid #8b8b8b;
-    transition: width 0.3s ease;
-}
-
-/* Custom scrollbar for sidebar */
-.sidebar-content::-webkit-scrollbar {
-    width: 6px;
-}
-
-.sidebar-content::-webkit-scrollbar-track {
-    background: #8b8b8b;
-    border-radius: 10px;
-}
-
-.sidebar-content::-webkit-scrollbar-thumb {
-    background: #8b8b8b;
-    border-radius: 10px;
-}
-
-.sidebar-content::-webkit-scrollbar-thumb:hover {
-    background: #8b8b8b;
-}
-
-/* Rotate caret icon when expanded */
-.nav-link[aria-expanded="true"] .bi-caret-down-fill {
-    transform: rotate(180deg);
-}
-.bi-caret-down-fill {
-    transition: transform 0.3s ease;
-}
-
-/* Mobile toggle button */
-.mobile-toggle {
-    display: none;
-    background: none;
-    border: none;
-    font-size: 24px;
-    color: #333;
-    cursor: pointer;
-    margin-right: 15px;
-}
-
-/* Overlay for mobile */
-.sidebar-overlay {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 999;
-}
-
-/* Mobile responsive styles */
-@media (max-width: 768px) {
     :root {
-        --sidebar-width: 250px;
+      --sidebar-width: 220px;
+      --header-height: 60px;
+      --header-bg: #ecedf3;
+      --sidebar-bg: #ffffff;
+      --sidebar-hover: #4f5560;
     }
-    
+
+    * { box-sizing: border-box; }
+
     body {
-        margin-left: 0 !important;
-        padding-top: 70px;
+      margin: 0;
+      padding: 0;
+      background: #ecedf3;
     }
-    
-    .admin-sidebar {
-        transform: translateX(-100%);
-        top: 70px;
-        height: calc(100vh - 70px);
-        z-index: 1002;
+
+    /* ── Header ── */
+    .app-header {
+      height: var(--header-height);
+      background: var(--header-bg);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 1002;
     }
-    
-    .admin-sidebar.mobile-open {
-        transform: translateX(0);
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
-    
-    .mobile-toggle {
-        display: block;
+
+    #headerLogo {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      object-fit: cover;
     }
-    
-    .sidebar-overlay.active {
-        display: block;
-        z-index: 998;
+
+    #headerTitle {
+      font-family: 'Merriweather', serif;
+      font-size: 16px;
+      font-weight: 700;
+      color: #111111;
+      white-space: nowrap;
+      display: none;
     }
-    
-    .sidebar-footer {
-        width: var(--sidebar-width);
-        bottom: 0;
-        left: 0;
+
+    .sidebar-toggle {
+      width: 40px;
+      height: 36px;
+      border: 1px solid #b0b0b0;
+      background: #ecedf3;
+      border-radius: 45px;
+      color: #000000;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.18s;
+      flex-shrink: 0;
     }
-    
-    .header {
-        padding-left: 15px;
-        padding-right: 15px;
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        z-index: 1001;
+    .sidebar-toggle:hover { background: rgba(0,0,0,0.12); }
+
+    /* ── Profile ── */
+    .profile-dropdown {
+      position: relative;
+      display: flex;
+      align-items: center;
     }
-    
+
+    .profile-circle {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      object-fit: cover;
+      cursor: pointer;
+      border: 2px solid rgba(0,0,0,0.15);
+      transition: border-color 0.2s;
+    }
+    .profile-circle:hover { border-color: #555; }
+
     .profile-dropdown-content {
-        right: 10px;
-        top: 100%;
+      position: absolute;
+      right: 0;
+      top: calc(100% + 8px);
+      background: #fff;
+      border-radius: 10px;
+      min-width: 160px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+      z-index: 1300;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.2s, visibility 0.2s;
+      pointer-events: none;
     }
-}
+    .profile-dropdown.active .profile-dropdown-content {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+    }
+    .profile-dropdown-content a {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 11px 16px;
+      color: #222;
+      text-decoration: none;
+      font-size: 14px;
+    }
+    .profile-dropdown-content a:hover { background: #e9ecef; color: #222; }
+    .profile-dropdown-content hr { margin: 4px 0; border-color: #eee; }
+
+    /* ── Overlay ── */
+    .sidebar-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.38);
+      z-index: 1001;
+    }
+    .sidebar-overlay.active { display: block; }
+
+    /* ── Sidebar ── */
+    .admin-sidebar {
+      width: var(--sidebar-width);
+      height: 100vh;
+      background: var(--sidebar-bg);
+      position: fixed;
+      left: 0; top: 0;
+      z-index: 1003;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 3px 0 18px rgba(0,0,0,0.13);
+      transform: translateX(-100%);
+      transition: none;
+    }
+    .admin-sidebar.ready { transition: transform 0.28s ease; }
+    .admin-sidebar.open  { transform: translateX(0); }
+
+    /* Sidebar topbar */
+    .sidebar-topbar {
+      height: var(--header-height);
+      background: var(--header-bg);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 12px;
+      flex-shrink: 0;
+    }
+
+    .sidebar-topbar img {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+    .sidebar-topbar .sidebar-title {
+      font-family: 'Merriweather', serif;
+      font-size: 15px;
+      font-weight: 700;
+      color: #555555;
+      flex: 1;
+      white-space: nowrap;
+    }
+
+    .sidebar-close-btn {
+      width: 32px;
+      height: 32px;
+      background: #ecedf3;
+      border: none;
+      border-radius: 50%;
+      color: #6b6b6b;
+      font-size: 17px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.18s;
+      flex-shrink: 0;
+    }
+    .sidebar-close-btn:hover { background: rgba(0,0,0,0.15); }
+
+    /* Nav links */
+    .sidebar-content {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 8px 0;
+      min-height: 0; /* important: lets flex child shrink and scroll properly */
+    }
+    .sidebar-content::-webkit-scrollbar { width: 4px; }
+    .sidebar-content::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+
+    .admin-sidebar .nav-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      margin: 2px 8px;
+      border-radius: 8px;
+      color: #333;
+      text-decoration: none;
+      font-size: 14.5px;
+      transition: background 0.18s, color 0.18s;
+    }
+    .admin-sidebar .nav-link i { font-size: 17px; min-width: 20px; }
+    .admin-sidebar .nav-link:hover,
+    .admin-sidebar .nav-link.active {
+      background: var(--sidebar-hover);
+      color: #fff;
+    }
+
+    /* Collapse sub-menu items */
+    .admin-sidebar .collapse .nav-link {
+      font-size: 13.5px;
+      padding: 8px 12px;
+      margin: 1px 8px 1px 24px;
+    }
+
+    /* Caret — rotated via JS, not CSS attr selector */
+    .nav-link .bi-caret-down-fill {
+      font-size: 11px;
+      margin-left: auto;
+      flex-shrink: 0;
+      transition: transform 0.25s ease;
+    }
+
+    .sidebar-footer {
+      padding: 10px;
+      border-top: 1px solid #ebebeb;
+      flex-shrink: 0;
+    }
+
+    /* ── Page content ── */
+    .page-content { padding-top: var(--header-height); }
   </style>
+
+  <script>
+    (function() {
+      window.__sidebarInitOpen = localStorage.getItem('sidebarOpen_admin') === 'true';
+    })();
+  </script>
 </head>
 <body>
 
-<nav class="header navbar navbar-expand navbar-light bg-light px-4">
-  <button class="mobile-toggle" id="sidebarToggle">
-    <i class="bi bi-list"></i>
-  </button>
-  <div class="ms-auto">
-    <div class="profile-dropdown" id="profileDropdown">
-      <img src="<?php echo htmlspecialchars($profilePicturePath); ?>" alt="Profile Picture" class="profile-circle border border-secondary">
-      <div class="profile-dropdown-content">
-        <a href="profile.php"><i class="bi bi-person" style="margin-right: 8px;"></i> Profile</a>
-        <hr>
-        <a href="../logout.php" class="text-danger"><i class="bi bi-box-arrow-right" style="margin-right: 8px;"></i> Logout</a>
-      </div>
+<!-- ── Header ── -->
+<nav class="app-header">
+  <div class="header-left">
+    <img src="../img/logo.png" alt="Logo" id="headerLogo">
+    <span id="headerTitle">SMARTCARD</span>
+    <button class="sidebar-toggle" id="sidebarToggle" title="Toggle Sidebar">
+      <i class="bi bi-layout-sidebar" id="toggleIcon"></i>
+    </button>
+  </div>
+
+  <div class="profile-dropdown" id="profileDropdown">
+    <img src="<?php echo htmlspecialchars($profilePicturePath); ?>" alt="Profile" class="profile-circle">
+    <div class="profile-dropdown-content">
+      <a href="profile.php"><i class="bi bi-person"></i> Profile</a>
+      <hr>
+      <a href="../logout.php" class="text-danger"><i class="bi bi-box-arrow-right"></i> Logout</a>
     </div>
   </div>
 </nav>
 
+<!-- ── Overlay ── -->
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
+<!-- ── Sidebar ── -->
 <div class="admin-sidebar" id="adminSidebar">
-    <!-- Fixed header section -->
-    <div>
-        <img src="../img/logo.png" alt="BANAHIS Logo" class="logo">
-    </div>
-    
-    <div class="school-name">SMARTCARD</div>
-    <div style="font-size:13px;color:#555;text-align:center;">Student Academic Performance Management System</div>
-    
-    <!-- Scrollable content section -->
-    <div class="sidebar-content">
-        <nav class="nav flex-column px-2">
-            <!-- Dashboard Link -->
-            <a class="nav-link mt-4" href="../administration/dashboard.php">
-                <i class="bi bi-speedometer2" style="font-size:20px;margin-right:12px;"></i> Dashboard
-            </a>
-            
-            <!-- Master List with Collapse -->
-            <a class="nav-link mt-3" data-bs-toggle="collapse" href="#masterListCollapse" role="button" aria-expanded="false" aria-controls="masterListCollapse">
-                <i class="bi bi-people" style="font-size:20px;margin-right:12px;"></i> Master List
-                <i class="bi bi-caret-down-fill float-end" style="font-size:14px;"></i>
-            </a>
-            <div class="collapse ps-4" id="masterListCollapse">
-                <a class="nav-link" href="../administration/studentlist.php" style="font-size:15px;">
-                    <i class="bi bi-person" style="font-size:16px;margin-right:8px;"></i> Student
-                </a>
-                <a class="nav-link" href="../administration/teacher.php" style="font-size:15px;">
-                    <i class="bi bi-person-badge" style="font-size:16px;margin-right:8px;"></i> Teacher
-                </a>      
-            </div>
-            
-            <a class="nav-link mt-3" href="../administration/section.php">
-                <i class="bi bi-building" style="font-size:20px;margin-right:12px;"></i> Sections
-            </a>
-            <a class="nav-link mt-3" href="../administration/subject.php">
-                <i class="bi bi-book" style="font-size:20px;margin-right:12px;"></i> Subjects
-            </a>
-            <a href="../administration/view_logs.php" class="nav-link mt-3">
-                <i class="bi bi-journal-text" style="font-size:20px;margin-right:12px;"></i> Logs
-            </a>
-            <a href="../administration/backup.php" class="nav-link mt-3">
-                <i class="bi bi-cloud-arrow-up" style="font-size:20px;margin-right:12px;"></i> Backup & Restore
-            </a>
-        </nav>
-    </div>
-    
-    <!-- Fixed footer section -->
-    <div class="sidebar-footer">
-    </div>
+  <div class="sidebar-topbar">
+    <img src="../img/logo.png" alt="Logo">
+    <span class="sidebar-title">SMARTCARD</span>
+    <button class="sidebar-close-btn" id="sidebarCloseBtn" title="Close">
+      <i class="bi bi-layout-sidebar-reverse"></i>
+    </button>
+  </div>
+
+  <div class="sidebar-content">
+    <nav class="nav flex-column px-1 mt-1">
+
+      <a class="nav-link" href="../administration/dashboard.php">
+        <i class="bi bi-speedometer2"></i><span>Dashboard</span>
+      </a>
+
+      <!-- Master List (collapsible) -->
+      <a class="nav-link" id="masterListToggle" role="button" style="cursor:pointer;">
+        <i class="bi bi-people"></i><span>Master List</span>
+        <i class="bi bi-caret-down-fill" id="masterCaret"></i>
+      </a>
+      <div id="masterListCollapse" style="overflow:hidden; max-height:0; transition:max-height 0.28s ease;">
+        <a class="nav-link" href="../administration/studentlist.php">
+          <i class="bi bi-person"></i><span>Student</span>
+        </a>
+        <a class="nav-link" href="../administration/teacher.php">
+          <i class="bi bi-person-badge"></i><span>Teacher</span>
+        </a>
+      </div>
+
+      <a class="nav-link" href="../administration/section.php">
+        <i class="bi bi-building"></i><span>Sections</span>
+      </a>
+      <a class="nav-link" href="../administration/subject.php">
+        <i class="bi bi-book"></i><span>Subjects</span>
+      </a>
+      <a class="nav-link" href="../administration/view_logs.php">
+        <i class="bi bi-journal-text"></i><span>Logs</span>
+      </a>
+      <a class="nav-link" href="../administration/backup.php">
+        <i class="bi bi-cloud-arrow-up"></i><span>Backup &amp; Restore</span>
+      </a>
+
+    </nav>
+  </div>
+
+  <div class="sidebar-footer"></div>
 </div>
 
+<!-- ── Page content ── -->
+<div class="page-content" id="pageContent">
+  <!-- page content here -->
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    const links = document.querySelectorAll('.admin-sidebar .nav-link');
-    const currentUrl = window.location.pathname.replace(/\\/g, '/');
-    let masterListActive = false;
-    
-    // Check if current page matches any of the master list items
-    links.forEach(link => {
-      if (link.getAttribute('href') === '#masterListCollapse') return;
-      
-      const linkPath = new URL(link.href, window.location.origin).pathname.replace(/\\/g, '/');
-      
-      if (currentUrl.endsWith(linkPath)) {
-        link.classList.add('active');
-        
-        // If this is a master list item, expand the master list
-        if (
-          linkPath.endsWith('/administration/studentlist.php') ||
-          linkPath.endsWith('/administration/teacher.php')
-        ) {
-          masterListActive = true;
-        }
+  const sidebar     = document.getElementById('adminSidebar');
+  const overlay     = document.getElementById('sidebarOverlay');
+  const toggleBtn   = document.getElementById('sidebarToggle');
+  const closeBtn    = document.getElementById('sidebarCloseBtn');
+  const toggleIcon  = document.getElementById('toggleIcon');
+  const headerLogo  = document.getElementById('headerLogo');
+  const headerTitle = document.getElementById('headerTitle');
+  const profileDrop = document.getElementById('profileDropdown');
+
+  var isOpen = window.__sidebarInitOpen || false;
+
+  function applyState(open, animate) {
+    if (animate) sidebar.classList.add('ready');
+    if (open) {
+      sidebar.classList.add('open');
+      overlay.classList.add('active');
+      headerLogo.style.display  = 'none';
+      headerTitle.style.display = 'inline';
+      toggleIcon.className = 'bi bi-layout-sidebar-reverse';
+    } else {
+      sidebar.classList.remove('open');
+      overlay.classList.remove('active');
+      headerLogo.style.display  = 'inline-block';
+      headerTitle.style.display = 'none';
+      toggleIcon.className = 'bi bi-layout-sidebar';
+    }
+  }
+
+  applyState(isOpen, false);
+  requestAnimationFrame(() => requestAnimationFrame(() => sidebar.classList.add('ready')));
+
+  function openSidebar()   { isOpen = true;  localStorage.setItem('sidebarOpen_admin', true);  applyState(true,  true); }
+  function closeSidebar()  { isOpen = false; localStorage.setItem('sidebarOpen_admin', false); applyState(false, true); }
+  function toggleSidebar() { isOpen ? closeSidebar() : openSidebar(); }
+
+  toggleBtn.addEventListener('click', toggleSidebar);
+  closeBtn.addEventListener('click',  closeSidebar);
+  overlay.addEventListener('click',   closeSidebar);
+
+  // Master List pure JS toggle
+  const masterToggle   = document.getElementById('masterListToggle');
+  const masterCollapse = document.getElementById('masterListCollapse');
+  const masterCaret    = document.getElementById('masterCaret');
+  let masterOpen       = false;
+
+  function setMaster(open, animate) {
+    masterOpen = open;
+    if (!animate) masterCollapse.style.transition = 'none';
+    else masterCollapse.style.transition = 'max-height 0.28s ease';
+
+    if (open) {
+      masterCollapse.style.maxHeight = masterCollapse.scrollHeight + 'px';
+      masterCaret.style.transform = 'rotate(180deg)';
+    } else {
+      masterCollapse.style.maxHeight = '0';
+      masterCaret.style.transform = 'rotate(0deg)';
+    }
+  }
+
+  masterToggle.addEventListener('click', () => setMaster(!masterOpen, true));
+
+  // Active link highlighting + auto-expand Master List if sub-item is active
+  const links = document.querySelectorAll('.admin-sidebar .nav-link');
+  const currentPath = window.location.pathname.replace(/\\/g, '/');
+
+  links.forEach(link => {
+    const href = link.getAttribute('href');
+    if (!href || href === '#') return;
+    if (currentPath.endsWith(href.replace(/^\.\./, ''))) {
+      link.classList.add('active');
+      if (href.includes('/administration/studentlist.php') || href.includes('/administration/teacher.php')) {
+        setMaster(true, false);
       }
-    });
-    
-    // Expand master list if one of its items is active
-    if (masterListActive) {
-      const masterListCollapse = document.getElementById('masterListCollapse');
-      const masterListToggle = document.querySelector('[href="#masterListCollapse"]');
-      
-      // Use Bootstrap's Collapse API to properly expand it
-      const collapse = new bootstrap.Collapse(masterListCollapse, {
-        toggle: true
-      });
-      
-      // Update aria-expanded attribute
-      masterListToggle.setAttribute('aria-expanded', 'true');
     }
-    
-    // Add event listener for collapse events to handle caret rotation
-    const masterListCollapse = document.getElementById('masterListCollapse');
-    if (masterListCollapse) {
-      masterListCollapse.addEventListener('show.bs.collapse', function () {
-        const caret = document.querySelector('[href="#masterListCollapse"] .bi-caret-down-fill');
-        if (caret) {
-          caret.style.transform = 'rotate(180deg)';
-        }
-      });
-      
-      masterListCollapse.addEventListener('hide.bs.collapse', function () {
-        const caret = document.querySelector('[href="#masterListCollapse"] .bi-caret-down-fill');
-        if (caret) {
-          caret.style.transform = 'rotate(0deg)';
-        }
-      });
-    }
-    
-    // Mobile sidebar toggle functionality
-    const sidebarToggle = document.getElementById('sidebarToggle');
-    const adminSidebar = document.getElementById('adminSidebar');
-    const sidebarOverlay = document.getElementById('sidebarOverlay');
-    
-    function toggleSidebar() {
-      adminSidebar.classList.toggle('mobile-open');
-      sidebarOverlay.classList.toggle('active');
-    }
-    
-    sidebarToggle.addEventListener('click', toggleSidebar);
-    sidebarOverlay.addEventListener('click', toggleSidebar);
-    
-    // Profile dropdown functionality
-    const profileDropdown = document.getElementById('profileDropdown');
-    
-    // Only add click functionality for mobile devices
-    if (window.innerWidth <= 768) {
-        profileDropdown.addEventListener('click', function(e) {
-            e.stopPropagation();
-            this.classList.toggle('active');
-        });
-        
-        // Close dropdown when clicking outside (for mobile)
-        document.addEventListener('click', function() {
-            profileDropdown.classList.remove('active');
-        });
-    }
-    
-    // Close sidebar when clicking on a link (for mobile)
-    if (window.innerWidth <= 768) {
-      const sidebarLinks = document.querySelectorAll('.admin-sidebar .nav-link');
-      sidebarLinks.forEach(link => {
-        link.addEventListener('click', function() {
-          if (!this.getAttribute('data-bs-toggle') || this.getAttribute('data-bs-toggle') !== 'collapse') {
-            adminSidebar.classList.remove('mobile-open');
-            sidebarOverlay.classList.remove('active');
-          }
-        });
-      });
-    }
-    
-    // Handle window resize
-    window.addEventListener('resize', function() {
-      if (window.innerWidth > 768) {
-        adminSidebar.classList.remove('mobile-open');
-        sidebarOverlay.classList.remove('active');
-      }
-    });
+  });
+
+  // Profile dropdown — stays open when moving to menu
+  let profileTimeout;
+  profileDrop.addEventListener('mouseenter', () => { clearTimeout(profileTimeout); profileDrop.classList.add('active'); });
+  profileDrop.addEventListener('mouseleave', () => { profileTimeout = setTimeout(() => profileDrop.classList.remove('active'), 150); });
 });
 </script>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

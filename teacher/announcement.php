@@ -638,5 +638,6 @@ $today_count = $today_result ? mysqli_fetch_assoc($today_result)['count'] : 0;
             this.style.height = (this.scrollHeight) + 'px';
         });
     </script>
+</div><!-- /.page-content -->
 </body>
 </html>
