@@ -20,20 +20,23 @@ if (isset($_SESSION['user_id'])) {
 
 <style>
   :root {
-    --sidebar-width: 220px;
+    --sidebar-width: 240px;
     --header-height: 60px;
     --header-bg: #ecedf3;
-    --sidebar-bg: #ffffff;
-    --sidebar-hover: #4f5560;
+    --sidebar-bg: #1a1f2e;
+    --sidebar-accent: #2a3142;
+    --sidebar-hover: rgba(255,255,255,0.10);
+    --sidebar-active: rgba(255,255,255,0.14);
+    --sidebar-text: rgba(255,255,255,0.75);
+    --sidebar-muted: rgba(255,255,255,0.38);
     --transition-speed: 0.28s;
   }
 
   * { box-sizing: border-box; }
 
   body {
-    margin: 0;
-    padding: 0;
-    background: #ecedf3;
+    margin: 0; padding: 0;
+    background: #F5F0E8;
   }
 
   /* ── Header ── */
@@ -142,13 +145,12 @@ if (isset($_SESSION['user_id'])) {
 
   /* ── Sidebar ── */
   .admin-sidebar {
-    width: var(--sidebar-width);
-    height: 100vh;
+    width: var(--sidebar-width); height: 100vh;
     background: var(--sidebar-bg);
     position: fixed; left: 0; top: 0;
     z-index: 1003;
     display: flex; flex-direction: column;
-    box-shadow: 3px 0 18px rgba(0,0,0,0.13);
+    box-shadow: 4px 0 24px rgba(0,0,0,0.28);
     transform: translateX(-100%);
     transition: transform var(--transition-speed) ease;
     overflow: hidden;
@@ -157,52 +159,102 @@ if (isset($_SESSION['user_id'])) {
 
   .sidebar-topbar {
     height: var(--header-height);
-    background: var(--header-bg);
+    background: rgba(0,0,0,0.18);
     display: flex; align-items: center;
-    gap: 10px; padding: 0 12px; flex-shrink: 0;
+    gap: 10px; padding: 0 14px; flex-shrink: 0;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
   }
   .sidebar-topbar img {
-    width: 34px; height: 34px;
-    border-radius: 50%; object-fit: cover;
+    width: 30px; height: 30px;
+    border-radius: 50%; object-fit: cover; opacity: 0.85;
   }
   .sidebar-topbar .sidebar-title {
     font-family: 'Merriweather', serif;
-    font-size: 15px; font-weight: 700;
-    color: #555; flex: 1; white-space: nowrap;
+    font-size: 14px; font-weight: 700;
+    color: rgba(255,255,255,0.80);
+    flex: 1; white-space: nowrap; letter-spacing: 0.5px;
   }
   .sidebar-close-btn {
-    width: 32px; height: 32px;
-    background: #ecedf3; border: none;
-    border-radius: 50%; color: #6b6b6b; font-size: 17px;
+    width: 30px; height: 30px;
+    background: rgba(255,255,255,0.07); border: none;
+    border-radius: 50%; color: rgba(255,255,255,0.55); font-size: 15px;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; transition: background 0.18s; flex-shrink: 0;
   }
-  .sidebar-close-btn:hover { background: rgba(0,0,0,0.18); }
+  .sidebar-close-btn:hover { background: rgba(255,255,255,0.14); color: #fff; }
+
+  /* Portal label + user block */
+  .sidebar-portal-label {
+    padding: 16px 16px 0; flex-shrink: 0;
+  }
+  .sidebar-portal-label span {
+    font-size: 9px; font-weight: 700;
+    letter-spacing: 3px; text-transform: uppercase;
+    color: var(--sidebar-muted);
+  }
+  .portal-label-rule {
+    height: 1px; background: rgba(255,255,255,0.09); margin-top: 8px;
+  }
+  .sidebar-user-block {
+    padding: 14px 16px 12px; flex-shrink: 0; cursor: pointer;
+  }
+  .sidebar-avatar-circle {
+    width: 48px; height: 48px; border-radius: 50%;
+    background: #3a8e6e;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px; font-weight: 700;
+    color: #fff; letter-spacing: 0.5px;
+    margin-bottom: 10px;
+    box-shadow: 0 3px 12px rgba(0,0,0,0.3);
+    border: 2px solid rgba(255,255,255,0.13);
+    transition: transform 0.2s;
+    overflow: hidden; position: relative;
+  }
+  .sidebar-avatar-circle img {
+    width: 100%; height: 100%;
+    object-fit: cover; border-radius: 50%;
+    position: absolute; inset: 0;
+  }
+  .sidebar-user-block:hover .sidebar-avatar-circle { transform: scale(1.05); }
+  .sidebar-user-name {
+    font-size: 13.5px; font-weight: 700;
+    color: #fff; line-height: 1.2; margin-bottom: 2px;
+  }
+  .sidebar-user-role {
+    font-size: 11px; color: var(--sidebar-muted); font-weight: 400;
+  }
 
   .sidebar-content {
     flex: 1; overflow-y: auto; overflow-x: hidden;
     padding: 8px 0; min-height: 0;
   }
   .sidebar-content::-webkit-scrollbar { width: 4px; }
-  .sidebar-content::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+  .sidebar-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
 
   .admin-sidebar .nav-link {
     display: flex; align-items: center; gap: 10px;
-    padding: 10px 16px; margin: 2px 8px;
-    border-radius: 8px; color: #333;
-    text-decoration: none; font-size: 14.5px;
+    padding: 9px 14px; margin: 2px 8px;
+    border-radius: 8px; color: var(--sidebar-text);
+    text-decoration: none; font-size: 13.5px;
     transition: background 0.18s, color 0.18s;
   }
-  .admin-sidebar .nav-link i { font-size: 17px; min-width: 20px; }
-  .admin-sidebar .nav-link:hover,
-  .admin-sidebar .nav-link.active {
-    background: var(--sidebar-hover); color: #fff;
-  }
+  .admin-sidebar .nav-link i { font-size: 16px; min-width: 20px; opacity: 0.75; }
+  .admin-sidebar .nav-link:hover { background: var(--sidebar-hover); color: #fff; }
+  .admin-sidebar .nav-link:hover i { opacity: 1; }
+  .admin-sidebar .nav-link.active { background: var(--sidebar-active); color: #fff; font-weight: 600; }
+  .admin-sidebar .nav-link.active i { opacity: 1; }
 
   .sidebar-footer {
-    padding: 10px;
-    border-top: 1px solid #ebebeb; flex-shrink: 0;
+    padding: 12px;
+    border-top: 1px solid rgba(255,255,255,0.08); flex-shrink: 0;
   }
+  .sidebar-footer .logout-link {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px; border-radius: 8px;
+    color: var(--sidebar-muted); text-decoration: none; font-size: 13.5px;
+    transition: background 0.18s, color 0.18s;
+  }
+  .sidebar-footer .logout-link:hover { background: var(--sidebar-hover); color: #fff; }
 
   /* ── Page content wrapper ── */
   .page-content {
@@ -262,6 +314,15 @@ if (isset($_SESSION['user_id'])) {
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
 <!-- ── Sidebar ── -->
+<?php
+  $a_full_name = isset($_SESSION['name']) ? htmlspecialchars($_SESSION['name'])
+              : (isset($_SESSION['email']) ? htmlspecialchars($_SESSION['email']) : 'Admin');
+  $a_parts    = explode(' ', trim($a_full_name));
+  $a_initials = count($a_parts) >= 2
+              ? strtoupper(substr($a_parts[0],0,1).substr(end($a_parts),0,1))
+              : strtoupper(substr($a_full_name,0,2));
+  $a_has_pic  = ($profilePicturePath !== '../img/default.jpg') && file_exists($profilePicturePath);
+?>
 <div class="admin-sidebar" id="adminSidebar">
   <div class="sidebar-topbar">
     <img src="../img/logo.png" alt="Logo">
@@ -270,6 +331,24 @@ if (isset($_SESSION['user_id'])) {
       <i class="bi bi-layout-sidebar-reverse"></i>
     </button>
   </div>
+
+  <div class="sidebar-portal-label">
+    <span>Admin Portal</span>
+    <div class="portal-label-rule"></div>
+  </div>
+
+  <div class="sidebar-user-block">
+    <div class="sidebar-avatar-circle">
+      <?php if ($a_has_pic): ?>
+        <img src="<?php echo htmlspecialchars($profilePicturePath); ?>" alt="Profile" onerror="this.style.display='none';">
+      <?php else: ?>
+        <?php echo $a_initials; ?>
+      <?php endif; ?>
+    </div>
+    <div class="sidebar-user-name"><?php echo $a_full_name; ?></div>
+    <div class="sidebar-user-role">Administrator</div>
+  </div>
+
   <div class="sidebar-content">
     <nav class="nav flex-column px-1 mt-1">
       <a class="nav-link" href="../admin/principalDash.php">
@@ -292,7 +371,11 @@ if (isset($_SESSION['user_id'])) {
       </a>
     </nav>
   </div>
-  <div class="sidebar-footer"></div>
+  <div class="sidebar-footer">
+    <a href="../logout.php" class="logout-link">
+      <i class="bi bi-box-arrow-right"></i><span>Sign Out</span>
+    </a>
+  </div>
 </div>
 
 <!-- ── Page content wrapper opens here (close </div> before </body> in each page) ── -->

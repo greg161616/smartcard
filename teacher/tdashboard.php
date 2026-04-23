@@ -414,12 +414,7 @@ while ($row = $announcements_result->fetch_assoc()) {
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        .dashboard-header {
-            background: #2c3e50;
-            color: white;
-            padding: 2rem 0;
-            margin-bottom: 2rem;
-        }
+
         .stat-card {
             border: none;
             border-radius: 10px;
@@ -475,36 +470,26 @@ while ($row = $announcements_result->fetch_assoc()) {
 <body>
     <?php include __DIR__ . '/../navs/teacherNav.php'; ?>
     
-    <div class="dashboard-header">
-        <div class="container-fluid">
-            <div class="row align-items-center">
-                <div class="col-md-8">
-                    <h1 class="display-5 fw-bold">Welcome, <?php echo htmlspecialchars($teacher_name); ?>!</h1>
-                    <p class="lead mb-0">Teacher Dashboard - <?php echo date('F j, Y'); ?></p>
-                </div>
-                <div class="col-md-4 text-end">
-                        <form method="GET" class="d-flex align-items-center justify-content-end gap-2">
-                            <label for="school_year" class="fw-bold mb-0">School Year:</label>
-                            <select name="school_year" id="school_year" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
-                                <?php foreach ($available_school_years as $year): ?>
-                                    <option value="<?php echo htmlspecialchars($year); ?>" 
-                                        <?php echo $year == $current_school_year ? 'selected' : ''; ?>>
-                                        <?php echo htmlspecialchars($year); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                                <?php if (empty($available_school_years)): ?>
-                                    <option value="<?php echo htmlspecialchars($current_school_year); ?>" selected>
-                                        <?php echo htmlspecialchars($current_school_year); ?>
-                                    </option>
-                                <?php endif; ?>
-                            </select>
-                        </form>
-                    </div>
-                </div>
-            </div>
+    <div class="container-fluid mt-4">
+        <div class="d-flex justify-content-end mb-4">
+            <form method="GET" class="d-flex align-items-center gap-2">
+                <label for="school_year" class="fw-bold mb-0 text-dark">School Year:</label>
+                <select name="school_year" id="school_year" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
+                    <?php foreach ($available_school_years as $year): ?>
+                        <option value="<?php echo htmlspecialchars($year); ?>" 
+                            <?php echo $year == $current_school_year ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($year); ?>
+                        </option>
+                    <?php endforeach; ?>
+                    <?php if (empty($available_school_years)): ?>
+                        <option value="<?php echo htmlspecialchars($current_school_year); ?>" selected>
+                            <?php echo htmlspecialchars($current_school_year); ?>
+                        </option>
+                    <?php endif; ?>
+                </select>
+            </form>
         </div>
 
-    <div class="container-fluid">
         <!-- Quick Stats Row -->
         <div class="row mb-4">
             <div class="col-xl-4 col-md-6 mb-4">
