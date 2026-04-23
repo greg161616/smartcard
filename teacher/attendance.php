@@ -207,15 +207,20 @@ if ($selected) {
   <!-- SweetAlert2 CSS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
   <style>
-    body { background: #f0f2f5; }
+    body { background: #F5F0E8; } /* Cream background */
     .card-container { max-width: 900px; margin: 60px auto; }
+    
     .attendance-badge {
       font-size: 0.85rem;
-      padding: 0.35em 0.65em;
+      padding: 0.45em 0.85em;
+      border-radius: 6px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
     }
-    .badge-present { background-color: #198754; }
-    .badge-absent { background-color: #dc3545; }
-    .badge-excused { background-color: #6c757d; }
+    .badge-present { background-color: #d1fae5; color: #065f46; border: 1px solid #34d399; }
+    .badge-absent { background-color: #fee2e2; color: #991b1b; border: 1px solid #f87171; }
+    .badge-excused { background-color: #f3f4f6; color: #374151; border: 1px solid #9ca3af; }
+    
     /* Attendance icon styles (for modal) */
     .attendance-icon {
       width: 36px;
@@ -243,28 +248,114 @@ if ($selected) {
       border: 2px solid #ef4444;
     }
     .status-excused {
-      background-color: #e5e7eb;
+      background-color: #f3f4f6;
       color: #374151;
       border: 2px solid #9ca3af;
     }
-    .status-indicator {
-      display: inline-block;
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      margin-right: 8px;
+    
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+        flex-wrap: wrap;
+        gap: 16px;
     }
-    .indicator-present { background-color: #10b981; }
-    .indicator-absent { background-color: #ef4444; }
-    .indicator-excused { background-color: #9ca3af; }
-    .summary-card {
-      border-radius: 10px;
-      border: none;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+
+    .page-title-group .title {
+        font-weight: 800;
+        color: #1a1f2e;
+        margin: 0;
+        font-size: 1.5rem;
+        letter-spacing: -0.5px;
     }
-    /* DataTable scrollable card */
+    
+    .page-title-group .subtitle {
+        color: #6c757d;
+        font-weight: 500;
+        font-size: 0.95rem;
+        margin-top: 4px;
+    }
+
+    .action-group {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    
+    .custom-card {
+        border: none;
+        border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.04);
+        background: #ffffff;
+    }
+
+    .btn-action {
+        border-radius: 8px;
+        font-weight: 600;
+        padding: 8px 16px;
+        transition: background 0.2s;
+        border: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .btn-take {
+        background: #1a1f2e;
+        color: #ffffff;
+    }
+    .btn-take:hover {
+        background: #2a3142;
+        color: #ffffff;
+    }
+
+    .btn-close-action {
+        background: #ffffff;
+        color: #495057;
+        border: 1px solid #e9ecef;
+    }
+    .btn-close-action:hover {
+        background: #f8f9fa;
+        color: #1a1f2e;
+    }
+    
+    .date-input-modern {
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        padding: 7px 12px;
+        font-weight: 600;
+        color: #1a1f2e;
+        background: #ffffff;
+        outline: none;
+        transition: border-color 0.2s;
+    }
+    .date-input-modern:focus {
+        border-color: #3a7bd5;
+    }
+    /* DataTable enhancements */
+    .table-hover tbody tr:hover {
+        background-color: #f8f9fa;
+    }
+    .table thead th {
+        background-color: #ffffff;
+        border-bottom: 2px solid #f0f2f5;
+        color: #6c757d;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.8rem;
+        letter-spacing: 0.5px;
+        padding: 16px;
+    }
+    .table tbody td {
+        padding: 16px;
+        vertical-align: middle;
+        border-bottom: 1px solid #f0f2f5;
+    }
+
     .dataTables_wrapper {
       margin-bottom: 1rem;
+      padding: 16px;
     }
     /* Remove default DataTable controls except search */
     .dataTables_paginate,
@@ -278,14 +369,22 @@ if ($selected) {
     }
     .dataTables_filter label {
       font-weight: 500;
+      color: #495057;
     }
     .dataTables_filter input {
       margin-left: 0.5rem;
-      border: 1px solid #ced4da;
-      border-radius: 0.375rem;
-      padding: 0.375rem 0.75rem;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      padding: 8px 16px;
       width: 250px;
       max-width: 100%;
+      background: #f8f9fa;
+      transition: all 0.2s;
+    }
+    .dataTables_filter input:focus {
+        background: #ffffff;
+        border-color: #3a7bd5;
+        outline: none;
     }
     .dataTables_scrollBody {
       max-height: 400px !important;
@@ -350,55 +449,38 @@ if ($selected) {
       </div>
 
     <?php else: ?>
-      <!-- Back Button -->
-      <div class="mb-3 d-flex justify-content-between align-items-center">
-        <div class="date-picker-container">
-          <form method="get" class="d-inline-block">
-            <input type="hidden" name="sectionID" value="<?= $sectionID ?>">
-            <input type="hidden" name="school_year" value="<?= htmlspecialchars($schoolYear) ?>">
-            <input type="date" name="date" value="<?= htmlspecialchars($date) ?>" class="form-control form-control-sm" onchange="this.form.submit()">
-          </form>
-          <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#takeAttendanceModal">
-            <i class="bi bi-pencil-square"></i> Take Attendance
-          </button>
-        </div>
-          <a href="select_class.php?date=<?= urlencode($date) ?>&school_year=<?= urlencode($schoolYear) ?>">
-          <i class="bi bi-x-lg btn btn-outline-secondary"></i>
-          </a>
-      </div>
-
-      <!-- Status Legend -->
-      <div class="row mb-3">
-        <div class="col-md-12">
-          <div class="card summary-card">
-            <div class="card-body">
-              <h5 class="card-title">
-                Attendance for Grade <?= htmlspecialchars($selected['GradeLevel']) ?> - <?= htmlspecialchars($selected['SectionName']) ?>
-                <small class="text-muted">(<?= htmlspecialchars($date) ?>)</small>
-              </h5>
-              <div class="row text-center mt-3">
-                <div class="col-md-4">
-                  <span class="status-indicator indicator-present"></span> <strong>Present</strong>
-                </div>
-                <div class="col-md-4">
-                  <span class="status-indicator indicator-absent"></span> <strong>Absent</strong>
-                </div>
-                <div class="col-md-4">
-                  <span class="status-indicator indicator-excused"></span> <strong>Excused</strong>
-                </div>
-              </div>
-            </div>
+      <!-- Header Section -->
+      <div class="page-header">
+          <div class="page-title-group">
+              <h2 class="title">Grade <?= htmlspecialchars($selected['GradeLevel']) ?> - <?= htmlspecialchars($selected['SectionName']) ?></h2>
+              <div class="subtitle"><i class="bi bi-calendar3 me-2"></i><?= date('F j, Y', strtotime($date)) ?></div>
           </div>
-        </div>
+          <div class="action-group">
+              <form method="get" class="m-0">
+                  <input type="hidden" name="sectionID" value="<?= $sectionID ?>">
+                  <input type="hidden" name="school_year" value="<?= htmlspecialchars($schoolYear) ?>">
+                  <input type="date" name="date" value="<?= htmlspecialchars($date) ?>" class="date-input-modern" onchange="this.form.submit()">
+              </form>
+              <button type="button" class="btn-action btn-take" data-bs-toggle="modal" data-bs-target="#takeAttendanceModal">
+                  <i class="bi bi-pencil-square"></i> Take Attendance
+              </button>
+              <a href="select_class.php?date=<?= urlencode($date) ?>&school_year=<?= urlencode($schoolYear) ?>" class="btn-action btn-close-action text-decoration-none">
+                  <i class="bi bi-x-lg"></i> Close
+              </a>
+          </div>
       </div>
 
       <!-- Main View: Attendance Records Table (Read‑Only) -->
-      <div class="card">
-        <div class="card-body p-2">
+      <div class="custom-card overflow-hidden">
+        <div class="card-body p-0">
           <?php if (empty($attendanceRecords)): ?>
-            <div class="alert alert-info m-3">No attendance records found for this date.</div>
+            <div class="alert alert-info m-4 border-0 text-center py-5" style="background: #f8f9fa; color: #6c757d; border-radius: 12px;">
+                <i class="bi bi-calendar-x fs-1 d-block mb-3 text-muted"></i>
+                <h5 class="fw-bold text-dark">No records found</h5>
+                <p class="mb-0">There are no attendance records for this date yet.</p>
+            </div>
           <?php else: ?>
-            <table id="attendance-view-table" class="table table-hover align-middle mb-0">
+            <table id="attendance-view-table" class="table table-hover align-middle border-0 mb-0">
               <thead class="table-light">
                 <tr>
                   <th>LRN</th>
@@ -425,8 +507,8 @@ if ($selected) {
                   }
                 ?>
                   <tr>
-                    <td><?= htmlspecialchars($record['LRN']) ?></td>
-                    <td><?= htmlspecialchars($name) ?></td>
+                    <td class="fw-semibold text-muted ps-4"><?= htmlspecialchars($record['LRN']) ?></td>
+                    <td class="fw-bold text-dark"><?= htmlspecialchars($name) ?></td>
                     <td><span class="badge attendance-badge <?= $badgeClass ?>"><?= $statusText ?></span></td>
                   </tr>
                 <?php endforeach; ?>

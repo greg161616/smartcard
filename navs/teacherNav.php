@@ -508,9 +508,6 @@
       <a class="nav-link" href="../teacher/tdashboard.php">
         <i class="bi bi-speedometer2"></i><span>Dashboard</span>
       </a>
-      <a class="nav-link" href="../teacher/list.php">
-        <i class="bi bi-clipboard"></i><span>Student List</span>
-      </a>
       <a class="nav-link" href="../teacher/select_class.php">
         <i class="bi bi-calendar-check"></i><span>Attendance</span>
       </a>

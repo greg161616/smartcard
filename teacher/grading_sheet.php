@@ -134,11 +134,133 @@ $stmt->close();
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <style>
-    .header_c {
-        background: #2c3e50;
-        color: white;
-        padding: 1rem 0;
-        margin-bottom: 1rem;
+    body { background: #F5F0E8; } /* Matching cream background */
+    
+    .page-title {
+        color: #1a1f2e;
+        font-weight: 800;
+        letter-spacing: -0.5px;
+        margin-bottom: 0;
+    }
+    
+    .filter-widget {
+        background: #ffffff;
+        border-radius: 16px;
+        padding: 16px 28px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.04);
+        display: flex;
+        align-items: center;
+        margin-bottom: 32px;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    
+    .filter-group {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 8px 12px;
+        border-radius: 12px;
+        transition: background 0.2s;
+    }
+    
+    .filter-group:hover {
+        background: #f8f9fa;
+    }
+
+    .filter-icon-wrapper {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.25rem;
+    }
+    
+    .bg-icon-class { background: #e3f2fd; color: #0d6efd; }
+    .bg-icon-year { background: #fff3cd; color: #ffc107; }
+
+    .filter-input-wrapper {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .filter-label-floating {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        font-weight: 700;
+        color: #adb5bd;
+        margin-bottom: 2px;
+        letter-spacing: 0.5px;
+    }
+
+    .custom-filter-input {
+        border: none;
+        background: transparent;
+        font-weight: 700;
+        font-size: 1.1rem;
+        color: #1a1f2e;
+        padding: 0;
+        cursor: pointer;
+        outline: none;
+        max-width: 200px;
+    }
+    
+    .custom-filter-input:focus {
+        outline: none;
+    }
+
+    .filter-divider {
+        width: 1px;
+        height: 40px;
+        background: #e9ecef;
+        margin: 0 16px;
+    }
+
+    .btn-apply-filter {
+        background: #1a1f2e;
+        color: #ffffff;
+        border-radius: 8px;
+        font-weight: 600;
+        padding: 10px 20px;
+        transition: background 0.2s;
+        border: none;
+    }
+    .btn-apply-filter:hover {
+        background: #2a3142;
+        color: #ffffff;
+    }
+    
+    .btn-reset-filter {
+        background: #ffffff;
+        color: #6c757d;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        font-weight: 600;
+        padding: 10px 20px;
+        transition: all 0.2s;
+    }
+    .btn-reset-filter:hover {
+        background: #f8f9fa;
+        color: #495057;
+        border-color: #adb5bd;
+    }
+
+    .custom-card {
+        border: none;
+        border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.04);
+        background: #ffffff;
+        margin-bottom: 24px;
+        overflow: hidden;
+    }
+    .custom-card-header {
+        background: transparent !important;
+        border-bottom: 1px solid rgba(0,0,0,0.05);
+        padding: 1.25rem 1.5rem;
+        font-weight: 700;
+        color: #1a1f2e;
     }
     .card-action-buttons {
       display: flex;
@@ -154,155 +276,327 @@ $stmt->close();
       border-left: 4px solid #0dcaf0;
       height: 100%;
     }
-    .student-count-badge {
-      font-size: 0.8rem;
-      padding: 4px 8px;
+    .student-badge {
+        background: #f0f2f5;
+        color: #495057;
+        font-weight: 600;
+        border-radius: 6px;
+        padding: 6px 10px;
     }
+    
+    .grading-card {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.04);
+        transition: transform 0.2s, box-shadow 0.2s;
+        height: 100%;
+        background: #ffffff;
+        border-left: 4px solid #1a1f2e;
+    }
+    .grading-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+    }
+    .grading-card .card-header {
+        background: transparent !important;
+        border-bottom: 1px solid rgba(0,0,0,0.03);
+        padding: 1.25rem;
+    }
+    .grading-card .card-body {
+        padding: 1.25rem;
+    }
+
+    .action-btn-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 16px;
+    }
+    .action-btn-row {
+        display: flex;
+        gap: 8px;
+    }
+    .btn-grading-action {
+        flex: 1;
+        border-radius: 8px;
+        font-weight: 600;
+        padding: 10px 12px;
+        font-size: 0.85rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        transition: all 0.2s;
+        border: none;
+        text-decoration: none;
+    }
+    .btn-spreadsheet {
+        background: #cee8dcff;
+        color: #0f5132;
+        border: 1px solid #0c4128;  
+    }
+    .btn-spreadsheet:hover { background: #badbcc; color: #0c4128; }
+    
+    .btn-upload {
+        background: #fff3cd;
+        color: #997404;
+    }
+    .btn-upload:hover { background: #ffe69c; color: #856404; }
+
+    .btn-view {
+        background: #1a1f2e;
+        color: #ffffff;
+    }
+    .btn-view:hover { background: #2a3142; color: #ffffff; }
+
     /* Responsive card columns */
     .card-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-      gap: 1rem;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.5rem;
+      padding: 0.5rem;
     }
-    @media (max-width: 576px) {
-      .card-grid {
-        grid-template-columns: 1fr;
-      }
+    @media (max-width: 1400px) {
+        .card-grid {
+            grid-template-columns: repeat(3, 1fr);
+        }
     }
-    .container-fluid {
-      padding-left: 0.75rem;
-      padding-right: 0.75rem;
+    @media (max-width: 1100px) {
+        .card-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
     }
-    /* Remove table-specific styles since we're only using cards */
+    @media (max-width: 768px) {
+        .card-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    /* View Toggle Styles */
+    .view-toggle {
+        display: flex;
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 4px;
+        gap: 4px;
+        border: 1px solid #e9ecef;
+    }
+    .btn-view-toggle {
+        background: transparent;
+        border: none;
+        color: #6c757d;
+        border-radius: 6px;
+        padding: 6px 12px;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .btn-view-toggle:hover {
+        color: #1a1f2e;
+        background: #e9ecef;
+    }
+    .btn-view-toggle.active {
+        background: #ffffff;
+        color: #1a1f2e;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    
+    /* Table styles for list view */
+    .table-hover tbody tr:hover {
+        background-color: #f8f9fa;
+    }
+    .table thead th {
+        background-color: #ffffff;
+        border-bottom: 2px solid #f0f2f5;
+        color: #6c757d;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.8rem;
+        letter-spacing: 0.5px;
+        padding: 16px;
+    }
+    .table tbody td {
+        padding: 16px;
+        vertical-align: middle;
+        border-bottom: 1px solid #f0f2f5;
+    }
   </style>
   <script>
     function resetFilters() {
       window.location.href = window.location.pathname;
     }
+
+    document.addEventListener("DOMContentLoaded", () => {
+        const gridBtn = document.getElementById("btn-grid-view");
+        const listBtn = document.getElementById("btn-list-view");
+        const gridView = document.getElementById("grading-grid-view");
+        const listView = document.getElementById("grading-list-view");
+
+        if(gridBtn && listBtn && gridView && listView) {
+            // Load preference
+            const viewPref = localStorage.getItem('gradingViewPref') || 'grid';
+            if(viewPref === 'list') {
+                setListView();
+            }
+
+            gridBtn.addEventListener("click", setGridView);
+            listBtn.addEventListener("click", setListView);
+
+            function setGridView() {
+                gridBtn.classList.add("active");
+                listBtn.classList.remove("active");
+                gridView.classList.remove("d-none");
+                listView.classList.add("d-none");
+                localStorage.setItem('gradingViewPref', 'grid');
+            }
+
+            function setListView() {
+                listBtn.classList.add("active");
+                gridBtn.classList.remove("active");
+                listView.classList.remove("d-none");
+                gridView.classList.add("d-none");
+                localStorage.setItem('gradingViewPref', 'list');
+            }
+        }
+    });
   </script>
 </head>
 <body>
   <?php include '../navs/teacherNav.php'; ?>
   
-  <!-- Header Section -->
-  <div class="header_c">
-    <div class="container">
-        <div class="row align-items-center">
-            <div class="col-md-8">
-                <h1 class="fw-bold mb-1">Welcome, <?php echo htmlspecialchars($teacher_name); ?>!</h1>
-                <p class="mb-2">Grade Management - <?php echo date('F j, Y'); ?></p>
+  <div class="container-fluid mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="page-title">Grade Management</h2>
+    </div>
+
+    <!-- Modern Filter Widget -->
+    <form method="POST" id="filterForm" class="filter-widget">
+        <div class="filter-group">
+            <div class="filter-icon-wrapper bg-icon-class">
+                <i class="bi bi-people-fill"></i>
             </div>
-            <div class="col-md-4 text-md-end">
-                <div class="bg-white rounded-pill px-3 py-2 d-inline-block">
-                    <small class="text-muted">School Year: <?php echo htmlspecialchars($selectedSchoolYear); ?></small>
-                </div>
+            <div class="filter-input-wrapper">
+                <span class="filter-label-floating">Filter by Class</span>
+                <select class="custom-filter-input" id="section_filter" name="section_filter">
+                    <option value="">All My Classes</option>
+                    <?php foreach ($sections as $section): ?>
+                      <option value="<?= $section['SectionID'] ?>" <?= ($selectedSection == $section['SectionID']) ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($section['SectionDisplay']) ?>
+                      </option>
+                    <?php endforeach; ?>
+                </select>
             </div>
         </div>
-    </div>
-  </div>
+        
+        <div class="filter-divider d-none d-md-block"></div>
 
-  <div class="container-fluid">
-    <!-- Filter Card -->
-    <div class="card shadow-sm mb-4">
-      <div class="card-header py-3">
-        <h5 class="mb-0 fw-bold"><i class="bi bi-funnel me-2"></i>Filter Classes</h5>
-      </div>
-      <div class="card-body">
-        <form method="POST" id="filterForm">
-          <div class="row align-items-end">
-            <div class="col-md-3">
-              <label for="section_filter" class="form-label">Filter by Class:</label>
-              <select class="form-select" id="section_filter" name="section_filter">
-                <option value="">All My Classes</option>
-                <?php foreach ($sections as $section): ?>
-                  <option value="<?= $section['SectionID'] ?>" <?= ($selectedSection == $section['SectionID']) ? 'selected' : '' ?>>
-                    <?= htmlspecialchars($section['SectionDisplay']) ?>
-                  </option>
-                <?php endforeach; ?>
-              </select>
+        <div class="filter-group">
+            <div class="filter-icon-wrapper bg-icon-year">
+                <i class="bi bi-mortarboard-fill"></i>
             </div>
-            <div class="col-md-3">
-              <label for="school_year_filter" class="form-label">Filter by School Year:</label>
-              <select class="form-select" id="school_year_filter" name="school_year_filter">
-                <?php foreach ($schoolYears as $year): ?>
-                  <option value="<?= $year ?>" <?= ($selectedSchoolYear == $year) ? 'selected' : '' ?>>
-                    <?= htmlspecialchars($year) ?>
-                  </option>
-                <?php endforeach; ?>
-              </select>
+            <div class="filter-input-wrapper">
+                <span class="filter-label-floating">School Year</span>
+                <select class="custom-filter-input" id="school_year_filter" name="school_year_filter">
+                    <?php foreach ($schoolYears as $year): ?>
+                      <option value="<?= $year ?>" <?= ($selectedSchoolYear == $year) ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($year) ?>
+                      </option>
+                    <?php endforeach; ?>
+                </select>
             </div>
-            <div class="col-md-auto mt-2 mt-md-0">
-              <button type="submit" class="btn btn-primary">Apply Filters</button>
-              <button type="button" class="btn btn-secondary ms-2" onclick="resetFilters()">Reset Filters</button>
-            </div>
-          </div>
-        </form>
-      </div>
-    </div>
+        </div>
+        
+        <div class="ms-md-auto mt-3 mt-md-0 d-flex gap-2 w-100 w-md-auto justify-content-end">
+            <button type="button" class="btn-reset-filter flex-grow-1 flex-md-grow-0" onclick="resetFilters()">Reset</button>
+            <button type="submit" class="btn-apply-filter flex-grow-1 flex-md-grow-0">Apply</button>
+        </div>
+    </form>
 
     <!-- Main Grades Card -->
     <div class="row">
       <div class="col-md-12">
-        <div class="card shadow-sm mb-4">
-          <div class="card-header  py-3">
+        <div class="custom-card mb-4">
+          <div class="custom-card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0 fw-bold">
-              <i class="bi bi-table me-2"></i>Grade Upload &amp; View
+              <i class="bi bi-journal-bookmark-fill text-primary me-2"></i>My Grading Sheets
             </h5>
+            <div class="view-toggle">
+                <button type="button" class="btn-view-toggle active" id="btn-grid-view" title="Grid View"><i class="bi bi-grid-fill"></i></button>
+                <button type="button" class="btn-view-toggle" id="btn-list-view" title="List View"><i class="bi bi-list-ul"></i></button>
+            </div>
           </div>
           <div class="card-body">
             <?php if (empty($assignments)): ?>
-              <div class="alert alert-info">
-                <i class="bi bi-info-circle me-2"></i>
+              <div class="alert alert-info m-4 border-0 text-center py-4" style="background: #f8f9fa; color: #6c757d; border-radius: 12px;">
+                <i class="bi bi-info-circle fs-3 d-block mb-2"></i>
                 No classes match the selected filters for <?php echo htmlspecialchars($selectedSchoolYear); ?>.
               </div>
             <?php else: ?>
               <!-- Card grid for all screen sizes -->
-              <div class="card-grid">
+              <div class="card-grid" id="grading-grid-view">
                 <?php foreach ($assignments as $a): ?>
-                  <div class="card mobile-card border-1 shadow-sm">
-                    <div class="card-header bg-light py-3">
+                  <div class="card grading-card">
+                    <div class="card-header py-3">
                       <div class="d-flex justify-content-between align-items-start">
                         <div>
-                          <h6 class="mb-1 fw-bold"><?= htmlspecialchars($a['SubjectName']) ?></h6>
-                          <small class="text-muted">
+                          <h6 class="mb-1 fw-bold text-dark fs-5"><?= htmlspecialchars($a['SubjectName']) ?></h6>
+                          <div class="text-muted" style="font-weight: 500;">
                             Grade <?= $a['GradeLevel'] ?> • <?= htmlspecialchars($a['SectionName']) ?>
-                          </small>
+                          </div>
                         </div>
-                        <span class="badge bg-secondary"><?= $a['StudentCount'] ?> students</span>
+                        <span class="student-badge"><i class="bi bi-people-fill me-1"></i><?= $a['StudentCount'] ?></span>
                       </div>
                     </div>
-                    <div class="card-body py-3">
-                      <div class="row align-items-center mb-2">
-                        <div class="col-12">
-                          <small class="text-muted">
-                            <i class="bi bi-calendar me-1"></i>School Year: <?= htmlspecialchars($a['SchoolYear']) ?>
-                          </small>
-                        </div>
+                    <div class="card-body">
+                      <div class="mb-2">
+                        <small class="text-muted fw-semibold">
+                          <i class="bi bi-calendar3 me-2"></i>School Year: <?= htmlspecialchars($a['SchoolYear']) ?>
+                        </small>
                       </div>
-                      <div class="card-action-buttons">
-                        <a
-                          href="spread_sheet.php?subject_id=<?= $a['SubjectID'] ?>&section_id=<?= $a['SectionID'] ?>&school_year=<?= urlencode($a['SchoolYear']) ?>"
-                          class="btn btn-success btn-sm"
-                        >
-                          <i class="bi bi-table me-1"></i> Spreadsheet
+                      
+                      <div class="action-btn-group">
+                        <a href="spread_sheet.php?subject_id=<?= $a['SubjectID'] ?>&section_id=<?= $a['SectionID'] ?>&school_year=<?= urlencode($a['SchoolYear']) ?>" class="btn-grading-action btn-spreadsheet w-100" style="justify-content: center;">
+                          <i class="bi bi-file-earmark-spreadsheet-fill me-2"></i> Open Spreadsheet
                         </a>
-                        <a
-                          href="grades.php?subject_id=<?= $a['SubjectID'] ?>&section_id=<?= $a['SectionID'] ?>&school_year=<?= urlencode($a['SchoolYear']) ?>"
-                          class="btn btn-primary btn-sm"
-                        >
-                          <i class="bi bi-upload me-1"></i> Upload
-                        </a>
-                        <a
-                          href="view_grades.php?subject_id=<?= $a['SubjectID'] ?>&section_id=<?= $a['SectionID'] ?>&school_year=<?= urlencode($a['SchoolYear']) ?>"
-                          class="btn btn-info btn-sm"
-                        >
-                          <i class="bi bi-eye me-1"></i> View
-                        </a>
-                        <!-- Values button removed as requested -->
                       </div>
                     </div>
                   </div>
                 <?php endforeach; ?>
+              </div>
+
+              <!-- List view for all screen sizes -->
+              <div class="table-responsive d-none" id="grading-list-view">
+                <table class="table table-hover align-middle border-0 mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-4">Subject</th>
+                            <th>Section</th>
+                            <th>School Year</th>
+                            <th>Students</th>
+                            <th class="text-end pe-4">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($assignments as $a): ?>
+                        <tr>
+                            <td class="ps-4 fw-bold text-dark fs-6"><?= htmlspecialchars($a['SubjectName']) ?></td>
+                            <td>
+                                <div class="text-muted" style="font-weight: 500;">Grade <?= $a['GradeLevel'] ?> • <?= htmlspecialchars($a['SectionName']) ?></div>
+                            </td>
+                            <td><small class="text-muted fw-semibold"><i class="bi bi-calendar3 me-2"></i><?= htmlspecialchars($a['SchoolYear']) ?></small></td>
+                            <td><span class="student-badge"><i class="bi bi-people-fill me-1"></i><?= $a['StudentCount'] ?></span></td>
+                            <td class="text-end pe-4">
+                                <div class="d-flex gap-2 justify-content-end">
+                                    <a href="spread_sheet.php?subject_id=<?= $a['SubjectID'] ?>&section_id=<?= $a['SectionID'] ?>&school_year=<?= urlencode($a['SchoolYear']) ?>" class="btn-grading-action btn-spreadsheet" style="flex: 0 1 auto; padding: 6px 16px;" title="Spreadsheet">
+                                      <i class="bi bi-file-earmark-spreadsheet-fill me-1"></i> Spreadsheet
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
               </div>
             <?php endif; ?>
           </div>

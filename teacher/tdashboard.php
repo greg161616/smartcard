@@ -415,55 +415,139 @@ while ($row = $announcements_result->fetch_assoc()) {
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
 
-        .stat-card {
+        /* General styling */
+        .card {
             border: none;
-            border-radius: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            transition: transform 0.2s ease;
+            border-radius: 16px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.04);
+            background: #ffffff;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            margin-bottom: 24px;
+        }
+        
+        .card-header {
+            background: transparent !important;
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+            padding: 1.25rem 1.5rem;
+            font-weight: 700;
+            color: #1a1f2e !important;
+        }
+        .card-header h5 {
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+        
+        .card-body {
+            padding: 1.5rem;
+        }
+
+        /* Quick Stat Cards */
+        .stat-card {
+            border-radius: 16px;
+            color: #fff;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.08);
+            margin-bottom: 24px;
         }
         .stat-card:hover {
-            transform: translateY(-2px);
+            transform: translateY(-4px);
+            box-shadow: 0 14px 28px rgba(0,0,0,0.12);
         }
-        .attendance-chart {
-            max-height: 250px;
+        .stat-card .card-body {
+            padding: 1.5rem 1.5rem 1.2rem;
+            position: relative;
+            z-index: 2;
         }
-        .grade-progress {
-            height: 8px;
+        .stat-icon-bg {
+            position: absolute;
+            right: -10px;
+            bottom: -20px;
+            font-size: 6.5rem;
+            color: rgba(255,255,255,0.15);
+            z-index: 1;
+            transform: rotate(-10deg);
         }
-        .section-stats {
-            font-size: 0.9rem;
+        
+        .stat-title {
+            font-size: 0.85rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            opacity: 0.9;
+            margin-bottom: 4px;
         }
-        .card-header {
-            font-weight: 600;
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 800;
+            line-height: 1.1;
+            margin-bottom: 0;
         }
-        .no-record {
-            color: #6c757d;
-            font-style: italic;
+        .stat-subtext {
+            font-size: 0.85rem;
+            opacity: 0.95;
+            margin-top: 12px;
+            background: rgba(0,0,0,0.18);
+            padding: 6px 12px;
+            border-radius: 20px;
+            display: inline-block;
         }
-        .absent-student-list {
-            max-height: 300px;
-            overflow-y: auto;
-        }
+
+        /* Stat Colors */
+        .stat-primary { background: linear-gradient(135deg, #3a7bd5 0%, #3a6073 100%); }
+        .stat-success { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+        .stat-warning { background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%); color: #fff;}
+
+        /* Other elements */
         .quarter-toggle {
             cursor: pointer;
-            padding: 0.25rem 0.5rem;
-            border-radius: 0.25rem;
-            font-size: 0.875rem;
+            padding: 0.35rem 0.75rem;
+            border-radius: 0.5rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            transition: all 0.2s;
         }
         .quarter-toggle.active {
-            background-color: #0d6efd;
+            background-color: #1a1f2e;
             color: white;
+            border-color: #1a1f2e;
         }
-        .honor-badge {
-            font-size: 0.75rem;
-        }
+        
         .announcement-link {
             text-decoration: none;
             color: inherit;
             cursor: pointer;
+            border-radius: 12px;
+            padding: 12px;
+            transition: background 0.2s;
+            margin-bottom: 12px !important;
+            border-bottom: none !important;
+            background: #f8f9fa;
         }
         .announcement-link:hover {
-            color: #0d6efd;
+            background: #f1f3f5;
+        }
+        
+        .event-item {
+            border-left: 4px solid #3a7bd5;
+            background: #f8f9fa;
+            border-radius: 0 12px 12px 0;
+            padding: 12px 16px;
+            margin-bottom: 12px;
+        }
+        
+        /* Table enhancements */
+        .table {
+            vertical-align: middle;
+        }
+        .table thead th {
+            background-color: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+            color: #6c757d;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            letter-spacing: 0.5px;
         }
     </style>
 </head>
@@ -493,57 +577,44 @@ while ($row = $announcements_result->fetch_assoc()) {
         <!-- Quick Stats Row -->
         <div class="row mb-4">
             <div class="col-xl-4 col-md-6 mb-4">
-                <div class="card stat-card border-0">
+                <div class="card stat-card stat-primary">
+                    <i class="bi bi-people-fill stat-icon-bg"></i>
                     <div class="card-body">
-                        <div class="d-flex justify-content-between">
-                            <div>
-                                <h6 class="card-title text-muted">TOTAL STUDENTS</h6>
-                                <h3 class="fw-bold"><?php echo $total_students; ?></h3>
-                            </div>
-                        </div>
-                        <div class="mt-2">
-                            <small class="text-muted">Male: <?php echo $male_count; ?> | Female: <?php echo $female_count; ?></small>
+                        <div class="stat-title">Total Students</div>
+                        <div class="stat-value"><?php echo $total_students; ?></div>
+                        <div class="stat-subtext">
+                            <i class="bi bi-gender-male"></i> <?php echo $male_count; ?> &nbsp;|&nbsp; 
+                            <i class="bi bi-gender-female"></i> <?php echo $female_count; ?>
                         </div>
                     </div>
                 </div>
             </div>
             
             <div class="col-xl-4 col-md-6 mb-4">
-                <div class="card stat-card border-0">
+                <div class="card stat-card stat-success">
+                    <i class="bi bi-calendar-check-fill stat-icon-bg"></i>
                     <div class="card-body">
-                        <div class="d-flex justify-content-between">
-                            <div>
-                                <h6 class="card-title text-muted">TODAY'S ATTENDANCE</h6>
-                                <?php if ($attendance_taken): ?>
-                                    <h3 class="fw-bold"><?php echo $present_today + $excused_today; ?>/<?php echo $total_attendance_today; ?></h3>
-                                <?php else: ?>
-                                    <h3 class="fw-bold text-muted">No Record</h3>
-                                <?php endif; ?>
+                        <div class="stat-title">Today's Attendance</div>
+                        <?php if ($attendance_taken): ?>
+                            <div class="stat-value"><?php echo $present_today + $excused_today; ?><span style="font-size: 1.5rem; opacity: 0.8;">/<?php echo $total_attendance_today; ?></span></div>
+                            <div class="stat-subtext">
+                                Present: <?php echo $present_today; ?> | Absent: <?php echo $absent_today; ?>
                             </div>
-                        </div>
-                        <div class="mt-2">
-                            <?php if ($attendance_taken): ?>
-                                <small class="text-muted">Present: <?php echo $present_today; ?> | Absent: <?php echo $absent_today; ?> | Excused: <?php echo $excused_today; ?> </small>
-                            <?php else: ?>
-                                <small class="text-muted">No attendance recorded for today</small>
-                            <?php endif; ?>
-                        </div>
+                        <?php else: ?>
+                            <div class="stat-value" style="font-size: 2rem;">No Record</div>
+                            <div class="stat-subtext">No attendance recorded today</div>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
             
             <div class="col-xl-4 col-md-6 mb-4">
-                <div class="card stat-card border-0">
+                <div class="card stat-card stat-warning">
+                    <i class="bi bi-journal-bookmark-fill stat-icon-bg"></i>
                     <div class="card-body">
-                        <div class="d-flex justify-content-between">
-                            <div>
-                                <h6 class="card-title text-muted">MY CLASSES</h6>
-                                <h3 class="fw-bold"><?php echo count($assigned_sections); ?></h3>
-                            </div>
-                        </div>
-                        <div class="mt-2">
-                            <small class="text-muted">Assigned sections</small>
-                        </div>
+                        <div class="stat-title">My Classes</div>
+                        <div class="stat-value"><?php echo count($assigned_sections); ?></div>
+                        <div class="stat-subtext">Total assigned sections</div>
                     </div>
                 </div>
             </div>
@@ -554,7 +625,7 @@ while ($row = $announcements_result->fetch_assoc()) {
             <div class="col-md-8">
                 <!-- Student Distribution by Class -->
                 <div class="card mb-4">
-                    <div class="card-header bg-light text-dark">
+                    <div class="card-header">
                         <h5 class="mb-0">Student Distribution by Class (<?php echo htmlspecialchars($current_school_year); ?>)</h5>
                     </div>
                     <div class="card-body">
@@ -570,16 +641,16 @@ while ($row = $announcements_result->fetch_assoc()) {
             <div class="col-md-4">
                 <!-- Upcoming Events -->
                 <div class="card mb-4">
-                    <div class="card-header bg-light text-dark">
+                    <div class="card-header">
                         <h5 class="mb-0">Upcoming Events</h5>
                     </div>
                     <div class="card-body">
                         <?php if (!empty($upcoming_events)): ?>
                             <?php foreach ($upcoming_events as $event): ?>
-                                <div class="border-start border-3 border-secondary ps-3 mb-3">
-                                    <h6 class="mb-1"><?php echo htmlspecialchars($event['title']); ?></h6>
-                                    <small class="text-muted d-block">
-                                        <?php echo date('M j, Y', strtotime($event['event_date'])); ?>
+                                <div class="event-item">
+                                    <h6 class="mb-1 fw-bold"><?php echo htmlspecialchars($event['title']); ?></h6>
+                                    <small class="text-primary fw-semibold d-block mb-1">
+                                        <i class="bi bi-calendar-event"></i> <?php echo date('M j, Y', strtotime($event['event_date'])); ?>
                                     </small>
                                     <small class="text-muted">
                                         <?php echo strlen($event['description']) > 50 ? substr($event['description'], 0, 50) . '...' : $event['description']; ?>
@@ -596,7 +667,7 @@ while ($row = $announcements_result->fetch_assoc()) {
             <div class="row">
                 <div class="col-md-8">
                 <div class="card mb-4">
-                    <div class="card-header bg-light text-dark d-flex justify-content-between align-items-center">
+                    <div class="card-header d-flex justify-content-between align-items-center">
                         <h5 class="mb-0">Average Grade (<?php echo htmlspecialchars($current_school_year); ?>)</h5>
                         <div class="d-flex gap-2">
                             <select id="sectionSelect" class="form-select form-select-sm" style="width: auto;">
@@ -626,24 +697,21 @@ while ($row = $announcements_result->fetch_assoc()) {
                 <div class="col-md-4">
                 <!-- Recent Announcements -->
                 <div class="card">
-                    <div class="card-header bg-light text-dark">
+                    <div class="card-header">
                         <h5 class="mb-0">Recent Announcements</h5>
                     </div>
                     <div class="card-body">
                         <?php if (!empty($recent_announcements)): ?>
                             <?php foreach ($recent_announcements as $announcement): ?>
-                                <div class="mb-3 pb-2 border-bottom announcement-link" 
+                                <div class="announcement-link d-block" 
                                      data-bs-toggle="modal" 
                                      data-bs-target="#announcementModal"
                                      data-title="<?php echo htmlspecialchars($announcement['title']); ?>"
                                      data-date="<?php echo date('M j, Y', strtotime($announcement['date'])); ?>"
                                      data-content="<?php echo htmlspecialchars($announcement['content']); ?>">
-                                    <h6 class="mb-1 text-primary"><?php echo htmlspecialchars($announcement['title']); ?></h6>
-                                    <small class="text-muted d-block">
-                                        <?php echo date('M j, Y', strtotime($announcement['date'])); ?>
-                                    </small>
-                                    <small class="text-muted">
-                                        <?php echo strlen($announcement['content']) > 60 ? substr($announcement['content'], 0, 60) . '...' : $announcement['content']; ?>
+                                    <h6 class="mb-1 text-dark fw-bold"><i class="bi bi-megaphone-fill text-warning me-2"></i><?php echo htmlspecialchars($announcement['title']); ?></h6>
+                                    <small class="text-muted d-block mb-1">
+                                        <i class="bi bi-clock me-1"></i><?php echo date('M j, Y', strtotime($announcement['date'])); ?>
                                     </small>
                                 </div>
                             <?php endforeach; ?>
@@ -657,7 +725,7 @@ while ($row = $announcements_result->fetch_assoc()) {
 
                 <!-- Students with Honors -->
                 <div class="card mb-4">
-                    <div class="card-header bg-light text-dark">
+                    <div class="card-header">
                         <h5 class="mb-0">Students with Honors (<?php echo htmlspecialchars($current_school_year); ?>)</h5>
                     </div>
                     <div class="card-body">

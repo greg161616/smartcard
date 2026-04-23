@@ -220,19 +220,19 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                         <tr class="sticky-header-row-1">
                             <th class="sticky-col-1 text-center">No.</th>
                             <th class="sticky-col-2 learner-name-col">Learner's Name</th>
-                            <th colspan="10" class="text-center">Written Works (<?= htmlspecialchars($wwPercentage) ?>%)</th>
-                            <th class="text-center">Total</th>
-                            <th class="text-center">PS</th>
-                            <th class="text-center">WS</th>
-                            <th colspan="10" class="text-center">Performance Tasks (<?= htmlspecialchars($ptPercentage) ?>%)</th>
-                            <th class="text-center">Total</th>
-                            <th class="text-center">PS</th>
-                            <th class="text-center">WS</th>
-                            <th class="text-center">QA (<?= htmlspecialchars($qaPercentage) ?>%)</th>
-                            <th class="text-center">PS</th>
-                            <th class="text-center">WS</th>
-                            <th class="text-center" style="font-size: smaller;">Initial Grade</th>
-                            <th class="text-center" style="font-size: x-small;">Quarterly Grade</th>
+                            <th colspan="10" class="text-center col-ww">Written Works (<?= htmlspecialchars($wwPercentage) ?>%)</th>
+                            <th class="text-center col-ww">Total</th>
+                            <th class="text-center col-ww">PS</th>
+                            <th class="text-center col-ww">WS</th>
+                            <th colspan="10" class="text-center col-pt">Performance Tasks (<?= htmlspecialchars($ptPercentage) ?>%)</th>
+                            <th class="text-center col-pt">Total</th>
+                            <th class="text-center col-pt">PS</th>
+                            <th class="text-center col-pt">WS</th>
+                            <th class="text-center col-qa">QA (<?= htmlspecialchars($qaPercentage) ?>%)</th>
+                            <th class="text-center col-qa">PS</th>
+                            <th class="text-center col-qa">WS</th>
+                            <th class="text-center col-qa" rowspan="2" style="font-size: smaller; vertical-align: middle;">Initial Grade</th>
+                            <th class="text-center col-qa" rowspan="2" style="font-size: x-small; vertical-align: middle;">Quarterly Grade</th>
                         </tr>
                         <tr class="sticky-header-row-2 ">
                             <th class="sticky-col-1"></th>
@@ -240,47 +240,46 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                             <?php for ($i = 1; $i <= 10; $i++): 
                                 $wwValue = isset($highestScores[$quarter]["ww$i"]) ? $highestScores[$quarter]["ww$i"] : 0;
                             ?>
-                            <th class="text-center fs-6">
+                            <th class="text-center fs-6 col-ww">
                                 <div class="d-flex flex-column align-items-center">
                                     <span><?= $i ?></span>
                                     <input type="number" class="form-control form-control-sm max-score-input ww-max" data-quarter="<?= $quarter ?>" data-index="<?= $i ?>" value="<?= $wwValue ?>" min="0">
                                 </div>
                             </th>
                             <?php endfor; ?>
-                            <th class="text-center" style="font-size: smaller;"><span class="ww-header-total" data-quarter="<?= $quarter ?>">0</span></th>
-                            <th class="text-center" style="font-size: smaller;"><span class="ww-header-ps" data-quarter="<?= $quarter ?>">100.00</span></th>
-                            <th class="text-center" style="font-size: smaller;"><span class="ww-header-ws" data-quarter="<?= $quarter ?>">0</span>%</th>
+                            <th class="text-center col-ww" style="font-size: smaller;"><span class="ww-header-total" data-quarter="<?= $quarter ?>">0</span></th>
+                            <th class="text-center col-ww" style="font-size: smaller;"><span class="ww-header-ps" data-quarter="<?= $quarter ?>">100.00</span></th>
+                            <th class="text-center col-ww" style="font-size: smaller;"><span class="ww-header-ws" data-quarter="<?= $quarter ?>">0</span>%</th>
                             <?php for ($i = 1; $i <= 10; $i++): 
                                 $ptValue = isset($highestScores[$quarter]["pt$i"]) ? $highestScores[$quarter]["pt$i"] : 0;
                             ?>
-                            <th class="text-center">
+                            <th class="text-center col-pt">
                                 <div class="d-flex flex-column align-items-center">
                                     <span><?= $i ?></span>
                                     <input type="number" class="form-control form-control-sm max-score-input pt-max" data-quarter="<?= $quarter ?>" data-index="<?= $i ?>" value="<?= $ptValue ?>" min="0">
                                 </div>
                             </th>
                             <?php endfor; ?>
-                            <th class="text-center" style="font-size: smaller;"><span class="pt-header-total" data-quarter="<?= $quarter ?>">0</span></th>
-                            <th class="text-center" style="font-size: smaller;"><span class="pt-header-ps" data-quarter="<?= $quarter ?>">100.00</span></th>
-                            <th class="text-center" style="font-size: smaller;"><span class="pt-header-ws" data-quarter="<?= $quarter ?>">0</span>%</th>
-                            <th class="text-center">
+                            <th class="text-center col-pt" style="font-size: smaller;"><span class="pt-header-total" data-quarter="<?= $quarter ?>">0</span></th>
+                            <th class="text-center col-pt" style="font-size: smaller;"><span class="pt-header-ps" data-quarter="<?= $quarter ?>">100.00</span></th>
+                            <th class="text-center col-pt" style="font-size: smaller;"><span class="pt-header-ws" data-quarter="<?= $quarter ?>">0</span>%</th>
+                            <th class="text-center col-qa">
                                 <div class="d-flex flex-column align-items-center">
                                     <span>QA</span>
                                     <?php $qaValue = isset($highestScores[$quarter]["qa1"]) ? $highestScores[$quarter]["qa1"] : 0; ?>
                                     <input type="number" class="form-control form-control-sm max-score-input qa-max" data-quarter="<?= $quarter ?>" value="<?= $qaValue ?>" min="0">
                                 </div>
                             </th>
-                            <th class="text-center" style="font-size: smaller;"><span class="qa-header-ps" data-quarter="<?= $quarter ?>">100.00</span></th>
-                            <th class="text-center" style="font-size: smaller;"><span class="qa-header-ws" data-quarter="<?= $quarter ?>">0</span>%</th>
-                            <th class="text-center"></th>
-                            <th class="text-center"></th>
+                            <th class="text-center col-qa" style="font-size: smaller;"><span class="qa-header-ps" data-quarter="<?= $quarter ?>">100.00</span></th>
+                            <th class="text-center col-qa" style="font-size: smaller;"><span class="qa-header-ws" data-quarter="<?= $quarter ?>">0</span>%</th>
+                            <!-- Initial/Quarterly grade headers span both rows -->
                         </tr>
                     </thead>
                     <tbody class="quarter-data-body" data-quarter="<?= $quarter ?>">
                         <!-- Male Students Header Row -->
                         <?php if (!empty($maleStudents)): ?>
                         <tr class="gender-divider bg-light">
-                            <td colspan="2" class="fw-bold py-2 sticky-col-2">
+                            <td colspan="2" class="fw-bold py-2 sticky-col-1">
                             Male Students (<?= count($maleStudents) ?>)
                             </td>
                         </tr>
@@ -294,33 +293,33 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                                 $wwScore = $studentData ? $studentData["ww$i"] : 0;
                                 $maxWw = isset($highestScores[$quarter]["ww$i"]) ? $highestScores[$quarter]["ww$i"] : 0;
                             ?>
-                            <td class="text-center">
+                            <td class="text-center col-ww">
                                 <input type="number" class="form-control form-control-sm ww-input" data-quarter="<?= $quarter ?>" data-index="<?= $i ?>" min="0" value="<?= $wwScore ?>" max="<?= $maxWw ?>">
                             </td>
                             <?php endfor; ?>
-                            <td class="text-center ww-total"><?= $studentData ? array_sum(array_slice($studentData, 2, 10)) : 0 ?></td>
-                            <td class="text-center ww-ps"><?= $studentData ? number_format($studentData['ww_ps'], 2) : '0.00' ?></td>
-                            <td class="text-center ww-ws"><?= $studentData ? number_format($studentData['ww_ws'], 2) : '0.00' ?></td>
+                            <td class="text-center ww-total col-ww"><?= $studentData ? array_sum(array_slice($studentData, 2, 10)) : 0 ?></td>
+                            <td class="text-center ww-ps col-ww"><?= $studentData ? number_format($studentData['ww_ps'], 2) : '0.00' ?></td>
+                            <td class="text-center ww-ws col-ww"><?= $studentData ? number_format($studentData['ww_ws'], 2) : '0.00' ?></td>
                             <?php for ($i = 1; $i <= 10; $i++): 
                                 $ptScore = $studentData ? $studentData["pt$i"] : 0;
                                 $maxPt = isset($highestScores[$quarter]["pt$i"]) ? $highestScores[$quarter]["pt$i"] : 0;
                             ?>
-                            <td class="text-center">
+                            <td class="text-center col-pt">
                                 <input type="number" class="form-control form-control-sm pt-input" data-quarter="<?= $quarter ?>" data-index="<?= $i ?>" min="0" value="<?= $ptScore ?>" max="<?= $maxPt ?>">
                             </td>
                             <?php endfor; ?>
-                            <td class="text-center pt-total"><?= $studentData ? array_sum(array_slice($studentData, 12, 10)) : 0 ?></td>
-                            <td class="text-center pt-ps"><?= $studentData ? number_format($studentData['pt_ps'], 2) : '0.00' ?></td>
-                            <td class="text-center pt-ws"><?= $studentData ? number_format($studentData['pt_ws'], 2) : '0.00' ?></td>
-                            <td class="text-center">
+                            <td class="text-center pt-total col-pt"><?= $studentData ? array_sum(array_slice($studentData, 12, 10)) : 0 ?></td>
+                            <td class="text-center pt-ps col-pt"><?= $studentData ? number_format($studentData['pt_ps'], 2) : '0.00' ?></td>
+                            <td class="text-center pt-ws col-pt"><?= $studentData ? number_format($studentData['pt_ws'], 2) : '0.00' ?></td>
+                            <td class="text-center col-qa">
                                 <?php $qaScore = $studentData ? $studentData["qa1"] : 0; ?>
                                 <input type="number" class="form-control form-control-sm qa-input" data-quarter="<?= $quarter ?>" min="0" value="<?= $qaScore ?>" max="<?= $qaValue ?>">
                             </td>
-                            <td class="text-center qa-ps"><?= $studentData ? number_format($studentData['qa_ps'], 2) : '0.00' ?></td>
-                            <td class="text-center qa-ws"><?= $studentData ? number_format($studentData['qa_ws'], 2) : '0.00' ?></td>
-                            <td class="text-center initial-grade"><?= $studentData ? number_format($studentData['initial_grade'], 2) : '0.00' ?></td>
+                            <td class="text-center qa-ps col-qa"><?= $studentData ? number_format($studentData['qa_ps'], 2) : '0.00' ?></td>
+                            <td class="text-center qa-ws col-qa"><?= $studentData ? number_format($studentData['qa_ws'], 2) : '0.00' ?></td>
+                            <td class="text-center initial-grade col-qa"><?= $studentData ? number_format($studentData['initial_grade'], 2) : '0.00' ?></td>
                             <?php $qgVal = $studentData ? (int)$studentData['quarterly_grade'] : 0; ?>
-                            <td class="text-center quarterly-grade<?= ($qgVal <= 74) ? ' grade-low' : '' ?>"><?= $qgVal ?></td>
+                            <td class="text-center quarterly-grade col-qa <?= ($qgVal <= 74) ? ' grade-low' : '' ?>"><?= $qgVal ?></td>
                         </tr>
                         <?php endforeach; ?>
                         <?php endif; ?>
@@ -328,7 +327,7 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                         <!-- Female Students Header Row -->
                         <?php if (!empty($femaleStudents)): ?>
                         <tr class="gender-divider bg-light">
-                            <td colspan="2" class="fw-bold py-2 sticky-col-2">
+                            <td colspan="2" class="fw-bold py-2 sticky-col-1">
                                 Female Students (<?= count($femaleStudents) ?>)
                             </td>
                         </tr>
@@ -342,33 +341,33 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                                 $wwScore = $studentData ? $studentData["ww$i"] : 0;
                                 $maxWw = isset($highestScores[$quarter]["ww$i"]) ? $highestScores[$quarter]["ww$i"] : 0;
                             ?>
-                            <td class="text-center">
+                            <td class="text-center col-ww">
                                 <input type="number" class="form-control form-control-sm ww-input" data-quarter="<?= $quarter ?>" data-index="<?= $i ?>" min="0" value="<?= $wwScore ?>" max="<?= $maxWw ?>">
                             </td>
                             <?php endfor; ?>
-                            <td class="text-center ww-total"><?= $studentData ? array_sum(array_slice($studentData, 2, 10)) : 0 ?></td>
-                            <td class="text-center ww-ps"><?= $studentData ? number_format($studentData['ww_ps'], 2) : '0.00' ?></td>
-                            <td class="text-center ww-ws"><?= $studentData ? number_format($studentData['ww_ws'], 2) : '0.00' ?></td>
+                            <td class="text-center ww-total col-ww"><?= $studentData ? array_sum(array_slice($studentData, 2, 10)) : 0 ?></td>
+                            <td class="text-center ww-ps col-ww"><?= $studentData ? number_format($studentData['ww_ps'], 2) : '0.00' ?></td>
+                            <td class="text-center ww-ws col-ww"><?= $studentData ? number_format($studentData['ww_ws'], 2) : '0.00' ?></td>
                             <?php for ($i = 1; $i <= 10; $i++): 
                                 $ptScore = $studentData ? $studentData["pt$i"] : 0;
                                 $maxPt = isset($highestScores[$quarter]["pt$i"]) ? $highestScores[$quarter]["pt$i"] : 0;
                             ?>
-                            <td class="text-center">
+                            <td class="text-center col-pt">
                                 <input type="number" class="form-control form-control-sm pt-input" data-quarter="<?= $quarter ?>" data-index="<?= $i ?>" min="0" value="<?= $ptScore ?>" max="<?= $maxPt ?>">
                             </td>
                             <?php endfor; ?>
-                            <td class="text-center pt-total"><?= $studentData ? array_sum(array_slice($studentData, 12, 10)) : 0 ?></td>
-                            <td class="text-center pt-ps"><?= $studentData ? number_format($studentData['pt_ps'], 2) : '0.00' ?></td>
-                            <td class="text-center pt-ws"><?= $studentData ? number_format($studentData['pt_ws'], 2) : '0.00' ?></td>
-                            <td class="text-center">
+                            <td class="text-center pt-total col-pt"><?= $studentData ? array_sum(array_slice($studentData, 12, 10)) : 0 ?></td>
+                            <td class="text-center pt-ps col-pt"><?= $studentData ? number_format($studentData['pt_ps'], 2) : '0.00' ?></td>
+                            <td class="text-center pt-ws col-pt"><?= $studentData ? number_format($studentData['pt_ws'], 2) : '0.00' ?></td>
+                            <td class="text-center col-qa">
                                 <?php $qaScore = $studentData ? $studentData["qa1"] : 0; ?>
                                 <input type="number" class="form-control form-control-sm qa-input" data-quarter="<?= $quarter ?>" min="0" value="<?= $qaScore ?>" max="<?= $qaValue ?>">
                             </td>
-                            <td class="text-center qa-ps"><?= $studentData ? number_format($studentData['qa_ps'], 2) : '0.00' ?></td>
-                            <td class="text-center qa-ws"><?= $studentData ? number_format($studentData['qa_ws'], 2) : '0.00' ?></td>
-                            <td class="text-center initial-grade"><?= $studentData ? number_format($studentData['initial_grade'], 2) : '0.00' ?></td>
+                            <td class="text-center qa-ps col-qa"><?= $studentData ? number_format($studentData['qa_ps'], 2) : '0.00' ?></td>
+                            <td class="text-center qa-ws col-qa"><?= $studentData ? number_format($studentData['qa_ws'], 2) : '0.00' ?></td>
+                            <td class="text-center initial-grade col-qa"><?= $studentData ? number_format($studentData['initial_grade'], 2) : '0.00' ?></td>
                             <?php $qgVal = $studentData ? (int)$studentData['quarterly_grade'] : 0; ?>
-                            <td class="text-center quarterly-grade<?= ($qgVal <= 74) ? ' grade-low' : '' ?>"><?= $qgVal ?></td>
+                            <td class="text-center quarterly-grade col-qa <?= ($qgVal <= 74) ? ' grade-low' : '' ?>"><?= $qgVal ?></td>
                         </tr>
                         <?php endforeach; ?>
                         <?php endif; ?>
@@ -392,6 +391,95 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+    body { background: #F5F0E8; }
+
+    .header-title-container {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+        padding-top: 24px;
+    }
+    
+    .subject-title {
+        color: #1a1f2e;
+        font-weight: 800;
+        font-size: 2.2rem;
+        letter-spacing: -0.5px;
+        text-transform: uppercase;
+        margin: 0;
+    }
+
+    .quarter-pills {
+        display: flex;
+        gap: 8px;
+        background: transparent;
+        margin-bottom: 32px;
+    }
+
+    .quarter-pill {
+        border: 1px solid #adb5bd;
+        background: transparent;
+        color: #495057;
+        font-weight: 600;
+        border-radius: 50px;
+        padding: 6px 24px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        outline: none;
+    }
+
+    .quarter-pill:hover {
+        background: #e9ecef;
+    }
+
+    .quarter-pill.active {
+        background: #1a1f2e;
+        color: #ffffff;
+        border-color: #1a1f2e;
+    }
+    
+    .view-tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: -1px;
+        position: relative;
+        z-index: 2;
+    }
+
+    .view-tab {
+        background: #e9ecef;
+        color: #6c757d;
+        border: 1px solid #dee2e6;
+        border-bottom: none;
+        padding: 12px 28px;
+        border-radius: 12px 12px 0 0;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        outline: none;
+    }
+
+    .view-tab:hover {
+        background: #dee2e6;
+        color: #495057;
+    }
+
+    .view-tab.active {
+        background: #ffffff;
+        color: #1a1f2e;
+        border-color: transparent;
+    }
+    
+    .main-card {
+        background: #ffffff;
+        border-radius: 0 16px 16px 16px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.06);
+        padding: 24px;
+        position: relative;
+        z-index: 1;
+        margin-bottom: 40px;
+    }
         .table-container {
             max-height: 100vh;
             overflow: auto;
@@ -407,8 +495,8 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
         }
         
         .sticky-table {
-            min-width: 2200px;
-            table-layout: fixed;
+            width: 100%;
+            table-layout: auto;
             margin-bottom: 0;
         }
         
@@ -435,6 +523,9 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
             background-color: white;
             border-right: 2px solid #f8f9fa;
             width: 60px;
+            min-width: 60px;
+            max-width: 60px;
+            box-sizing: border-box;
         }
         
         .sticky-col-2 {
@@ -443,7 +534,8 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
             z-index: 89;
             background-color: white;
             border-right: 2px solid #f8f9fa;
-            width: 320px;
+            min-width: 200px;
+            width: auto;
         }
         
         /* Ensure header sticky columns have proper background */
@@ -460,11 +552,12 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
         }
         
         .max-score-input {
-            width: 60px;
-            font-size: 0.8rem;
+            width: 45px;
+            font-size: 0.75rem;
             border: 1px solid #ced4da; /* keep border for max inputs */
             border-radius: 0.2rem;
             text-align: center;
+            padding: 2px;
         }
 
         .learner-name-col,
@@ -540,7 +633,8 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
         }
         
         #Summary .sticky-table {
-            min-width: 1000px;
+            width: 100%;
+            table-layout: auto;
         }
         
         #Summary .sticky-col-1 {
@@ -548,60 +642,118 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
         }
         
         #Summary .sticky-col-2 {
-            width: 320px;
+            min-width: 200px;
+            width: auto;
         }
 
         /* Ensure proper cell padding */
         .table-sm th,
         .table-sm td {
-            padding: 0.3rem;
+            padding: 0.25rem 0.2rem;
+            font-size: 0.85rem;
+        }
+        
+        /* Prevent grade columns from stretching (ignore spanning headers) */
+        th.col-ww:not([colspan]), td.col-ww,
+        th.col-pt:not([colspan]), td.col-pt {
+            width: 48px;
+            min-width: 48px;
+            white-space: nowrap;
+        }
+        th.col-qa:not([colspan]), td.col-qa {
+            width: 70px;
+            min-width: 70px;
+            white-space: nowrap;
+        }
+        
+        /* Specific widths for computed columns */
+        th.ww-total, th.ww-ps, th.ww-ws, td.ww-total, td.ww-ps, td.ww-ws,
+        th.pt-total, th.pt-ps, th.pt-ws, td.pt-total, td.pt-ps, td.pt-ws,
+        th.qa-ps, th.qa-ws, td.qa-ps, td.qa-ws,
+        th.initial-grade, td.initial-grade, th.quarterly-grade, td.quarterly-grade {
+            width: 60px;
+            min-width: 60px;
         }
 
         /* Fix for table header alignment */
         thead th {
             vertical-align: middle;
         }
+
+        /* Upload Modal Styles */
+        .upload-modal-header {
+            background-color: #1a1f2e;
+            color: white;
+            border-bottom: none;
+            padding: 1.5rem 2rem;
+        }
+        .upload-modal-header .btn-close {
+            filter: invert(1) grayscale(100%) brightness(200%);
+        }
+        .upload-area {
+            border: 2px dashed #ced4da;
+            border-radius: 12px;
+            padding: 2.5rem 1rem;
+            text-align: center;
+            transition: all 0.3s ease;
+            background-color: #f8f9fa;
+            cursor: pointer;
+        }
+        .upload-area:hover {
+            border-color: #1a1f2e;
+            background-color: #f1f3f5;
+        }
+        .upload-area i {
+            color: #6c757d;
+            transition: all 0.3s ease;
+        }
+        .upload-area:hover i {
+            color: #1a1f2e;
+            transform: scale(1.1);
+        }
+        .modal-success .modal-header { background-color: #198754; color: white; border-bottom: none; }
+        .modal-error .modal-header { background-color: #dc3545; color: white; border-bottom: none; }
+        .result-icon { font-size: 5rem; margin-bottom: 1rem; }
+        .student-list { max-height: 200px; overflow-y: auto; border-radius: 8px; }
     </style>
 </head>
-<body class="bg-light">
+<body style="background: #F5F0E8;">
     <?php include '../navs/teacherNav.php'; ?>
-    <div class="container-fluid">
-        <div class="card shadow-sm">
-            <div class="card-header bg-info text-white justify-content-between d-flex align-items-center">
-                <h4 class="mb-0"> Class Record - <?= htmlspecialchars($subjectName) ?> </h4>
-                <a href="grading_sheet.php?subject_id=<?= $subjectId ?>&section_id=<?= $sectionId ?>" class="text-white">
-                    <i class="fas fa-times me-1" style="font-size: 28px;"></i> 
+    <div class="container-fluid px-2">
+        
+        <div class="header-title-container">
+            <div>
+                <h1 class="subject-title"><?= htmlspecialchars($subjectName) ?></h1>
+            </div>
+            
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-primary fw-bold" style="border-radius: 8px; padding: 10px 20px;" data-bs-toggle="modal" data-bs-target="#uploadModal">
+                    <i class="fas fa-upload me-1"></i> Upload
+                </button>
+                <button id="saveButton" class="btn btn-success fw-bold" style="border-radius: 8px; padding: 10px 20px;">
+                    <i class="fas fa-save me-1"></i> Save Grades
+                </button>
+                <a href="grading_sheet.php" class="btn btn-light border text-muted fw-bold ms-2" style="border-radius: 8px; padding: 10px 20px;">
+                    <i class="fas fa-times"></i> Close
                 </a>
             </div>
-            <!-- Quarter Selector -->
-            <div class="card-body border-bottom">
-                <div class="row align-items-center">
-                    <div class="col-auto">
-                        <label for="quarterSelect" class="form-label mb-0">Select Quarter:</label>
-                    </div>
-                    <div class="col-auto">
-                        <select id="quarterSelect" class="form-select">
-                            <option value="1">Quarter 1</option>
-                            <option value="2">Quarter 2</option>
-                            <option value="3">Quarter 3</option>
-                            <option value="4">Quarter 4</option>
-                            <option value="Summary">Summary</option>
-                        </select>
-                    </div>
-                    <div class="col-auto ms-auto me-3">
-                        <a
-                          href="grades.php?subject_id=<?= $subjectId ?>&section_id=<?= $sectionId ?>"
-                          class="btn btn-primary me-2"
-                        >
-                          <i class="fas fa-upload me-1"></i> Upload
-                        </a>
-                        <button id="saveButton" class="btn btn-success">
-                            <i class="fas fa-save me-1"></i> Save Grades
-                        </button>
-                    </div>
-                </div>
-            </div>
+        </div>
 
+        <div class="quarter-pills" id="quarterPillsContainer">
+            <button class="quarter-pill active" data-quarter="1">Q1</button>
+            <button class="quarter-pill" data-quarter="2">Q2</button>
+            <button class="quarter-pill" data-quarter="3">Q3</button>
+            <button class="quarter-pill" data-quarter="4">Q4</button>
+        </div>
+
+        <div class="view-tabs" id="viewTabsContainer">
+            <button class="view-tab active" data-view="ww">Written Work</button>
+            <button class="view-tab" data-view="pt">Performance Task</button>
+            <button class="view-tab" data-view="qa">Quarterly Assessment</button>
+            <button class="view-tab" data-view="summary">Summary</button>
+        </div>
+
+        <div class="main-card">
             <!-- Quarter Content -->
             <div id="quarterContent">
                 <?php
@@ -1070,7 +1222,7 @@ function loadStudentDataForTable(tableBody, quarter) {
     });
 }
 
-function saveGrades() {
+function saveGrades(isAutoSave = false) {
     const data = {
         teacherID: teacherId,
         subjectID: subjectId,
@@ -1129,14 +1281,18 @@ function saveGrades() {
     
     const errorInputs = document.querySelectorAll('.error-highlight');
     if (errorInputs.length > 0) {
-        alert('Please fix all validation errors before saving.');
+        if (!isAutoSave) alert('Please fix all validation errors before saving.');
         return;
     }
     
     const saveButton = document.getElementById('saveButton');
-    const originalText = saveButton.innerHTML;
-    saveButton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Saving...';
-    saveButton.disabled = true;
+    const originalText = '<i class="fas fa-save me-1"></i> Save Grades';
+    if (!isAutoSave) {
+        saveButton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Saving...';
+        saveButton.disabled = true;
+    } else {
+        saveButton.innerHTML = '<i class="fas fa-sync fa-spin me-1"></i> Saving...';
+    }
     
     console.log('Sending data:', data);
     
@@ -1158,28 +1314,43 @@ function saveGrades() {
         try {
             const result = JSON.parse(text);
             if (result.success) {
-                showSaveStatus('success', result.message);
                 hasUnsavedChanges = false;
                 
-                setTimeout(() => {
-                    location.reload();
-                }, 1500);
+                if (!isAutoSave) {
+                    showSaveStatus('success', result.message);
+                    setTimeout(() => {
+                        location.reload();
+                    }, 1500);
+                } else {
+                    saveButton.innerHTML = '<i class="fas fa-check me-1"></i> Saved';
+                    setTimeout(() => {
+                        if (saveButton.innerHTML.includes('Saved')) {
+                            saveButton.innerHTML = originalText;
+                        }
+                    }, 2000);
+                }
             } else {
-                showSaveStatus('error', result.message);
+                if (!isAutoSave) showSaveStatus('error', result.message);
                 console.error('Save error:', result.message);
             }
         } catch (e) {
             console.error('JSON parse error:', e, 'Response text:', text);
-            showSaveStatus('error', 'Invalid response from server');
+            if (!isAutoSave) showSaveStatus('error', 'Invalid response from server');
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        showSaveStatus('error', 'Error saving data: ' + error.message);
+        if (!isAutoSave) showSaveStatus('error', 'Error saving data: ' + error.message);
     })
     .finally(() => {
-        saveButton.innerHTML = originalText;
-        saveButton.disabled = false;
+        if (!isAutoSave) {
+            saveButton.innerHTML = originalText;
+            saveButton.disabled = false;
+        } else {
+            if (!saveButton.innerHTML.includes('Saved')) {
+                saveButton.innerHTML = originalText;
+            }
+        }
     });
 }
 
@@ -1401,25 +1572,81 @@ document.addEventListener('DOMContentLoaded', function() {
     loadQuarterData(1);
     initDragScroll(); // 👈 initialize drag scrolling
     
-    document.getElementById('quarterSelect').addEventListener('change', function() {
-        const selectedQuarter = this.value;
-        
-        if (selectedQuarter === 'Summary') {
-            document.getElementById('quarterContent').classList.add('d-none');
-            document.getElementById('Summary').classList.remove('d-none');
-        } else {
-            document.getElementById('quarterContent').classList.remove('d-none');
-            document.getElementById('Summary').classList.add('d-none');
-            loadQuarterData(parseInt(selectedQuarter));
-        }
+    // Initialize columns for Written Works view
+    function initView() {
+        document.querySelectorAll('.col-pt, .col-qa').forEach(col => col.style.display = 'none');
+    }
+    initView();
+
+    // Quarter Pill Listener
+    document.querySelectorAll('.quarter-pill').forEach(pill => {
+        pill.addEventListener('click', function() {
+            const selectedQuarter = this.getAttribute('data-quarter');
+            
+            document.querySelectorAll('.quarter-pill').forEach(p => p.classList.remove('active'));
+            this.classList.add('active');
+            
+            const currentTab = document.querySelector('.view-tab.active').getAttribute('data-view');
+            if (currentTab !== 'summary') {
+                loadQuarterData(parseInt(selectedQuarter));
+            }
+        });
+    });
+
+    // View Tab Listener
+    document.querySelectorAll('.view-tab').forEach(tab => {
+        tab.addEventListener('click', function() {
+            const view = this.getAttribute('data-view');
+            
+            document.querySelectorAll('.view-tab').forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+            
+            if (view === 'summary') {
+                document.querySelectorAll('.quarter-content').forEach(c => c.classList.add('d-none'));
+                document.getElementById('Summary').classList.remove('d-none');
+            } else {
+                document.getElementById('Summary').classList.add('d-none');
+                const activeQuarter = document.querySelector('.quarter-pill.active').getAttribute('data-quarter');
+                document.getElementById(`Q${activeQuarter}`).classList.remove('d-none');
+                
+                document.querySelectorAll('.col-ww, .col-pt, .col-qa').forEach(col => {
+                    col.style.display = 'none';
+                });
+                
+                if (view === 'ww') {
+                    document.querySelectorAll('.col-ww').forEach(col => col.style.display = '');
+                } else if (view === 'pt') {
+                    document.querySelectorAll('.col-pt').forEach(col => col.style.display = '');
+                } else if (view === 'qa') {
+                    document.querySelectorAll('.col-qa').forEach(col => col.style.display = '');
+                }
+                
+                document.querySelectorAll('.table-container').forEach(c => c.scrollLeft = 0);
+            }
+        });
     });
     
-    document.getElementById('saveButton').addEventListener('click', saveGrades);
+    document.getElementById('saveButton').addEventListener('click', () => saveGrades(false));
+    
+    let autoSaveTimer = null;
+    function triggerAutoSave() {
+        clearTimeout(autoSaveTimer);
+        autoSaveTimer = setTimeout(() => {
+            saveGrades(true);
+        }, 1500);
+    }
     
     document.addEventListener('input', function(e) {
         if (e.target.classList.contains('ww-input') || 
             e.target.classList.contains('pt-input') || 
             e.target.classList.contains('qa-input')) {
+            
+            triggerAutoSave();
+            
+            // Limit input to two digits
+            if (e.target.value.length > 2) {
+                e.target.value = e.target.value.slice(0, 2);
+            }
             
             const row = e.target.closest('tr');
             calculateTotals(row);
@@ -1442,6 +1669,13 @@ document.addEventListener('DOMContentLoaded', function() {
         if (e.target.classList.contains('ww-max') || 
             e.target.classList.contains('pt-max') || 
             e.target.classList.contains('qa-max')) {
+            
+            triggerAutoSave();
+            
+            // Limit input to two digits
+            if (e.target.value.length > 2) {
+                e.target.value = e.target.value.slice(0, 2);
+            }
             
             const quarter = e.target.getAttribute('data-quarter');
             updateHeaderTotals(quarter);
@@ -1500,6 +1734,139 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
     </script>
+<!-- Upload Modal -->
+<div class="modal fade" id="uploadModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content" style="border: none; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
+            <div class="modal-header upload-modal-header">
+                <h5 class="modal-title fw-bold" style="letter-spacing: -0.5px;"><i class="fas fa-file-upload me-2"></i>Upload Grade File</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4 p-md-5">
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <input type="hidden" name="subject_id" value="<?= $subjectId ?>">
+                    <input type="hidden" name="section_id" value="<?= $sectionId ?>">
+                    <input type="hidden" name="school_year" value="<?= $current_year ?>">
+                    
+                    <div class="row g-4">
+                        <div class="col-md-5 border-end pe-md-4">
+                            <h6 class="text-uppercase fw-bold text-muted mb-3" style="font-size: 0.85rem; letter-spacing: 1px;">Step 1: Configuration</h6>
+                            <label class="form-label fw-bold text-dark">Select Quarter</label>
+                            <select name="quarter" class="form-select mb-4 shadow-sm" style="border-radius: 8px; padding: 10px 15px;" required>
+                                <option value="1">Quarter 1</option>
+                                <option value="2">Quarter 2</option>
+                                <option value="3">Quarter 3</option>
+                                <option value="4">Quarter 4</option>
+                            </select>
+                            
+                            <label class="form-label fw-bold text-dark mt-2">Need a Template?</label>
+                            <?php
+                            $templateFilename = in_array($subjectName, ["Music", "Arts", "PE", "Health", "MAPEH"]) ? "MAPEH.zip" : str_replace(' ', '_', $subjectName) . '.xlsx';
+                            $templatePath = 'ClassRecord/' . $templateFilename;
+                            $downloadLink = file_exists($templatePath) ? $templatePath : 'ClassRecord/Default_Template.xlsx';
+                            ?>
+                            <a href="<?= $downloadLink ?>" download class="btn btn-light border w-100 fw-bold shadow-sm" style="border-radius: 8px; padding: 10px;">
+                                <i class="fas fa-download me-2 text-primary"></i> <?= htmlspecialchars($subjectName) ?> Template
+                            </a>
+                        </div>
+                        
+                        <div class="col-md-7 ps-md-4">
+                            <h6 class="text-uppercase fw-bold text-muted mb-3" style="font-size: 0.85rem; letter-spacing: 1px;">Step 2: Upload File</h6>
+                            <div class="upload-area mb-4" onclick="document.getElementById('grade_file').click()">
+                                <i class="fas fa-file-excel fs-1 mb-3"></i>
+                                <h6 class="fw-bold text-dark mb-1">Click to browse Excel files</h6>
+                                <p class="text-muted small mb-0">Supported formats: .xlsx, .xls</p>
+                                <input type="file" class="d-none" id="grade_file" name="grade_file" accept=".xlsx,.xls" required onchange="document.getElementById('file-name').innerHTML = '<i class=\'fas fa-check-circle text-success me-1\'></i> ' + this.files[0].name; document.getElementById('file-name').classList.add('text-success'); document.getElementById('file-name').classList.remove('text-muted');">
+                                <div class="mt-3 text-muted fw-bold small" id="file-name">No file chosen</div>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100 fw-bold shadow-sm" style="border-radius: 8px; padding: 12px; background-color: #1a1f2e; border-color: #1a1f2e;">
+                                <i class="fas fa-cloud-upload-alt me-2"></i> Upload and Process
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Modal -->
+<div class="modal fade" id="loadingModal" data-bs-backdrop="static" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content" style="border: none; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
+            <div class="modal-body text-center p-5">
+                <div class="spinner-border text-primary mb-4" style="width: 3rem; height: 3rem; color: #1a1f2e !important;"></div>
+                <h5 class="fw-bold text-dark m-0">Processing Upload</h5>
+                <p class="text-muted small mt-2 mb-0">Please do not close this window...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Result Modals (Combined) -->
+<div class="modal fade" id="resultModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border: none; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
+            <div class="modal-header" id="resultHeader" style="border-bottom: none; padding: 1.5rem 2rem;">
+                <h5 class="modal-title fw-bold" id="resultTitle" style="letter-spacing: -0.5px;">Result</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter: invert(1) grayscale(100%) brightness(200%);"></button>
+            </div>
+            <div class="modal-body text-center p-5">
+                <i id="resultIcon" class="result-icon"></i>
+                <h4 id="resultMessage" class="mt-2 fw-bold text-dark"></h4>
+                <div id="missingStudentsContainer" class="mt-4 text-start d-none">
+                    <h6 class="text-danger fw-bold text-uppercase" style="font-size: 0.8rem; letter-spacing: 1px;">Missing Students:</h6>
+                    <div class="card card-body student-list bg-light border-0 shadow-sm">
+                        <ul class="mb-0 text-muted" id="missingStudentsList" style="font-size: 0.9rem;"></ul>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="border-top: none; padding: 1.5rem 2rem;">
+                <button type="button" class="btn btn-secondary w-100 fw-bold" style="border-radius: 8px; padding: 12px;" data-bs-dismiss="modal" onclick="if(document.getElementById('resultIcon').classList.contains('text-success')) location.reload();">Close and Continue</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('uploadForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    const uploadModal = bootstrap.Modal.getInstance(document.getElementById('uploadModal'));
+    uploadModal.hide();
+    
+    const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
+    loadingModal.show();
+    
+    fetch('upload_process.php', { method: 'POST', body: formData })
+    .then(r => r.json())
+    .then(response => {
+        loadingModal.hide();
+        const resultModal = new bootstrap.Modal(document.getElementById('resultModal'));
+        
+        const isSuccess = response.message_type === 'success';
+        document.getElementById('resultHeader').className = `modal-header text-white ${isSuccess ? 'bg-success' : 'bg-danger'}`;
+        document.getElementById('resultTitle').innerHTML = `<i class="fas ${isSuccess ? 'fa-check-circle' : 'fa-exclamation-triangle'} me-2"></i>${isSuccess ? 'Success' : 'Error'}`;
+        document.getElementById('resultIcon').className = `result-icon fas ${isSuccess ? 'fa-check-circle text-success' : 'fa-times-circle text-danger'}`;
+        document.getElementById('resultMessage').textContent = isSuccess ? 'Grades successfully uploaded!' : response.message;
+        
+        const missingContainer = document.getElementById('missingStudentsContainer');
+        const missingList = document.getElementById('missingStudentsList');
+        if (response.students_not_found && response.students_not_found.length > 0) {
+            missingContainer.classList.remove('d-none');
+            missingList.innerHTML = response.students_not_found.map(s => `<li>${s}</li>`).join('');
+        } else {
+            missingContainer.classList.add('d-none');
+        }
+        
+        resultModal.show();
+    })
+    .catch(e => {
+        loadingModal.hide();
+        alert('Upload failed due to a network error.');
+    });
+});
+</script>
 </div><!-- /.page-content -->
 </body>
 </html>
