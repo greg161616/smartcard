@@ -2,6 +2,39 @@
 session_start();
 include '../config.php'; 
 
+// Handle class record submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_class_record') {
+    header('Content-Type: application/json');
+    $tid  = (int)$_POST['teacher_id'];
+    $sid  = (int)$_POST['subject_id'];
+    $secid = (int)$_POST['section_id'];
+    $qtr  = (int)$_POST['quarter'];
+    $sy   = $_POST['school_year'];
+    $how  = $_POST['submit_using'];
+
+    // Check not already submitted
+    $chk = $conn->prepare("SELECT id FROM grade_submissions WHERE teacher_id=? AND subject_id=? AND section_id=? AND quarter=? AND school_year=? LIMIT 1");
+    $chk->bind_param('iiiis', $tid, $sid, $secid, $qtr, $sy);
+    $chk->execute();
+    $chk->store_result();
+    if ($chk->num_rows > 0) {
+        echo json_encode(['success'=>false,'message'=>'This quarter is already submitted.']);
+        $chk->close();
+        exit;
+    }
+    $chk->close();
+
+    $ins = $conn->prepare("INSERT INTO grade_submissions (teacher_id,subject_id,section_id,quarter,school_year,submit_using) VALUES (?,?,?,?,?,?)");
+    $ins->bind_param('iiiiss', $tid, $sid, $secid, $qtr, $sy, $how);
+    if ($ins->execute()) {
+        echo json_encode(['success'=>true,'message'=>"Quarter $qtr class record submitted successfully."]);
+    } else {
+        echo json_encode(['success'=>false,'message'=>'Database error: '.$conn->error]);
+    }
+    $ins->close();
+    exit;
+}
+
 // Include logging helper
 require_once __DIR__ . '/../api/log_helper.php';
 
@@ -176,7 +209,9 @@ $stmt->close();
 $gradesDetails = [];
 $stmt = $conn->prepare("
     SELECT studentID, quarter, ww1, ww2, ww3, ww4, ww5, ww6, ww7, ww8, ww9, ww10,
-           pt1, pt2, pt3, pt4, pt5, pt6, pt7, pt8, pt9, pt10, qa1, quarterly_grade
+           pt1, pt2, pt3, pt4, pt5, pt6, pt7, pt8, pt9, pt10, qa1, 
+           ww_total, ww_ps, ww_ws, pt_total, pt_ps, pt_ws, qa_ps, qa_ws,
+           initial_grade, quarterly_grade
     FROM grades_details 
     WHERE teacherID = ? AND subjectID = ? AND school_year = ?
 ");
@@ -203,6 +238,17 @@ while ($row = $result->fetch_assoc()) {
 }
 $stmt->close();
 
+// Fetch submitted quarters
+$submittedQuarters = [];
+$stmtSub = $conn->prepare("SELECT quarter FROM grade_submissions WHERE teacher_id=? AND subject_id=? AND section_id=? AND school_year=?");
+$stmtSub->bind_param('iiis', $teacherId, $subjectId, $sectionId, $school_year);
+$stmtSub->execute();
+$resSub = $stmtSub->get_result();
+while ($rowSub = $resSub->fetch_assoc()) {
+    $submittedQuarters[] = (int)$rowSub['quarter'];
+}
+$stmtSub->close();
+
 function getRemarks($grade) {
     if ($grade >= 75) return "PASSED";
     return "FAILED";
@@ -210,7 +256,8 @@ function getRemarks($grade) {
 
 // Function to generate quarter table HTML
 function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPercentage, $ptPercentage, $qaPercentage, $highestScores, $gradesDetails) {
-    global $teacherId, $subjectId;
+    global $teacherId, $subjectId, $submittedQuarters;
+    $isLocked = in_array($quarter, $submittedQuarters);
     ?>
     <div id="Q<?= $quarter ?>" class="quarter-content <?= $quarter != 1 ? 'd-none' : '' ?>">
         <div class="card-body">
@@ -243,7 +290,7 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                             <th class="text-center fs-6 col-ww">
                                 <div class="d-flex flex-column align-items-center">
                                     <span><?= $i ?></span>
-                                    <input type="number" class="form-control form-control-sm max-score-input ww-max" data-quarter="<?= $quarter ?>" data-index="<?= $i ?>" value="<?= $wwValue ?>" min="0">
+                                    <input type="number" class="form-control form-control-sm max-score-input ww-max" data-quarter="<?= $quarter ?>" data-index="<?= $i ?>" value="<?= $wwValue ?>" min="0" <?= $isLocked?'disabled':'' ?>>
                                 </div>
                             </th>
                             <?php endfor; ?>
@@ -256,7 +303,7 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                             <th class="text-center col-pt">
                                 <div class="d-flex flex-column align-items-center">
                                     <span><?= $i ?></span>
-                                    <input type="number" class="form-control form-control-sm max-score-input pt-max" data-quarter="<?= $quarter ?>" data-index="<?= $i ?>" value="<?= $ptValue ?>" min="0">
+                                    <input type="number" class="form-control form-control-sm max-score-input pt-max" data-quarter="<?= $quarter ?>" data-index="<?= $i ?>" value="<?= $ptValue ?>" min="0" <?= $isLocked?'disabled':'' ?>>
                                 </div>
                             </th>
                             <?php endfor; ?>
@@ -267,7 +314,7 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                                 <div class="d-flex flex-column align-items-center">
                                     <span>QA</span>
                                     <?php $qaValue = isset($highestScores[$quarter]["qa1"]) ? $highestScores[$quarter]["qa1"] : 0; ?>
-                                    <input type="number" class="form-control form-control-sm max-score-input qa-max" data-quarter="<?= $quarter ?>" value="<?= $qaValue ?>" min="0">
+                                    <input type="number" class="form-control form-control-sm max-score-input qa-max" data-quarter="<?= $quarter ?>" value="<?= $qaValue ?>" min="0" <?= $isLocked?'disabled':'' ?>>
                                 </div>
                             </th>
                             <th class="text-center col-qa" style="font-size: smaller;"><span class="qa-header-ps" data-quarter="<?= $quarter ?>">100.00</span></th>
@@ -294,31 +341,31 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                                 $maxWw = isset($highestScores[$quarter]["ww$i"]) ? $highestScores[$quarter]["ww$i"] : 0;
                             ?>
                             <td class="text-center col-ww">
-                                <input type="number" class="form-control form-control-sm ww-input" data-quarter="<?= $quarter ?>" data-index="<?= $i ?>" min="0" value="<?= $wwScore ?>" max="<?= $maxWw ?>">
+                                <input type="number" class="form-control form-control-sm ww-input" data-quarter="<?= $quarter ?>" data-index="<?= $i ?>" min="0" value="<?= $wwScore ?>" max="<?= $maxWw ?>" <?= $isLocked?'disabled':'' ?>>
                             </td>
                             <?php endfor; ?>
                             <td class="text-center ww-total col-ww"><?= $studentData ? array_sum(array_slice($studentData, 2, 10)) : 0 ?></td>
-                            <td class="text-center ww-ps col-ww"><?= $studentData ? number_format($studentData['ww_ps'], 2) : '0.00' ?></td>
-                            <td class="text-center ww-ws col-ww"><?= $studentData ? number_format($studentData['ww_ws'], 2) : '0.00' ?></td>
+                            <td class="text-center ww-ps col-ww"><?= $studentData ? number_format((float)($studentData['ww_ps'] ?? 0), 2) : '0.00' ?></td>
+                            <td class="text-center ww-ws col-ww"><?= $studentData ? number_format((float)($studentData['ww_ws'] ?? 0), 2) : '0.00' ?></td>
                             <?php for ($i = 1; $i <= 10; $i++): 
                                 $ptScore = $studentData ? $studentData["pt$i"] : 0;
                                 $maxPt = isset($highestScores[$quarter]["pt$i"]) ? $highestScores[$quarter]["pt$i"] : 0;
                             ?>
                             <td class="text-center col-pt">
-                                <input type="number" class="form-control form-control-sm pt-input" data-quarter="<?= $quarter ?>" data-index="<?= $i ?>" min="0" value="<?= $ptScore ?>" max="<?= $maxPt ?>">
+                                <input type="number" class="form-control form-control-sm pt-input" data-quarter="<?= $quarter ?>" data-index="<?= $i ?>" min="0" value="<?= $ptScore ?>" max="<?= $maxPt ?>" <?= $isLocked?'disabled':'' ?>>
                             </td>
                             <?php endfor; ?>
                             <td class="text-center pt-total col-pt"><?= $studentData ? array_sum(array_slice($studentData, 12, 10)) : 0 ?></td>
-                            <td class="text-center pt-ps col-pt"><?= $studentData ? number_format($studentData['pt_ps'], 2) : '0.00' ?></td>
-                            <td class="text-center pt-ws col-pt"><?= $studentData ? number_format($studentData['pt_ws'], 2) : '0.00' ?></td>
+                            <td class="text-center pt-ps col-pt"><?= $studentData ? number_format((float)($studentData['pt_ps'] ?? 0), 2) : '0.00' ?></td>
+                            <td class="text-center pt-ws col-pt"><?= $studentData ? number_format((float)($studentData['pt_ws'] ?? 0), 2) : '0.00' ?></td>
                             <td class="text-center col-qa">
                                 <?php $qaScore = $studentData ? $studentData["qa1"] : 0; ?>
-                                <input type="number" class="form-control form-control-sm qa-input" data-quarter="<?= $quarter ?>" min="0" value="<?= $qaScore ?>" max="<?= $qaValue ?>">
+                                <input type="number" class="form-control form-control-sm qa-input" data-quarter="<?= $quarter ?>" min="0" value="<?= $qaScore ?>" max="<?= $qaValue ?>" <?= $isLocked?'disabled':'' ?>>
                             </td>
-                            <td class="text-center qa-ps col-qa"><?= $studentData ? number_format($studentData['qa_ps'], 2) : '0.00' ?></td>
-                            <td class="text-center qa-ws col-qa"><?= $studentData ? number_format($studentData['qa_ws'], 2) : '0.00' ?></td>
-                            <td class="text-center initial-grade col-qa"><?= $studentData ? number_format($studentData['initial_grade'], 2) : '0.00' ?></td>
-                            <?php $qgVal = $studentData ? (int)$studentData['quarterly_grade'] : 0; ?>
+                            <td class="text-center qa-ps col-qa"><?= $studentData ? number_format((float)($studentData['qa_ps'] ?? 0), 2) : '0.00' ?></td>
+                            <td class="text-center qa-ws col-qa"><?= $studentData ? number_format((float)($studentData['qa_ws'] ?? 0), 2) : '0.00' ?></td>
+                            <td class="text-center initial-grade col-qa"><?= $studentData ? number_format((float)($studentData['initial_grade'] ?? 0), 2) : '0.00' ?></td>
+                            <?php $qgVal = $studentData ? (int)($studentData['quarterly_grade'] ?? 0) : 0; ?>
                             <td class="text-center quarterly-grade col-qa <?= ($qgVal <= 74) ? ' grade-low' : '' ?>"><?= $qgVal ?></td>
                         </tr>
                         <?php endforeach; ?>
@@ -342,31 +389,31 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                                 $maxWw = isset($highestScores[$quarter]["ww$i"]) ? $highestScores[$quarter]["ww$i"] : 0;
                             ?>
                             <td class="text-center col-ww">
-                                <input type="number" class="form-control form-control-sm ww-input" data-quarter="<?= $quarter ?>" data-index="<?= $i ?>" min="0" value="<?= $wwScore ?>" max="<?= $maxWw ?>">
+                                <input type="number" class="form-control form-control-sm ww-input" data-quarter="<?= $quarter ?>" data-index="<?= $i ?>" min="0" value="<?= $wwScore ?>" max="<?= $maxWw ?>" <?= $isLocked?'disabled':'' ?>>
                             </td>
                             <?php endfor; ?>
                             <td class="text-center ww-total col-ww"><?= $studentData ? array_sum(array_slice($studentData, 2, 10)) : 0 ?></td>
-                            <td class="text-center ww-ps col-ww"><?= $studentData ? number_format($studentData['ww_ps'], 2) : '0.00' ?></td>
-                            <td class="text-center ww-ws col-ww"><?= $studentData ? number_format($studentData['ww_ws'], 2) : '0.00' ?></td>
+                            <td class="text-center ww-ps col-ww"><?= $studentData ? number_format((float)($studentData['ww_ps'] ?? 0), 2) : '0.00' ?></td>
+                            <td class="text-center ww-ws col-ww"><?= $studentData ? number_format((float)($studentData['ww_ws'] ?? 0), 2) : '0.00' ?></td>
                             <?php for ($i = 1; $i <= 10; $i++): 
                                 $ptScore = $studentData ? $studentData["pt$i"] : 0;
                                 $maxPt = isset($highestScores[$quarter]["pt$i"]) ? $highestScores[$quarter]["pt$i"] : 0;
                             ?>
                             <td class="text-center col-pt">
-                                <input type="number" class="form-control form-control-sm pt-input" data-quarter="<?= $quarter ?>" data-index="<?= $i ?>" min="0" value="<?= $ptScore ?>" max="<?= $maxPt ?>">
+                                <input type="number" class="form-control form-control-sm pt-input" data-quarter="<?= $quarter ?>" data-index="<?= $i ?>" min="0" value="<?= $ptScore ?>" max="<?= $maxPt ?>" <?= $isLocked?'disabled':'' ?>>
                             </td>
                             <?php endfor; ?>
                             <td class="text-center pt-total col-pt"><?= $studentData ? array_sum(array_slice($studentData, 12, 10)) : 0 ?></td>
-                            <td class="text-center pt-ps col-pt"><?= $studentData ? number_format($studentData['pt_ps'], 2) : '0.00' ?></td>
-                            <td class="text-center pt-ws col-pt"><?= $studentData ? number_format($studentData['pt_ws'], 2) : '0.00' ?></td>
+                            <td class="text-center pt-ps col-pt"><?= $studentData ? number_format((float)($studentData['pt_ps'] ?? 0), 2) : '0.00' ?></td>
+                            <td class="text-center pt-ws col-pt"><?= $studentData ? number_format((float)($studentData['pt_ws'] ?? 0), 2) : '0.00' ?></td>
                             <td class="text-center col-qa">
                                 <?php $qaScore = $studentData ? $studentData["qa1"] : 0; ?>
-                                <input type="number" class="form-control form-control-sm qa-input" data-quarter="<?= $quarter ?>" min="0" value="<?= $qaScore ?>" max="<?= $qaValue ?>">
+                                <input type="number" class="form-control form-control-sm qa-input" data-quarter="<?= $quarter ?>" min="0" value="<?= $qaScore ?>" max="<?= $qaValue ?>" <?= $isLocked?'disabled':'' ?>>
                             </td>
-                            <td class="text-center qa-ps col-qa"><?= $studentData ? number_format($studentData['qa_ps'], 2) : '0.00' ?></td>
-                            <td class="text-center qa-ws col-qa"><?= $studentData ? number_format($studentData['qa_ws'], 2) : '0.00' ?></td>
-                            <td class="text-center initial-grade col-qa"><?= $studentData ? number_format($studentData['initial_grade'], 2) : '0.00' ?></td>
-                            <?php $qgVal = $studentData ? (int)$studentData['quarterly_grade'] : 0; ?>
+                            <td class="text-center qa-ps col-qa"><?= $studentData ? number_format((float)($studentData['qa_ps'] ?? 0), 2) : '0.00' ?></td>
+                            <td class="text-center qa-ws col-qa"><?= $studentData ? number_format((float)($studentData['qa_ws'] ?? 0), 2) : '0.00' ?></td>
+                            <td class="text-center initial-grade col-qa"><?= $studentData ? number_format((float)($studentData['initial_grade'] ?? 0), 2) : '0.00' ?></td>
+                            <?php $qgVal = $studentData ? (int)($studentData['quarterly_grade'] ?? 0) : 0; ?>
                             <td class="text-center quarterly-grade col-qa <?= ($qgVal <= 74) ? ' grade-low' : '' ?>"><?= $qgVal ?></td>
                         </tr>
                         <?php endforeach; ?>
@@ -479,6 +526,72 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
         position: relative;
         z-index: 1;
         margin-bottom: 40px;
+    }
+
+    /* Premium Button Styles */
+    .btn-upload-premium {
+        background: linear-gradient(135deg, #1D6F42 0%, #217346 100%);
+        color: white !important;
+        border: none;
+        padding: 10px 24px;
+        border-radius: 10px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 4px 12px rgba(33, 115, 70, 0.15);
+        font-size: 0.9rem;
+    }
+
+    .btn-upload-premium:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(33, 115, 70, 0.25);
+        filter: brightness(1.1);
+    }
+
+    .btn-submit-premium {
+        background: #1a1f2e;
+        color: white !important;
+        border: none;
+        padding: 10px 24px;
+        border-radius: 10px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 12px rgba(26, 31, 46, 0.15);
+        font-size: 0.9rem;
+    }
+
+    .btn-submit-premium:hover {
+        background: #2a3142;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(26, 31, 46, 0.25);
+    }
+
+    .btn-close-premium {
+        background: #ffffff;
+        color: #1a1f2e !important;
+        border: 1px solid #dee2e6;
+        padding: 10px 24px;
+        border-radius: 10px;
+        font-weight: 700;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        font-size: 0.9rem;
+    }
+
+    .btn-close-premium:hover {
+        background: #f8f9fa;
+        color: #dc3545 !important;
+        border-color: #dc3545;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(220, 53, 69, 0.1);
     }
         .table-container {
             max-height: 100vh;
@@ -726,30 +839,47 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
                 <h1 class="subject-title"><?= htmlspecialchars($subjectName) ?></h1>
             </div>
             
-            <div class="d-flex gap-2">
-                <button type="button" class="btn btn-outline-primary fw-bold" style="border-radius: 8px; padding: 10px 20px;" data-bs-toggle="modal" data-bs-target="#uploadModal">
-                    <i class="fas fa-upload me-1"></i> Upload
+            <div class="d-flex align-items-center gap-2">
+                <!-- Auto-save status indicator -->
+                <div id="autoSaveStatus" class="me-2 d-flex align-items-center justify-content-center" style="width: 40px; height: 40px; cursor: help;" title="All changes saved">
+                    <span class="fa-stack" style="font-size: 0.85em;">
+                        <i class="fas fa-cloud fa-stack-2x text-success"></i>
+                        <i class="fas fa-check fa-stack-1x fa-inverse" style="margin-top: 2px;"></i>
+                    </span>
+                </div>
+
+                <button id="btnSubmitClassRecord" class="btn btn-submit-premium d-none">
+                    <i class="fas fa-paper-plane"></i> Submit Class Record
                 </button>
-                <button id="saveButton" class="btn btn-success fw-bold" style="border-radius: 8px; padding: 10px 20px;">
-                    <i class="fas fa-save me-1"></i> Save Grades
+
+                <button type="button" class="btn btn-upload-premium" data-bs-toggle="modal" data-bs-target="#uploadModal">
+                    <i class="fas fa-file-excel"></i> Import Excel
                 </button>
-                <a href="grading_sheet.php" class="btn btn-light border text-muted fw-bold ms-2" style="border-radius: 8px; padding: 10px 20px;">
-                    <i class="fas fa-times"></i> Close
+
+                <a href="grading_sheet.php" class="btn btn-close-premium">
+                    <i class="fas fa-times me-1"></i> Close
                 </a>
             </div>
         </div>
 
-        <div class="quarter-pills" id="quarterPillsContainer">
-            <button class="quarter-pill active" data-quarter="1">Q1</button>
-            <button class="quarter-pill" data-quarter="2">Q2</button>
-            <button class="quarter-pill" data-quarter="3">Q3</button>
-            <button class="quarter-pill" data-quarter="4">Q4</button>
+        <div class="quarter-pills d-flex align-items-center justify-content-between" id="quarterPillsContainer">
+            <div class="d-flex gap-2">
+                <?php for ($qp = 1; $qp <= 4; $qp++): ?>
+                <button class="quarter-pill <?= $qp===1?'active':'' ?>" data-quarter="<?= $qp ?>">
+                    Q<?= $qp ?>
+                    <?php if (in_array($qp, $submittedQuarters)): ?>
+                    <span class="badge bg-success ms-1" style="font-size:0.62rem;"><i class="fas fa-check"></i> Submitted</span>
+                    <?php endif; ?>
+                </button>
+                <?php endfor; ?>
+            </div>
         </div>
 
         <div class="view-tabs" id="viewTabsContainer">
             <button class="view-tab active" data-view="ww">Written Work</button>
             <button class="view-tab" data-view="pt">Performance Task</button>
             <button class="view-tab" data-view="qa">Quarterly Assessment</button>
+            <button class="view-tab" data-view="classrecord">Class Record</button>
             <button class="view-tab" data-view="summary">Summary</button>
         </div>
 
@@ -880,6 +1010,153 @@ function generateQuarterTable($quarter, $maleStudents, $femaleStudents, $wwPerce
         </div>
     </div>
 </div>
+
+<!-- ===== CLASS RECORD PANEL ===== -->
+<div id="ClassRecord" class="quarter-content d-none">
+    <div class="card-body">
+
+        <!-- Class Record Tables per quarter (one shown at a time via outer pills) -->
+        <?php for ($q = 1; $q <= 4; $q++):
+            $isSubmitted = in_array($q, $submittedQuarters);
+            // Compute WW and PT totals for header safely
+            $wwHeaderTotal = 0;
+            $ptHeaderTotal = 0;
+            if (isset($highestScores[$q])) {
+                for ($ci = 1; $ci <= 10; $ci++) {
+                    $wwHeaderTotal += isset($highestScores[$q]["ww$ci"]) ? (int)$highestScores[$q]["ww$ci"] : 0;
+                    $ptHeaderTotal += isset($highestScores[$q]["pt$ci"]) ? (int)$highestScores[$q]["pt$ci"] : 0;
+                }
+            }
+        ?>
+        <div id="CR_Q<?= $q ?>" class="cr-quarter-panel <?= $q!==1?'d-none':'' ?>">
+
+            <?php if ($isSubmitted): ?>
+            <div class="alert d-flex align-items-center gap-2 mb-3" style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:10px;color:#2e7d32;">
+                <i class="fas fa-lock fs-5"></i>
+                <div><strong>Q<?= $q ?> has been submitted.</strong></div>
+            </div>
+            <?php endif; ?>
+
+            <div class="table-container">
+                <table class="table table-bordered table-sm mb-0 sticky-table">
+                    <thead>
+                        <tr class="sticky-header-row-1">
+                            <th class="sticky-col-1 text-center">No.</th>
+                            <th class="sticky-col-2 learner-name-col">Learner's Name</th>
+                            <th colspan="10" class="text-center col-ww">Written Works (<?= htmlspecialchars($wwPercentage) ?>%)</th>
+                            <th class="text-center col-ww">Total</th>
+                            <th class="text-center col-ww">PS</th>
+                            <th class="text-center col-ww">WS</th>
+                            <th colspan="10" class="text-center col-pt">Performance Tasks (<?= htmlspecialchars($ptPercentage) ?>%)</th>
+                            <th class="text-center col-pt">Total</th>
+                            <th class="text-center col-pt">PS</th>
+                            <th class="text-center col-pt">WS</th>
+                            <th class="text-center col-qa">QA (<?= htmlspecialchars($qaPercentage) ?>%)</th>
+                            <th class="text-center col-qa">PS</th>
+                            <th class="text-center col-qa">WS</th>
+                            <th class="text-center col-qa" rowspan="2" style="font-size:smaller;vertical-align:middle;">Initial Grade</th>
+                            <th class="text-center col-qa" rowspan="2" style="font-size:x-small;vertical-align:middle;">Quarterly Grade</th>
+                        </tr>
+                        <tr class="sticky-header-row-2">
+                            <th class="sticky-col-1"></th>
+                            <th class="sticky-col-2">Highest Possible Score</th>
+                            <?php for ($i = 1; $i <= 10; $i++): $hv = isset($highestScores[$q]["ww$i"]) ? (int)$highestScores[$q]["ww$i"] : 0; ?>
+                            <th class="text-center col-ww"><?= $i ?><br><small><?= $hv ?></small></th>
+                            <?php endfor; ?>
+                            <th class="text-center col-ww" style="font-size:smaller;"><?= $wwHeaderTotal ?></th>
+                            <th class="text-center col-ww" style="font-size:smaller;">100.00</th>
+                            <th class="text-center col-ww" style="font-size:smaller;"><?= $wwPercentage ?>%</th>
+                            <?php for ($i = 1; $i <= 10; $i++): $hv = isset($highestScores[$q]["pt$i"]) ? (int)$highestScores[$q]["pt$i"] : 0; ?>
+                            <th class="text-center col-pt"><?= $i ?><br><small><?= $hv ?></small></th>
+                            <?php endfor; ?>
+                            <th class="text-center col-pt" style="font-size:smaller;"><?= $ptHeaderTotal ?></th>
+                            <th class="text-center col-pt" style="font-size:smaller;">100.00</th>
+                            <th class="text-center col-pt" style="font-size:smaller;"><?= $ptPercentage ?>%</th>
+                            <th class="text-center col-qa"><?= isset($highestScores[$q]['qa1']) ? (int)$highestScores[$q]['qa1'] : 0 ?></th>
+                            <th class="text-center col-qa" style="font-size:smaller;">100.00</th>
+                            <th class="text-center col-qa" style="font-size:smaller;"><?= $qaPercentage ?>%</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php
+                        $crMale   = $maleStudents;
+                        $crFemale = $femaleStudents;
+                        $crRowNum = 0;
+                        if (!empty($crMale)): ?>
+                        <tr class="gender-divider">
+                            <td colspan="28" class="fw-bold py-2 bg-secondary text-white">Male Students (<?= count($crMale) ?>)</td>
+                        </tr>
+                        <?php foreach ($crMale as $student):
+                            $sd = isset($gradesDetails[$student['id']][$q]) ? $gradesDetails[$student['id']][$q] : null;
+                            $crRowNum++;
+                            $wwSt = 0; $ptSt = 0;
+                            if ($sd) { for ($ci=1;$ci<=10;$ci++) { $wwSt += (int)($sd["ww$ci"]??0); $ptSt += (int)($sd["pt$ci"]??0); } }
+                            $qgv = $sd ? (int)$sd['quarterly_grade'] : 0;
+                        ?>
+                        <tr data-student-id="<?= $student['id'] ?>">
+                            <td class="sticky-col-1 text-center"><?= $crRowNum ?></td>
+                            <td class="sticky-col-2 learner-name-cell"><?= htmlspecialchars($student['name']) ?></td>
+                            <?php for ($i=1;$i<=10;$i++): ?>
+                            <td class="text-center col-ww cr-ww-<?= $i ?>"><?= $sd ? (int)($sd["ww$i"]??0) : '-' ?></td>
+                            <?php endfor; ?>
+                            <td class="text-center col-ww cr-ww-total"><?= $sd ? $wwSt : '-' ?></td>
+                            <td class="text-center col-ww cr-ww-ps"><?= $sd ? number_format((float)($sd['ww_ps']??0),2) : '-' ?></td>
+                            <td class="text-center col-ww cr-ww-ws"><?= $sd ? number_format((float)($sd['ww_ws']??0),2) : '-' ?></td>
+                            <?php for ($i=1;$i<=10;$i++): ?>
+                            <td class="text-center col-pt cr-pt-<?= $i ?>"><?= $sd ? (int)($sd["pt$i"]??0) : '-' ?></td>
+                            <?php endfor; ?>
+                            <td class="text-center col-pt cr-pt-total"><?= $sd ? $ptSt : '-' ?></td>
+                            <td class="text-center col-pt cr-pt-ps"><?= $sd ? number_format((float)($sd['pt_ps']??0),2) : '-' ?></td>
+                            <td class="text-center col-pt cr-pt-ws"><?= $sd ? number_format((float)($sd['pt_ws']??0),2) : '-' ?></td>
+                            <td class="text-center col-qa cr-qa-1"><?= $sd ? (int)($sd['qa1']??0) : '-' ?></td>
+                            <td class="text-center col-qa cr-qa-ps"><?= $sd ? number_format((float)($sd['qa_ps']??0),2) : '-' ?></td>
+                            <td class="text-center col-qa cr-qa-ws"><?= $sd ? number_format((float)($sd['qa_ws']??0),2) : '-' ?></td>
+                            <td class="text-center col-qa cr-initial-grade"><?= $sd ? number_format((float)($sd['initial_grade']??0),2) : '-' ?></td>
+                            <td class="text-center col-qa cr-quarterly-grade <?= ($qgv>0&&$qgv<=74)?'grade-low':'' ?>"><?= $sd ? $qgv : '-' ?></td>
+                        </tr>
+                        <?php endforeach; endif; ?>
+                        <?php $crRowNum = 0; if (!empty($crFemale)): ?>
+                        <tr class="gender-divider">
+                            <td colspan="28" class="fw-bold py-2 bg-secondary text-white">Female Students (<?= count($crFemale) ?>)</td>
+                        </tr>
+                        <?php foreach ($crFemale as $student):
+                            $sd = isset($gradesDetails[$student['id']][$q]) ? $gradesDetails[$student['id']][$q] : null;
+                            $crRowNum++;
+                            $wwSt = 0; $ptSt = 0;
+                            if ($sd) { for ($ci=1;$ci<=10;$ci++) { $wwSt += (int)($sd["ww$ci"]??0); $ptSt += (int)($sd["pt$ci"]??0); } }
+                            $qgv = $sd ? (int)$sd['quarterly_grade'] : 0;
+                        ?>
+                        <tr data-student-id="<?= $student['id'] ?>">
+                            <td class="sticky-col-1 text-center"><?= $crRowNum ?></td>
+                            <td class="sticky-col-2 learner-name-cell"><?= htmlspecialchars($student['name']) ?></td>
+                            <?php for ($i=1;$i<=10;$i++): ?>
+                            <td class="text-center col-ww cr-ww-<?= $i ?>"><?= $sd ? (int)($sd["ww$i"]??0) : '-' ?></td>
+                            <?php endfor; ?>
+                            <td class="text-center col-ww cr-ww-total"><?= $sd ? $wwSt : '-' ?></td>
+                            <td class="text-center col-ww cr-ww-ps"><?= $sd ? number_format((float)($sd['ww_ps']??0),2) : '-' ?></td>
+                            <td class="text-center col-ww cr-ww-ws"><?= $sd ? number_format((float)($sd['ww_ws']??0),2) : '-' ?></td>
+                            <?php for ($i=1;$i<=10;$i++): ?>
+                            <td class="text-center col-pt cr-pt-<?= $i ?>"><?= $sd ? (int)($sd["pt$i"]??0) : '-' ?></td>
+                            <?php endfor; ?>
+                            <td class="text-center col-pt cr-pt-total"><?= $sd ? $ptSt : '-' ?></td>
+                            <td class="text-center col-pt cr-pt-ps"><?= $sd ? number_format((float)($sd['pt_ps']??0),2) : '-' ?></td>
+                            <td class="text-center col-pt cr-pt-ws"><?= $sd ? number_format((float)($sd['pt_ws']??0),2) : '-' ?></td>
+                            <td class="text-center col-qa cr-qa-1"><?= $sd ? (int)($sd['qa1']??0) : '-' ?></td>
+                            <td class="text-center col-qa cr-qa-ps"><?= $sd ? number_format((float)($sd['qa_ps']??0),2) : '-' ?></td>
+                            <td class="text-center col-qa cr-qa-ws"><?= $sd ? number_format((float)($sd['qa_ws']??0),2) : '-' ?></td>
+                            <td class="text-center col-qa cr-initial-grade"><?= $sd ? number_format((float)($sd['initial_grade']??0),2) : '-' ?></td>
+                            <td class="text-center col-qa cr-quarterly-grade <?= ($qgv>0&&$qgv<=74)?'grade-low':'' ?>"><?= $sd ? $qgv : '-' ?></td>
+                        </tr>
+                        <?php endforeach; endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <?php endfor; ?>
+    </div>
+</div>
+<!-- ===== END CLASS RECORD PANEL ===== -->
+
         </div>
     </div>
 
@@ -900,6 +1177,8 @@ const femaleStudents = <?= json_encode($femaleStudents) ?>;
 const subjectId = <?= $subjectId ?>;
 const teacherId = <?= $teacherId ?>;
 const schoolYear = "<?= $school_year ?>";
+const sectionId = <?= $sectionId ?>;
+const submittedQuarters = <?= json_encode($submittedQuarters) ?>;
 
 let currentQuarter = 1;
 let hasUnsavedChanges = false;
@@ -1028,6 +1307,51 @@ function calculateTotals(row, quarter) {
             qCell.classList.add('grade-low');
         } else {
             qCell.classList.remove('grade-low');
+        }
+    }
+
+    // ── Update Class Record tab in real-time ──
+    const crRow = document.querySelector(`#CR_Q${quarterToUse} tr[data-student-id="${row.getAttribute('data-student-id')}"]`);
+    if (crRow) {
+        // Individual Scores
+        for (let i = 1; i <= 10; i++) {
+            const wwInput = row.querySelector(`.ww-input[data-index="${i}"]`);
+            const ptInput = row.querySelector(`.pt-input[data-index="${i}"]`);
+            const crWW = crRow.querySelector(`.cr-ww-${i}`);
+            const crPT = crRow.querySelector(`.cr-pt-${i}`);
+            if (crWW && wwInput) crWW.textContent = wwInput.value !== '' ? wwInput.value : '0';
+            if (crPT && ptInput) crPT.textContent = ptInput.value !== '' ? ptInput.value : '0';
+        }
+        const qaInputRow = row.querySelector('.qa-input');
+        const crQA = crRow.querySelector('.cr-qa-1');
+        if (crQA && qaInputRow) crQA.textContent = qaInputRow.value !== '' ? qaInputRow.value : '0';
+
+        // Totals & Calculated Columns
+        const crWwTotal = crRow.querySelector('.cr-ww-total');
+        if (crWwTotal) crWwTotal.textContent = wwTotal;
+        const crWwPs = crRow.querySelector('.cr-ww-ps');
+        if (crWwPs) crWwPs.textContent = wwPS;
+        const crWwWs = crRow.querySelector('.cr-ww-ws');
+        if (crWwWs) crWwWs.textContent = wwWS;
+
+        const crPtTotal = crRow.querySelector('.cr-pt-total');
+        if (crPtTotal) crPtTotal.textContent = ptTotal;
+        const crPtPs = crRow.querySelector('.cr-pt-ps');
+        if (crPtPs) crPtPs.textContent = ptPS;
+        const crPtWs = crRow.querySelector('.cr-pt-ws');
+        if (crPtWs) crPtWs.textContent = ptWS;
+
+        const crQaPs = crRow.querySelector('.cr-qa-ps');
+        if (crQaPs) crQaPs.textContent = qaPS;
+        const crQaWs = crRow.querySelector('.cr-qa-ws');
+        if (crQaWs) crQaWs.textContent = qaWS;
+
+        const crInit = crRow.querySelector('.cr-initial-grade');
+        if (crInit) crInit.textContent = initialGrade;
+        const crQG = crRow.querySelector('.cr-quarterly-grade');
+        if (crQG) {
+            crQG.textContent = quarterlyGrade;
+            crQG.classList.toggle('grade-low', parseFloat(quarterlyGrade) <= 74);
         }
     }
     
@@ -1280,20 +1604,10 @@ function saveGrades(isAutoSave = false) {
     });
     
     const errorInputs = document.querySelectorAll('.error-highlight');
-    if (errorInputs.length > 0) {
-        if (!isAutoSave) alert('Please fix all validation errors before saving.');
-        return;
-    }
-    
-    const saveButton = document.getElementById('saveButton');
-    const originalText = '<i class="fas fa-save me-1"></i> Save Grades';
-    if (!isAutoSave) {
-        saveButton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Saving...';
-        saveButton.disabled = true;
-    } else {
-        saveButton.innerHTML = '<i class="fas fa-sync fa-spin me-1"></i> Saving...';
-    }
-    
+    if (errorInputs.length > 0) return;
+
+    setAutoSaveStatus('saving');
+
     console.log('Sending data:', data);
     
     fetch('save_grades.php', {
@@ -1315,42 +1629,20 @@ function saveGrades(isAutoSave = false) {
             const result = JSON.parse(text);
             if (result.success) {
                 hasUnsavedChanges = false;
-                
-                if (!isAutoSave) {
-                    showSaveStatus('success', result.message);
-                    setTimeout(() => {
-                        location.reload();
-                    }, 1500);
-                } else {
-                    saveButton.innerHTML = '<i class="fas fa-check me-1"></i> Saved';
-                    setTimeout(() => {
-                        if (saveButton.innerHTML.includes('Saved')) {
-                            saveButton.innerHTML = originalText;
-                        }
-                    }, 2000);
-                }
+                setAutoSaveStatus('saved');
             } else {
-                if (!isAutoSave) showSaveStatus('error', result.message);
+                setAutoSaveStatus('idle');
                 console.error('Save error:', result.message);
             }
         } catch (e) {
             console.error('JSON parse error:', e, 'Response text:', text);
-            if (!isAutoSave) showSaveStatus('error', 'Invalid response from server');
+            setAutoSaveStatus('idle');
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        if (!isAutoSave) showSaveStatus('error', 'Error saving data: ' + error.message);
-    })
-    .finally(() => {
-        if (!isAutoSave) {
-            saveButton.innerHTML = originalText;
-            saveButton.disabled = false;
-        } else {
-            if (!saveButton.innerHTML.includes('Saved')) {
-                saveButton.innerHTML = originalText;
-            }
-        }
+        const isOffline = !navigator.onLine;
+        setAutoSaveStatus(isOffline ? 'offline' : 'idle');
     });
 }
 
@@ -1569,26 +1861,63 @@ function initDragScroll() {
 
 // ==================== EVENT LISTENERS ====================
 document.addEventListener('DOMContentLoaded', function() {
-    loadQuarterData(1);
-    initDragScroll(); // 👈 initialize drag scrolling
-    
-    // Initialize columns for Written Works view
+    // ── Restore saved tab + quarter from localStorage ──
+    const savedTab     = localStorage.getItem('ss_activeTab')     || 'ww';
+    const savedQuarter = parseInt(localStorage.getItem('ss_activeQuarter') || '1');
+
+    // Set active quarter pill
+    document.querySelectorAll('.quarter-pill').forEach(p => {
+        p.classList.toggle('active', parseInt(p.getAttribute('data-quarter')) === savedQuarter);
+    });
+
+    // Activate the saved tab and render its view
+    document.querySelectorAll('.view-tab').forEach(t => t.classList.remove('active'));
+    const savedTabBtn = document.querySelector(`.view-tab[data-view="${savedTab}"]`);
+    if (savedTabBtn) savedTabBtn.classList.add('active');
+
+    // Hide all contents first
+    document.querySelectorAll('.quarter-content').forEach(c => c.classList.add('d-none'));
+
+    if (savedTab === 'summary') {
+        document.getElementById('Summary').classList.remove('d-none');
+    } else if (savedTab === 'classrecord') {
+        document.getElementById('ClassRecord').classList.remove('d-none');
+        document.getElementById('btnSubmitClassRecord').classList.remove('d-none');
+        document.querySelectorAll('#ClassRecord .col-ww, #ClassRecord .col-pt, #ClassRecord .col-qa').forEach(c => c.style.display = '');
+        currentCRQuarter = savedQuarter;
+        loadCRQuarter(savedQuarter);
+    } else {
+        loadQuarterData(savedQuarter);
+        // Show correct column set
+        document.querySelectorAll('.col-ww, .col-pt, .col-qa').forEach(c => c.style.display = 'none');
+        document.querySelectorAll(`.col-${savedTab === 'ww' ? 'ww' : savedTab === 'pt' ? 'pt' : 'qa'}`).forEach(c => c.style.display = '');
+        const qEl = document.getElementById(`Q${savedQuarter}`);
+        if (qEl) qEl.classList.remove('d-none');
+    }
+
+    initDragScroll();
+
+    // Initialize columns for Written Works view (only if no saved tab or saved tab is ww)
     function initView() {
-        document.querySelectorAll('.col-pt, .col-qa').forEach(col => col.style.display = 'none');
+        if (savedTab === 'ww' || !['ww','pt','qa','classrecord','summary'].includes(savedTab)) {
+            document.querySelectorAll('.col-pt, .col-qa').forEach(col => col.style.display = 'none');
+        }
     }
     initView();
 
-    // Quarter Pill Listener
     document.querySelectorAll('.quarter-pill').forEach(pill => {
         pill.addEventListener('click', function() {
-            const selectedQuarter = this.getAttribute('data-quarter');
-            
+            const selectedQuarter = parseInt(this.getAttribute('data-quarter'));
+
             document.querySelectorAll('.quarter-pill').forEach(p => p.classList.remove('active'));
             this.classList.add('active');
-            
+            localStorage.setItem('ss_activeQuarter', selectedQuarter);
+
             const currentTab = document.querySelector('.view-tab.active').getAttribute('data-view');
-            if (currentTab !== 'summary') {
-                loadQuarterData(parseInt(selectedQuarter));
+            if (currentTab !== 'summary' && currentTab !== 'classrecord') {
+                loadQuarterData(selectedQuarter);
+            } else if (currentTab === 'classrecord') {
+                loadCRQuarter(selectedQuarter);
             }
         });
     });
@@ -1597,15 +1926,31 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.view-tab').forEach(tab => {
         tab.addEventListener('click', function() {
             const view = this.getAttribute('data-view');
-            
+
             document.querySelectorAll('.view-tab').forEach(t => t.classList.remove('active'));
             this.classList.add('active');
+            localStorage.setItem('ss_activeTab', view);
             
             if (view === 'summary') {
                 document.querySelectorAll('.quarter-content').forEach(c => c.classList.add('d-none'));
                 document.getElementById('Summary').classList.remove('d-none');
+                document.getElementById('ClassRecord').classList.add('d-none');
+                document.getElementById('btnSubmitClassRecord').classList.add('d-none');
+            } else if (view === 'classrecord') {
+                document.querySelectorAll('.quarter-content').forEach(c => c.classList.add('d-none'));
+                document.getElementById('Summary').classList.add('d-none');
+                document.getElementById('ClassRecord').classList.remove('d-none');
+                document.getElementById('btnSubmitClassRecord').classList.remove('d-none');
+                // Show all columns in class record
+                document.querySelectorAll('#ClassRecord .col-ww, #ClassRecord .col-pt, #ClassRecord .col-qa').forEach(col => col.style.display = '');
+                // Load CR panel matching the currently active outer quarter pill
+                const aq = document.querySelector('#quarterPillsContainer .quarter-pill.active')?.getAttribute('data-quarter') || '1';
+                currentCRQuarter = parseInt(aq);
+                loadCRQuarter(currentCRQuarter);
             } else {
                 document.getElementById('Summary').classList.add('d-none');
+                document.getElementById('ClassRecord').classList.add('d-none');
+                document.getElementById('btnSubmitClassRecord').classList.add('d-none');
                 const activeQuarter = document.querySelector('.quarter-pill.active').getAttribute('data-quarter');
                 document.getElementById(`Q${activeQuarter}`).classList.remove('d-none');
                 
@@ -1626,7 +1971,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
-    document.getElementById('saveButton').addEventListener('click', () => saveGrades(false));
+
     
     let autoSaveTimer = null;
     function triggerAutoSave() {
@@ -1719,20 +2064,190 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
-        // Ctrl+S save
+        // Ctrl+S — trigger immediate auto-save
         if (e.ctrlKey && e.key === 's') {
             e.preventDefault();
-            saveGrades();
+            saveGrades(true);
         }
     });
     
-    window.addEventListener('beforeunload', function(e) {
-        if (hasUnsavedChanges) {
-            e.preventDefault();
-            e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
-        }
+    // Remove beforeunload warning — saving is fully automatic
+});
+
+// ==================== AUTO-SAVE STATUS ====================
+let saveStatusTimer = null;
+function setAutoSaveStatus(state) {
+    const container = document.getElementById('autoSaveStatus');
+    if (!container) return;
+    clearTimeout(saveStatusTimer);
+    
+    // Ensure styles for custom animation exist
+    if (!document.getElementById('saveAnimStyle')) {
+        const style = document.createElement('style');
+        style.id = 'saveAnimStyle';
+        style.textContent = `
+            @keyframes pulseCloud {
+                0% { transform: scale(1); opacity: 1; }
+                50% { transform: scale(1.1); opacity: 0.6; }
+                100% { transform: scale(1); opacity: 1; }
+            }
+            .cloud-saving-anim { animation: pulseCloud 1s infinite ease-in-out; }
+        `;
+        document.head.appendChild(style);
+    }
+
+    if (state === 'saving') {
+        container.innerHTML = '<i class="fas fa-cloud-upload-alt text-primary cloud-saving-anim" style="font-size:1.4rem;"></i>';
+        container.setAttribute('title', 'Saving changes...');
+    } else if (state === 'saved') {
+        container.innerHTML = `
+            <span class="fa-stack" style="font-size: 0.85em;">
+                <i class="fas fa-cloud fa-stack-2x text-success"></i>
+                <i class="fas fa-check fa-stack-1x fa-inverse" style="margin-top: 2px;"></i>
+            </span>`;
+        container.setAttribute('title', 'All changes saved');
+    } else if (state === 'offline') {
+        container.innerHTML = '<i class="fas fa-unlink text-danger" style="font-size:1.4rem;"></i>';
+        container.setAttribute('title', "You're offline");
+    } else {
+        container.innerHTML = `
+            <span class="fa-stack" style="font-size: 0.85em;">
+                <i class="fas fa-cloud fa-stack-2x text-success"></i>
+                <i class="fas fa-check fa-stack-1x fa-inverse" style="margin-top: 2px;"></i>
+            </span>`;
+        container.setAttribute('title', 'All changes saved');
+    }
+}
+
+// Listen for online/offline events
+window.addEventListener('offline', () => setAutoSaveStatus('offline'));
+window.addEventListener('online',  () => setAutoSaveStatus('saved'));
+
+// ==================== CLASS RECORD FUNCTIONS ====================
+let currentCRQuarter = 1;
+
+function loadCRQuarter(quarter) {
+    currentCRQuarter = quarter;
+    document.querySelectorAll('.cr-quarter-panel').forEach(p => p.classList.add('d-none'));
+    const panel = document.getElementById(`CR_Q${quarter}`);
+    if (panel) panel.classList.remove('d-none');
+    updateSubmitButtonState();
+}
+
+function updateSubmitButtonState() {
+    const btn = document.getElementById('btnSubmitClassRecord');
+    if (!btn) return;
+    const isSubmitted = submittedQuarters.includes(currentCRQuarter);
+    if (isSubmitted) {
+        btn.disabled = true;
+        btn.style.background = '#6c757d';
+        btn.innerHTML = '<i class="fas fa-lock me-2"></i>Already Submitted';
+    } else {
+        btn.disabled = false;
+        btn.style.background = '#1a1f2e';
+        btn.innerHTML = '<i class="fas fa-paper-plane me-2"></i>Submit Class Record';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Submit Class Record button
+    document.getElementById('btnSubmitClassRecord')?.addEventListener('click', function() {
+        if (submittedQuarters.includes(currentCRQuarter)) return;
+        Swal.fire({
+            title: `Submit Q${currentCRQuarter} Class Record?`,
+            html: `<p class="mb-2">You are about to submit the <strong>Quarter ${currentCRQuarter}</strong> class record.</p>
+                   <div class="alert alert-warning py-2 px-3 text-start" style="font-size:0.9rem;border-radius:8px;">
+                       <i class="fas fa-exclamation-triangle me-2"></i>
+                       <strong>This action cannot be undone.</strong> Once submitted, data input for Q${currentCRQuarter} will be <u>permanently locked</u>.
+                   </div>`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: '<i class="fas fa-paper-plane me-1"></i> Yes, Submit',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#1a1f2e',
+            cancelButtonColor: '#6c757d',
+            reverseButtons: true
+        }).then(result => {
+            if (!result.isConfirmed) return;
+            const btn = document.getElementById('btnSubmitClassRecord');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Submitting...';
+
+            const formData = new FormData();
+            formData.append('action', 'submit_class_record');
+            formData.append('teacher_id', teacherId);
+            formData.append('subject_id', subjectId);
+            formData.append('section_id', sectionId);
+            formData.append('quarter', currentCRQuarter);
+            formData.append('school_year', schoolYear);
+            formData.append('submit_using', 'system input');
+
+            fetch(window.location.href, { method: 'POST', body: formData })
+            .then(r => r.json())
+            .then(res => {
+                if (res.success) {
+                    submittedQuarters.push(currentCRQuarter);
+                    // Add badge to outer quarter pill
+                    const pill = document.querySelector(`#quarterPillsContainer .quarter-pill[data-quarter="${currentCRQuarter}"]`);
+                    if (pill && !pill.querySelector('.badge')) {
+                        const badge = document.createElement('span');
+                        badge.className = 'badge bg-success ms-1';
+                        badge.style.fontSize = '0.62rem';
+                        badge.innerHTML = '<i class="fas fa-check"></i> Submitted';
+                        pill.appendChild(badge);
+                    }
+                    // Show lock alert in CR panel
+                    const panel = document.getElementById(`CR_Q${currentCRQuarter}`);
+                    if (panel && !panel.querySelector('.lock-alert')) {
+                        const alertDiv = document.createElement('div');
+                        alertDiv.className = 'alert d-flex align-items-center gap-2 mb-3 lock-alert';
+                        alertDiv.style.cssText = 'background:#e8f5e9;border:1px solid #a5d6a7;border-radius:10px;color:#2e7d32;';
+                        alertDiv.innerHTML = `<i class="fas fa-lock fs-5"></i><div><strong>Q${currentCRQuarter} has been submitted.</strong></div>`;
+                        panel.insertBefore(alertDiv, panel.querySelector('.table-container'));
+                    }
+                    // Lock inputs on grade entry table (including highest possible scores)
+                    const qPanel = document.getElementById(`Q${currentCRQuarter}`);
+                    if (qPanel) qPanel.querySelectorAll('input').forEach(inp => inp.disabled = true);
+                    updateSubmitButtonState();
+                    Swal.fire({
+                        icon: 'success', title: 'Submitted!', text: res.message,
+                        timer: 3000, showConfirmButton: false, toast: true, position: 'top-end'
+                    });
+                } else {
+                    Swal.fire('Error', res.message, 'error');
+                    updateSubmitButtonState();
+                }
+            })
+            .catch(() => {
+                Swal.fire('Error', 'Network error. Please try again.', 'error');
+                updateSubmitButtonState();
+            });
+        });
+    });
+
+    // Lock inputs for already-submitted quarters on page load
+    submittedQuarters.forEach(q => {
+        const qPanel = document.getElementById(`Q${q}`);
+        if (qPanel) qPanel.querySelectorAll('input').forEach(inp => inp.disabled = true);
     });
 });
+
+function updateSubmitButtonState() {
+    const btn = document.getElementById('btnSubmitClassRecord');
+    if (!btn) return;
+    const isSubmitted = submittedQuarters.includes(currentCRQuarter);
+    if (isSubmitted) {
+        btn.disabled = true;
+        btn.style.background = '#6c757d';
+        btn.innerHTML = '<i class="fas fa-lock me-2"></i>Already Submitted';
+    } else {
+        btn.disabled = false;
+        btn.style.background = '#1a1f2e';
+        btn.innerHTML = '<i class="fas fa-paper-plane me-2"></i>Submit Class Record';
+    }
+}
+
+
     </script>
 <!-- Upload Modal -->
 <div class="modal fade" id="uploadModal" tabindex="-1">
