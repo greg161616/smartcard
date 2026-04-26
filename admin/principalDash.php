@@ -7,6 +7,66 @@ if (!isset($_SESSION['email']) || $_SESSION['role'] !== 'principal') {
     exit();
 }
 
+// ── Create school_details table if it doesn't exist ──
+mysqli_query($conn, "CREATE TABLE IF NOT EXISTS `school_details` (
+    `id` INT(11) NOT NULL AUTO_INCREMENT,
+    `school_year_id` VARCHAR(50) DEFAULT NULL,
+    `school_name` VARCHAR(255) NOT NULL,
+    `school_address` TEXT DEFAULT NULL,
+    `sub_office` VARCHAR(150) DEFAULT NULL,
+    `division` VARCHAR(150) DEFAULT NULL,
+    `region` VARCHAR(100) DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+
+// Migration: ensure new columns exist if table was created with old schema
+$check_cols = mysqli_query($conn, "SHOW COLUMNS FROM `school_details` LIKE 'school_year_id'");
+if (mysqli_num_rows($check_cols) == 0) {
+    mysqli_query($conn, "ALTER TABLE `school_details` 
+        ADD COLUMN `school_year_id` VARCHAR(50) DEFAULT NULL AFTER `id`,
+        ADD COLUMN `school_address` TEXT DEFAULT NULL AFTER `school_name`,
+        ADD COLUMN `sub_office` VARCHAR(150) DEFAULT NULL AFTER `school_address`
+    ");
+}
+
+// ── Handle school_details save ──
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_school_details'])) {
+    $sd_school_year_id = trim($_POST['school_year_id'] ?? '');
+    $sd_school_name    = trim($_POST['school_name'] ?? '');
+    $sd_school_address = trim($_POST['school_address'] ?? '');
+    $sd_sub_office     = trim($_POST['sub_office'] ?? '');
+    $sd_division       = trim($_POST['division'] ?? '');
+    $sd_region         = trim($_POST['region'] ?? '');
+
+    // Check if a row already exists
+    $chk = mysqli_query($conn, "SELECT id FROM school_details LIMIT 1");
+    if ($chk && mysqli_num_rows($chk) > 0) {
+        $row_id = mysqli_fetch_assoc($chk)['id'];
+        $upd = $conn->prepare("UPDATE school_details SET school_year_id=?, school_name=?, school_address=?, sub_office=?, division=?, region=? WHERE id=?");
+        $upd->bind_param("ssssssi", $sd_school_year_id, $sd_school_name, $sd_school_address, $sd_sub_office, $sd_division, $sd_region, $row_id);
+        $upd->execute();
+        $upd->close();
+    } else {
+        $ins = $conn->prepare("INSERT INTO school_details (school_year_id, school_name, school_address, sub_office, division, region) VALUES (?,?,?,?,?,?)");
+        $ins->bind_param("ssssss", $sd_school_year_id, $sd_school_name, $sd_school_address, $sd_sub_office, $sd_division, $sd_region);
+        $ins->execute();
+        $ins->close();
+    }
+    // Redirect to clear POST
+    header('Location: principalDash.php?school_setup=1');
+    exit();
+}
+
+// ── Check if school_details is empty ──
+$school_details_empty = true;
+$school_info = null;
+$sd_check = mysqli_query($conn, "SELECT * FROM school_details LIMIT 1");
+if ($sd_check && mysqli_num_rows($sd_check) > 0) {
+    $school_details_empty = false;
+    $school_info = mysqli_fetch_assoc($sd_check);
+}
+
 // AJAX Handler
 if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
     header('Content-Type: application/json');
@@ -642,9 +702,9 @@ if ($result_logs) {
                     <div class="row align-items-center">
                         <div class="col">
                             <h4 class="card-title mb-1">
-                                <i class="bi bi-speedometer2 me-2"></i>Welcome to BAHAHIS Dashboard
+                                <i class="bi bi-speedometer2 me-2"></i>Welcome to <?php echo htmlspecialchars($school_info['school_name'] ?? 'SmartCard'); ?> Dashboard
                             </h4>
-                            <p class="card-text mb-0">Overview of school statistics and performance metrics</p>
+                            <p class="card-text mb-0">Overview of school statistics and performance metrics for <?php echo htmlspecialchars($school_info['division'] ?? 'System'); ?></p>
                         </div>
                         <div class="col-auto">
                             <i class="bi bi-calendar-check me-1"></i>School Year: <span id="school-year-display"><?php echo $selected_sy; ?></span>
@@ -1833,5 +1893,156 @@ window.addEventListener('resize', function() {
     }
 });
 </script>
+
+<!-- ══════════════════════════════════════════════════════════
+     School Details Setup Modal
+     Auto-shows when school_details table is empty
+════════════════════════════════════════════════════════════ -->
+<div class="modal fade" id="schoolSetupModal" tabindex="-1" aria-labelledby="schoolSetupModalLabel" aria-hidden="true"
+     data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <form method="POST" action="" id="schoolSetupForm" class="modal-content" style="border:none; border-radius:18px; overflow:hidden;">
+      <input type="hidden" name="save_school_details" value="1">
+      
+      <!-- Gradient header -->
+      <div class="modal-header text-white border-0"
+           style="background: linear-gradient(135deg,#1a1f2e 0%,#2d6a4f 100%); padding:28px 32px 22px;">
+        <div>
+          <div class="d-flex align-items-center gap-3 mb-1">
+            <div style="width:46px;height:46px;background:rgba(255,255,255,0.15);border-radius:12px;
+                        display:flex;align-items:center;justify-content:center;">
+              <i class="bi bi-building-gear fs-4"></i>
+            </div>
+            <div>
+              <h5 class="modal-title mb-0 fw-bold fs-5" id="schoolSetupModalLabel">
+                School Information Setup
+              </h5>
+              <small style="opacity:.75;">Please fill in your school details to get started</small>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-body" style="padding:32px 36px; background:#f8f9fa;">
+
+        <!-- Step indicator -->
+        <div class="d-flex align-items-center gap-2 mb-4">
+          <span class="badge rounded-pill px-3 py-2" style="background:#1a1f2e;font-size:.78rem;">
+            <i class="bi bi-info-circle me-1"></i>This information will appear on reports and forms
+          </span>
+        </div>
+
+        <div class="row g-3">
+          <!-- School Name (full width) -->
+          <div class="col-12">
+            <label class="form-label fw-semibold text-dark" for="setup_school_name">
+              <i class="bi bi-building me-1 text-primary"></i>School Name <span class="text-danger">*</span>
+            </label>
+            <input type="text" class="form-control form-control-lg" id="setup_school_name"
+                   name="school_name" required
+                   value="<?php echo htmlspecialchars($school_info['school_name'] ?? ''); ?>"
+                   placeholder="e.g. Bagong Araw National High School"
+                   style="border-radius:10px;border-color:#dee2e6;">
+          </div>
+
+          <!-- School Year ID -->
+          <div class="col-md-12">
+            <label class="form-label fw-semibold text-dark" for="setup_school_year_id">
+              <i class="bi bi-calendar-range me-1 text-warning"></i>School Year
+            </label>
+            <select class="form-select" id="setup_school_year_id" name="school_year_id" style="border-radius:10px;">
+              <?php foreach ($school_years as $year): ?>
+                <option value="<?php echo $year; ?>" <?php echo (isset($school_info['school_year_id']) && $school_info['school_year_id'] == $year) ? 'selected' : ''; ?>>
+                  <?php echo $year; ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+
+          <!-- School Address -->
+          <div class="col-12">
+            <label class="form-label fw-semibold text-dark" for="setup_school_address">
+              <i class="bi bi-pin-map me-1 text-secondary"></i>School Address
+            </label>
+            <input type="text" class="form-control" id="setup_school_address"
+                   name="school_address"
+                   value="<?php echo htmlspecialchars($school_info['school_address'] ?? ''); ?>"
+                   placeholder="Complete address of the school"
+                   style="border-radius:10px;">
+          </div>
+
+          <!-- Sub-Office & Division -->
+          <div class="col-md-6">
+            <label class="form-label fw-semibold text-dark" for="setup_sub_office">
+              <i class="bi bi-building-up me-1 text-success"></i>Sub-Office
+            </label>
+            <input type="text" class="form-control" id="setup_sub_office"
+                   name="sub_office"
+                   value="<?php echo htmlspecialchars($school_info['sub_office'] ?? ''); ?>"
+                   placeholder="e.g. Sub-Office Name"
+                   style="border-radius:10px;">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold text-dark" for="setup_division">
+              <i class="bi bi-geo-alt me-1 text-danger"></i>Division
+            </label>
+            <input type="text" class="form-control" id="setup_division"
+                   name="division"
+                   value="<?php echo htmlspecialchars($school_info['division'] ?? ''); ?>"
+                   placeholder="e.g. Division of Quezon City"
+                   style="border-radius:10px;">
+          </div>
+
+          <!-- Region -->
+          <div class="col-md-12">
+            <label class="form-label fw-semibold text-dark" for="setup_region">
+              <i class="bi bi-globe me-1 text-purple"></i>Region
+            </label>
+            <input type="text" class="form-control" id="setup_region"
+                   name="region"
+                   value="<?php echo htmlspecialchars($school_info['region'] ?? ''); ?>"
+                   placeholder="e.g. Region IV-A"
+                   style="border-radius:10px;">
+          </div>
+        </div>
+
+        <!-- Info notice -->
+        <div class="alert alert-info d-flex align-items-start gap-2 mt-4 mb-0"
+             style="border-radius:12px;border:none;background:#e8f4f8;">
+          <i class="bi bi-info-circle-fill text-info mt-1"></i>
+          <div>
+            <strong>Why is this required?</strong> School details are used in grade reports, Form 138,
+            and official documents. You can update these anytime from the Settings page.
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer border-0" style="background:#f8f9fa;padding:16px 36px 24px;">
+        <button type="submit" class="btn btn-lg px-5 fw-semibold text-white"
+                style="background:linear-gradient(135deg,#1a1f2e,#2d6a4f);border:none;border-radius:10px;
+                       box-shadow:0 4px 15px rgba(26,31,46,.3);transition:opacity .2s;"
+                onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'">
+          <i class="bi bi-check-circle me-2"></i>Save School Details
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+// Auto-show school setup modal if school_details is empty
+(function() {
+    var isEmpty = <?php echo $school_details_empty ? 'true' : 'false'; ?>;
+    if (isEmpty) {
+        document.addEventListener('DOMContentLoaded', function() {
+            var el = document.getElementById('schoolSetupModal');
+            if (el) {
+                var modal = new bootstrap.Modal(el, { backdrop: 'static', keyboard: false });
+                modal.show();
+            }
+        });
+    }
+})();
+</script>
+
 </body>
 </html>
