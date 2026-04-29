@@ -305,8 +305,63 @@ $principals_stmt->execute();
 $principals_result = $principals_stmt->get_result();
 $principals = $principals_result->fetch_all(MYSQLI_ASSOC);
 
+// Handle Update School Details
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_school_details'])) {
+    $admin_password = $_POST['admin_password'];
+    $school_name = trim($_POST['school_name'] ?? '');
+    $school_address = trim($_POST['school_address'] ?? '');
+    $sub_office = trim($_POST['sub_office'] ?? '');
+    $division = trim($_POST['division'] ?? '');
+    $region = trim($_POST['region'] ?? '');
+    
+    // Verify admin password
+    $current_admin_id = $_SESSION['user_id'];
+    $check_admin_stmt = $conn->prepare("SELECT Password FROM user WHERE UserID = ?");
+    $check_admin_stmt->bind_param("i", $current_admin_id);
+    $check_admin_stmt->execute();
+    $admin_result = $check_admin_stmt->get_result();
+    $admin_data = $admin_result->fetch_assoc();
+    
+    if (!$admin_data || !password_verify($admin_password, $admin_data['Password'])) {
+        $error = "Admin password is incorrect!";
+    } else {
+        try {
+            $chk = mysqli_query($conn, "SELECT id FROM school_details LIMIT 1");
+            if ($chk && mysqli_num_rows($chk) > 0) {
+                $row_id = mysqli_fetch_assoc($chk)['id'];
+                $upd = $conn->prepare("UPDATE school_details SET school_name=?, school_address=?, sub_office=?, division=?, region=? WHERE id=?");
+                $upd->bind_param("sssssi", $school_name, $school_address, $sub_office, $division, $region, $row_id);
+                $upd->execute();
+                $upd->close();
+            } else {
+                $ins = $conn->prepare("INSERT INTO school_details (school_name, school_address, sub_office, division, region) VALUES (?,?,?,?,?)");
+                $ins->bind_param("sssss", $school_name, $school_address, $sub_office, $division, $region);
+                $ins->execute();
+                $ins->close();
+            }
+            
+            $log_action = "SCHOOL_DETAILS_UPDATED";
+            $log_details = "School details updated: " . $school_name;
+            $log_stmt = $conn->prepare("INSERT INTO system_logs (action, user_id, details, log_level, created_at) VALUES (?, ?, ?, 'INFO', NOW())");
+            $log_stmt->bind_param("sis", $log_action, $current_admin_id, $log_details);
+            $log_stmt->execute();
+            
+            $success = "School details updated successfully!";
+        } catch (Exception $e) {
+            $error = "Failed to update school details: " . $e->getMessage();
+        }
+    }
+}
+
+// Fetch school details
+$school_info = null;
+$sd_check = mysqli_query($conn, "SELECT * FROM school_details LIMIT 1");
+if ($sd_check && mysqli_num_rows($sd_check) > 0) {
+    $school_info = mysqli_fetch_assoc($sd_check);
+}
+
 // Determine active tab
-$active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'manage';
+$active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'school';
 ?>
 
 <!DOCTYPE html>
@@ -314,84 +369,344 @@ $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'manage';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Principal Management</title>
+    <title>Principal & School Profile</title>
     <link rel="icon" type="image/png" href="../img/logo.png" />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
-        .card {
-            border: none;
-            border-radius: 15px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        :root {
+            --primary-gradient: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+            --secondary-gradient: linear-gradient(135deg, #3B82F6 0%, #2DD4BF 100%);
+            --bg-color: #F3F4F6;
+            --surface-color: rgba(255, 255, 255, 0.95);
+            --text-main: #1F2937;
+            --text-muted: #6B7280;
+            --border-radius-lg: 20px;
+            --border-radius-md: 12px;
+            --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
-        .current-principal-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            overflow-x: hidden;
         }
-        .form-container {
-            max-width: 800px;
-            margin: 0 auto;
-        }
-        .required::after {
-            content: " *";
-            color: red;
-        }
-        .nav-pills .nav-link.active {
-            background-color: #667eea;
-        }
-        .tab-content {
-            border: 1px solid #dee2e6;
-            border-top: none;
-            border-radius: 0 0 10px 10px;
-            padding: 2rem;
-        }
-        .profile-avatar {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 3px solid #dee2e6;
-        }
-        .profile-avatar-small {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 2px solid #dee2e6;
-        }
-        .current-principal-avatar {
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 4px solid white;
-            margin-right: 20px;
-        }
-        .file-input-wrapper {
+
+        .hero-banner {
+            height: 220px;
+            background: var(--primary-gradient);
+            border-radius: var(--border-radius-lg);
+            margin-bottom: -100px;
             position: relative;
             overflow: hidden;
-            display: inline-block;
+            box-shadow: 0 10px 30px rgba(79, 70, 229, 0.2);
         }
-        .file-input-wrapper input[type=file] {
+
+        .hero-banner::after {
+            content: '';
             position: absolute;
-            left: 0;
-            top: 0;
-            opacity: 0;
-            cursor: pointer;
-            width: 100%;
-            height: 100%;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: url('data:image/svg+xml;utf8,<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path fill="rgba(255,255,255,0.05)" d="M0 100 V 50 Q 25 25 50 50 T 100 50 V 100 z"/></svg>') center/cover;
         }
-        .edit-btn {
-            margin-left: 5px;
+
+        .main-container {
+            position: relative;
+            z-index: 10;
         }
-        .modal-profile-picture {
-            width: 100px;
-            height: 100px;
+
+        .glass-card {
+            background: var(--surface-color);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: var(--border-radius-lg);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
+            padding: 2.5rem;
+            margin-bottom: 2rem;
+            transition: var(--transition-smooth);
+        }
+
+        .glass-card:hover {
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
+        }
+
+        /* Nav Pills Modernization */
+        .nav-pills-custom {
+            background: white;
+            border-radius: 50px;
+            padding: 0.5rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+            display: inline-flex;
+            gap: 0.5rem;
+            margin-bottom: 2.5rem;
+            flex-wrap: wrap;
+        }
+
+        .nav-pills-custom .nav-link {
+            border-radius: 50px;
+            padding: 0.8rem 1.8rem;
+            color: var(--text-muted);
+            font-weight: 500;
+            transition: var(--transition-smooth);
+            border: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .nav-pills-custom .nav-link:hover {
+            color: var(--text-main);
+            background: #F3F4F6;
+        }
+
+        .nav-pills-custom .nav-link.active {
+            background: var(--primary-gradient);
+            color: white;
+            box-shadow: 0 4px 15px rgba(124, 58, 237, 0.3);
+        }
+
+        /* Avatars */
+        .profile-avatar-large {
+            width: 160px;
+            height: 160px;
             border-radius: 50%;
             object-fit: cover;
-            border: 4px solid #dee2e6;
-            margin: 0 auto 15px;
-            display: block;
+            border: 6px solid white;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            background: white;
+            margin-top: -80px;
+            margin-bottom: 1.5rem;
+        }
+
+        .profile-avatar-small {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #E5E7EB;
+        }
+        
+        .avatar-placeholder-large {
+            width: 160px;
+            height: 160px;
+            border-radius: 50%;
+            border: 6px solid white;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            background: var(--secondary-gradient);
+            margin-top: -80px;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 4rem;
+        }
+
+        /* Form Controls */
+        .form-control, .form-select {
+            border-radius: var(--border-radius-md);
+            border: 1px solid #E5E7EB;
+            padding: 0.8rem 1.2rem;
+            font-size: 0.95rem;
+            transition: var(--transition-smooth);
+            background: #F9FAFB;
+        }
+
+        .form-control:focus, .form-select:focus {
+            background: white;
+            border-color: #7C3AED;
+            box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.1);
+        }
+
+        .form-label {
+            font-weight: 600;
+            color: var(--text-main);
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .required::after {
+            content: " *";
+            color: #EF4444;
+        }
+
+        /* Buttons */
+        .btn-custom-primary {
+            background: var(--primary-gradient);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            padding: 0.8rem 2rem;
+            font-weight: 600;
+            transition: var(--transition-smooth);
+            box-shadow: 0 4px 15px rgba(124, 58, 237, 0.2);
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-custom-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(124, 58, 237, 0.3);
+            color: white;
+        }
+
+        .btn-custom-secondary {
+            background: white;
+            color: var(--text-main);
+            border: 1px solid #E5E7EB;
+            border-radius: 50px;
+            padding: 0.8rem 2rem;
+            font-weight: 600;
+            transition: var(--transition-smooth);
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-custom-secondary:hover {
+            background: #F9FAFB;
+            border-color: #D1D5DB;
+        }
+
+        /* Tables */
+        .table-custom {
+            border-collapse: separate;
+            border-spacing: 0 0.5rem;
+        }
+        
+        .table-custom th {
+            border: none;
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 1rem;
+        }
+
+        .table-custom td {
+            background: white;
+            border: none;
+            padding: 1rem;
+            vertical-align: middle;
+            border-top: 1px solid #F3F4F6;
+            border-bottom: 1px solid #F3F4F6;
+        }
+
+        .table-custom tr td:first-child { 
+            border-left: 1px solid #F3F4F6;
+            border-radius: var(--border-radius-md) 0 0 var(--border-radius-md); 
+        }
+        .table-custom tr td:last-child { 
+            border-right: 1px solid #F3F4F6;
+            border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0; 
+        }
+
+        .table-custom tr:hover td {
+            background: #F9FAFB;
+        }
+
+        /* Detail Blocks */
+        .detail-block {
+            padding: 1.25rem;
+            background: #F9FAFB;
+            border-radius: var(--border-radius-md);
+            margin-bottom: 1.25rem;
+            border-left: 4px solid #7C3AED;
+            transition: var(--transition-smooth);
+        }
+
+        .detail-block:hover {
+            background: white;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+            transform: translateX(5px);
+        }
+        
+        .detail-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.25rem;
+            font-weight: 600;
+        }
+        
+        .detail-value {
+            font-size: 1.1rem;
+            color: var(--text-main);
+            font-weight: 500;
+        }
+
+        /* Modal styling */
+        .modal-content {
+            border-radius: var(--border-radius-lg);
+            border: none;
+            overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+        
+        .modal-header-custom {
+            background: var(--primary-gradient);
+            color: white;
+            border: none;
+            padding: 1.5rem 2rem;
+        }
+
+        .modal-header-custom .btn-close {
+            filter: brightness(0) invert(1);
+            opacity: 0.8;
+        }
+
+        .modal-body {
+            padding: 2rem;
+        }
+
+        .modal-footer {
+            border-top: 1px solid #F3F4F6;
+            padding: 1.5rem 2rem;
+        }
+
+        .alert-custom {
+            border-radius: var(--border-radius-md);
+            border: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem 1.5rem;
+        }
+        
+        .school-icon-wrapper {
+            width: 80px;
+            height: 80px;
+            border-radius: 20px;
+            background: var(--secondary-gradient);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 2.5rem;
+            box-shadow: 0 10px 25px rgba(59, 130, 246, 0.3);
+            margin-bottom: 1.5rem;
+        }
+
+        /* Status Badge */
+        .status-badge {
+            padding: 0.35rem 1rem;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 0.8rem;
+            letter-spacing: 0.02em;
+        }
+        .status-active {
+            background: rgba(16, 185, 129, 0.1);
+            color: #10B981;
+        }
+        .status-inactive {
+            background: rgba(107, 114, 128, 0.1);
+            color: #6B7280;
         }
     </style>
 </head>
@@ -401,156 +716,196 @@ $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'manage';
     include '../navs/adminNav.php'; 
     ?>
     
-    <div class="container mt-4">
+    <div class="hero-banner"></div>
+    
+    <div class="container main-container">
         
         <?php if ($error): ?>
-            <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                <i class="bi bi-exclamation-triangle"></i> <?php echo $error; ?>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            <div class="alert alert-custom alert-danger alert-dismissible fade show mb-4" role="alert">
+                <i class="bi bi-exclamation-octagon-fill fs-5"></i> 
+                <div><?php echo $error; ?></div>
+                <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
         
         <?php if ($success): ?>
-            <div class="alert alert-success alert-dismissible fade show" role="alert">
-                <i class="bi bi-check-circle"></i> <?php echo $success; ?>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            <div class="alert alert-custom alert-success alert-dismissible fade show mb-4" role="alert">
+                <i class="bi bi-check-circle-fill fs-5"></i> 
+                <div><?php echo $success; ?></div>
+                <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
         
         <!-- Navigation Tabs -->
-        <ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
-            <li class="nav-item" role="presentation">
+        <div class="text-center">
+            <div class="nav-pills-custom" id="pills-tab" role="tablist">
+                <button class="nav-link <?php echo $active_tab === 'school' ? 'active' : ''; ?>" 
+                        id="pills-school-tab" data-bs-toggle="pill" data-bs-target="#pills-school" type="button" role="tab">
+                    <i class="bi bi-building"></i> School Profile
+                </button>
                 <button class="nav-link <?php echo $active_tab === 'manage' ? 'active' : ''; ?>" 
                         id="pills-manage-tab" data-bs-toggle="pill" data-bs-target="#pills-manage" type="button" role="tab">
-                    <i class="bi bi-list"></i> Manage Principals
+                    <i class="bi bi-people"></i> Manage Principals
                 </button>
-            </li>
-            <li class="nav-item" role="presentation">
                 <button class="nav-link <?php echo $active_tab === 'add' ? 'active' : ''; ?>" 
                         id="pills-add-tab" data-bs-toggle="pill" data-bs-target="#pills-add" type="button" role="tab">
                     <i class="bi bi-person-plus"></i> Add New Principal
                 </button>
-            </li>
-        </ul>
+            </div>
+        </div>
         
         <div class="tab-content" id="pills-tabContent">
+            
+            <!-- School Profile Tab -->
+            <div class="tab-pane fade <?php echo $active_tab === 'school' ? 'show active' : ''; ?>" 
+                 id="pills-school" role="tabpanel">
+                
+                <div class="glass-card">
+                    <div class="row align-items-center mb-4">
+                        <div class="col-md-auto text-center text-md-start">
+                            <div class="school-icon-wrapper mx-auto mx-md-0">
+                                <i class="bi bi-bank"></i>
+                            </div>
+                        </div>
+                        <div class="col text-center text-md-start">
+                            <h2 class="mb-1 fw-bold"><?php echo htmlspecialchars($school_info['school_name'] ?? 'SmartCard System'); ?></h2>
+                            <p class="text-muted mb-0"><i class="bi bi-geo-alt-fill me-1"></i><?php echo htmlspecialchars($school_info['school_address'] ?? 'Address Not Set'); ?></p>
+                        </div>
+                        <div class="col-md-auto mt-3 mt-md-0 text-center text-md-end">
+                            <button type="button" class="btn btn-custom-primary" data-bs-toggle="modal" data-bs-target="#editSchoolModal">
+                                <i class="bi bi-pencil-square"></i> Edit Details
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="row g-4 mt-2">
+                        <div class="col-md-4">
+                            <div class="detail-block">
+                                <div class="detail-label">Region</div>
+                                <div class="detail-value"><?php echo htmlspecialchars($school_info['region'] ?? 'Not Set'); ?></div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="detail-block">
+                                <div class="detail-label">Division</div>
+                                <div class="detail-value"><?php echo htmlspecialchars($school_info['division'] ?? 'Not Set'); ?></div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="detail-block">
+                                <div class="detail-label">Sub-Office</div>
+                                <div class="detail-value"><?php echo htmlspecialchars($school_info['sub_office'] ?? 'Not Set'); ?></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+            </div>
+            
             <!-- Manage Principals Tab -->
             <div class="tab-pane fade <?php echo $active_tab === 'manage' ? 'show active' : ''; ?>" 
                  id="pills-manage" role="tabpanel">
                 
                 <?php if (empty($principals)): ?>
-                    <div class="text-center py-4">
-                        <i class="bi bi-person-x display-1 text-muted"></i>
-                        <h5 class="mt-3">No principals found</h5>
-                        <p class="text-muted">Get started by adding your first principal.</p>
-                        <button type="button" class="btn btn-primary" onclick="switchToAddTab()">
-                            Add Principal
+                    <div class="glass-card text-center py-5">
+                        <div class="d-inline-flex align-items-center justify-content-center bg-light rounded-circle p-4 mb-4" style="width: 100px; height: 100px;">
+                            <i class="bi bi-person-x display-4 text-muted"></i>
+                        </div>
+                        <h4 class="fw-bold mb-3">No principals found</h4>
+                        <p class="text-muted mb-4">Get started by adding your first principal profile.</p>
+                        <button type="button" class="btn btn-custom-primary" onclick="switchToAddTab()">
+                            <i class="bi bi-plus-lg"></i> Add Principal
                         </button>
                     </div>
                 <?php else: ?>
+                    
                     <!-- Current Principal Info -->
                     <?php if ($current_principal): ?>
-                    <div class="card mb-4">
-                        <div class="card-body">
-                            <div class="d-flex align-items-center">
-                                <?php if ($current_principal['profile_picture']): ?>
-                                    <img src="<?php echo htmlspecialchars($current_principal['profile_picture']); ?>" 
-                                         alt="Profile Picture" class="current-principal-avatar">
-                                <?php else: ?>
-                                    <div class="current-principal-avatar bg-secondary d-flex align-items-center justify-content-center text-white">
-                                        <i class="bi bi-person" style="font-size: 2rem;"></i>
-                                    </div>
-                                <?php endif; ?>
-                                <div class="flex-grow-1">
-                                    <div class="d-flex justify-content-between align-items-start">
-                                        <div>
-                                            <h5 class="card-title mb-1"><i class="bi bi-person-check"></i> Current Active Principal</h5>
-                                            <div class="row">
-                                                <div class="col-md-4">
-                                                    <strong>Name:</strong> <?php echo htmlspecialchars($current_principal['FullName']); ?>
-                                                </div>
-                                                <div class="col-md-4">
-                                                    <strong>Position:</strong> <?php echo htmlspecialchars($current_principal['Position']); ?>
-                                                </div>
-                                                <div class="col-md-4">
-                                                    <strong>Email:</strong> <?php echo htmlspecialchars($current_principal['Email']); ?>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <button type="button" class="btn btn-primary" 
-                                                data-bs-toggle="modal" 
-                                                data-bs-target="#editPrincipalModal"
-                                                onclick="loadPrincipalData(<?php echo $current_principal['AdminID']; ?>, '<?php echo htmlspecialchars($current_principal['FullName']); ?>', '<?php echo htmlspecialchars($current_principal['Position']); ?>', '<?php echo htmlspecialchars($current_principal['Email']); ?>', '<?php echo $current_principal['profile_picture'] ? htmlspecialchars($current_principal['profile_picture']) : ''; ?>')">
-                                            <i class="bi bi-pencil"></i> Edit
-                                        </button>
-                                    </div>
-                                </div>
+                    <div class="glass-card text-center mb-5">
+                        <?php if ($current_principal['profile_picture']): ?>
+                            <img src="<?php echo htmlspecialchars($current_principal['profile_picture']); ?>" 
+                                 alt="Profile Picture" class="profile-avatar-large mx-auto">
+                        <?php else: ?>
+                            <div class="avatar-placeholder-large mx-auto">
+                                <i class="bi bi-person"></i>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <span class="badge status-badge status-active mb-3"><i class="bi bi-check-circle-fill me-1"></i> Current Active Principal</span>
+                        <h3 class="fw-bold mb-1"><?php echo htmlspecialchars($current_principal['FullName']); ?></h3>
+                        <p class="text-muted mb-4"><?php echo htmlspecialchars($current_principal['Position']); ?></p>
+                        
+                        <div class="d-flex justify-content-center gap-4 mb-4">
+                            <div class="text-center">
+                                <div class="text-muted small text-uppercase fw-semibold mb-1">Email Address</div>
+                                <div class="fw-medium"><i class="bi bi-envelope-fill text-primary me-2"></i><?php echo htmlspecialchars($current_principal['Email']); ?></div>
                             </div>
                         </div>
+                        
+                        <button type="button" class="btn btn-custom-secondary" 
+                                data-bs-toggle="modal" 
+                                data-bs-target="#editPrincipalModal"
+                                onclick="loadPrincipalData(<?php echo $current_principal['AdminID']; ?>, '<?php echo htmlspecialchars($current_principal['FullName']); ?>', '<?php echo htmlspecialchars($current_principal['Position']); ?>', '<?php echo htmlspecialchars($current_principal['Email']); ?>', '<?php echo $current_principal['profile_picture'] ? htmlspecialchars($current_principal['profile_picture']) : ''; ?>')">
+                            <i class="bi bi-pencil"></i> Edit Profile
+                        </button>
                     </div>
                     <?php endif; ?>
                     
                     <!-- Principals List -->
-                    <div class="card">
-                        <div class="card-header bg-primary text-white">
-                            <h5 class="mb-0"><i class="bi bi-list"></i> Principals List</h5>
+                    <div class="glass-card p-0 overflow-hidden">
+                        <div class="p-4 border-bottom border-light">
+                            <h5 class="fw-bold mb-0"><i class="bi bi-list-ul me-2 text-primary"></i> Directory</h5>
                         </div>
-                        <div class="card-body">
-                            <div class="table-responsive">
-                                <table class="table table-striped">
-                                    <thead>
+                        <div class="table-responsive">
+                            <table class="table table-custom mb-0">
+                                <thead class="bg-light">
+                                    <tr>
+                                        <th class="ps-4">Profile</th>
+                                        <th>Name</th>
+                                        <th>Position</th>
+                                        <th>Email</th>
+                                        <th>Status</th>
+                                        <th>Created Date</th>
+                                        <th class="pe-4 text-end">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($principals as $principal): ?>
                                         <tr>
-                                            <th>Profile</th>
-                                            <th>Name</th>
-                                            <th>Position</th>
-                                            <th>Email</th>
-                                            <th>Status</th>
-                                            <th>Created Date</th>
-                                            <th>Actions</th>
+                                            <td class="ps-4">
+                                                <?php if ($principal['profile_picture']): ?>
+                                                    <img src="<?php echo htmlspecialchars($principal['profile_picture']); ?>" 
+                                                         alt="Profile Picture" class="profile-avatar-small shadow-sm">
+                                                <?php else: ?>
+                                                    <div class="profile-avatar-small bg-light d-flex align-items-center justify-content-center text-muted border shadow-sm">
+                                                        <i class="bi bi-person"></i>
+                                                    </div>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td class="fw-medium"><?php echo htmlspecialchars($principal['FullName']); ?></td>
+                                            <td class="text-muted"><?php echo htmlspecialchars($principal['Position']); ?></td>
+                                            <td><?php echo htmlspecialchars($principal['Email']); ?></td>
+                                            <td>
+                                                <span class="badge status-badge <?php echo $principal['status'] === 'active' ? 'status-active' : 'status-inactive'; ?>">
+                                                    <?php echo ucfirst($principal['status']); ?>
+                                                </span>
+                                            </td>
+                                            <td class="text-muted"><?php echo date('M j, Y', strtotime($principal['CreatedAt'])); ?></td>
+                                            <td class="pe-4 text-end">
+                                                <?php if ($principal['status'] === 'inactive'): ?>
+                                                    <form method="POST" action="" style="display: inline;">
+                                                        <input type="hidden" name="admin_id" value="<?php echo $principal['AdminID']; ?>">
+                                                        <button type="submit" name="activate_principal" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-medium" 
+                                                                onclick="return confirm('Activate this principal? This will deactivate the current active principal.')">
+                                                            <i class="bi bi-arrow-repeat"></i> Set Active
+                                                        </button>
+                                                    </form>
+                                                <?php endif; ?>
+                                            </td>
                                         </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php foreach ($principals as $principal): ?>
-                                            <tr>
-                                                <td>
-                                                    <?php if ($principal['profile_picture']): ?>
-                                                        <img src="<?php echo htmlspecialchars($principal['profile_picture']); ?>" 
-                                                             alt="Profile Picture" class="profile-avatar-small">
-                                                    <?php else: ?>
-                                                        <div class="profile-avatar-small bg-secondary d-flex align-items-center justify-content-center text-white">
-                                                            <i class="bi bi-person"></i>
-                                                        </div>
-                                                    <?php endif; ?>
-                                                </td>
-                                                <td><?php echo htmlspecialchars($principal['FullName']); ?></td>
-                                                <td><?php echo htmlspecialchars($principal['Position']); ?></td>
-                                                <td><?php echo htmlspecialchars($principal['Email']); ?></td>
-                                                <td>
-                                                    <span class="badge <?php echo $principal['status'] === 'active' ? 'bg-success' : 'bg-secondary'; ?>">
-                                                        <?php echo ucfirst($principal['status']); ?>
-                                                    </span>
-                                                </td>
-                                                <td><?php echo date('M j, Y', strtotime($principal['CreatedAt'])); ?></td>
-                                                <td>
-                                                    <?php if ($principal['status'] === 'inactive'): ?>
-                                                        <form method="POST" action="" style="display: inline;">
-                                                            <input type="hidden" name="admin_id" value="<?php echo $principal['AdminID']; ?>">
-                                                            <button type="submit" name="activate_principal" class="btn btn-sm btn-success" 
-                                                                    onclick="return confirm('Activate this principal? This will deactivate the current active principal.')">
-                                                                <i class="bi bi-check-circle"></i> Activate
-                                                            </button>
-                                                        </form>
-                                                    <?php else: ?>
-                                                        <span class="text-success">
-                                                            <i class="bi bi-check-circle"></i> Active
-                                                        </span>
-                                                    <?php endif; ?>
-                                                </td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
-                            </div>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 <?php endif; ?>
@@ -560,132 +915,89 @@ $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'manage';
             <div class="tab-pane fade <?php echo $active_tab === 'add' ? 'show active' : ''; ?>" 
                  id="pills-add" role="tabpanel">
                 
-                <!-- Current Principal Warning -->
-                <?php if ($current_principal): ?>
-                <div class="card mb-4">
-                    <div class="card-body">
-                        <div class="d-flex align-items-center">
-                            <?php if ($current_principal['profile_picture']): ?>
-                                <img src="<?php echo htmlspecialchars($current_principal['profile_picture']); ?>" 
-                                     alt="Profile Picture" class="current-principal-avatar">
-                            <?php else: ?>
-                                <div class="current-principal-avatar bg-secondary d-flex align-items-center justify-content-center text-white">
-                                    <i class="bi bi-person" style="font-size: 2rem;"></i>
+                <div class="glass-card">
+                    <h4 class="fw-bold mb-4"><i class="bi bi-person-plus text-primary me-2"></i> Register New Principal</h4>
+                    
+                    <form method="POST" action="" id="addPrincipalForm" enctype="multipart/form-data">
+                        <div class="row g-4 mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label required">Full Name</label>
+                                <input type="text" class="form-control" name="full_name" 
+                                       value="<?php echo htmlspecialchars($_POST['full_name'] ?? ''); ?>" 
+                                       required placeholder="Enter full name">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label required">Position</label>
+                                <select class="form-select" name="position" required>
+                                    <option value="">Select Position</option>
+                                    <option value="Head teacher" <?php echo (($_POST['position'] ?? '') === 'Head teacher') ? 'selected' : ''; ?>>Head Teacher</option>
+                                    <option value="Principal" <?php echo (($_POST['position'] ?? '') === 'Principal') ? 'selected' : ''; ?>>Principal</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label required">Email Address</label>
+                                <input type="email" class="form-control" name="email" 
+                                       value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>" 
+                                       required placeholder="Enter email address">
+                                <div class="form-text text-muted small"><i class="bi bi-info-circle me-1"></i>Used for system login</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Profile Picture</label>
+                                <input type="file" class="form-control" name="profile_picture" 
+                                       accept="image/jpeg,image/jpg,image/png,image/gif">
+                                <div class="form-text text-muted small">Max 5MB (JPEG, JPG, PNG, GIF)</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label required">Password</label>
+                                <input type="password" class="form-control" name="password" 
+                                       minlength="6" required placeholder="Minimum 6 characters">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label required">Confirm Password</label>
+                                <input type="password" class="form-control" name="confirm_password" 
+                                       minlength="6" required placeholder="Retype password">
+                            </div>
+                        </div>
+                        
+                        <div class="p-4 bg-light rounded-4 mb-4 border border-warning border-opacity-25">
+                            <div class="d-flex align-items-center mb-3">
+                                <div class="bg-warning bg-opacity-10 text-warning rounded-circle p-2 me-3">
+                                    <i class="bi bi-shield-lock-fill fs-5"></i>
                                 </div>
-                            <?php endif; ?>
-                            <div>
-                                <h5 class="card-title mb-1"><i class="bi bi-person-check"></i> Current Active Principal</h5>
-                                <div class="row">
-                                    <div class="col-md-4">
-                                        <strong>Name:</strong> <?php echo htmlspecialchars($current_principal['FullName']); ?>
-                                    </div>
-                                    <div class="col-md-4">
-                                        <strong>Position:</strong> <?php echo htmlspecialchars($current_principal['Position']); ?>
-                                    </div>
-                                    <div class="col-md-4">
-                                        <strong>Email:</strong> <?php echo htmlspecialchars($current_principal['Email']); ?>
-                                    </div>
+                                <div>
+                                    <h6 class="fw-bold mb-0">Security Verification</h6>
+                                    <p class="text-muted small mb-0">This action logs out the current principal and requires authorization.</p>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label class="form-label required">Admin Password</label>
+                                    <input type="password" class="form-control border-warning border-opacity-50" name="admin_password" 
+                                           required placeholder="Enter current admin password">
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </div>
-                <?php endif; ?>
-                
-                <!-- Add New Principal Form -->
-                <div class="card">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0"><i class="bi bi-person-plus"></i> New Principal Information</h5>
-                    </div>
-                    <div class="card-body">
-                        <form method="POST" action="" id="addPrincipalForm" enctype="multipart/form-data">
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label required fw-bold">Full Name</label>
-                                    <input type="text" class="form-control" name="full_name" 
-                                           value="<?php echo htmlspecialchars($_POST['full_name'] ?? ''); ?>" 
-                                           required placeholder="Enter full name">
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label required fw-bold">Position</label>
-                                    <select class="form-select" name="position" required>
-                                        <option value="">Select Position</option>
-                                        <option value="Head teacher" <?php echo (($_POST['position'] ?? '') === 'Head teacher') ? 'selected' : ''; ?>>Head Teacher</option>
-                                        <option value="Principal" <?php echo (($_POST['position'] ?? '') === 'Principal') ? 'selected' : ''; ?>>Principal</option>
-                                    </select>
-                                </div>
-                            </div>
-                            
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label required fw-bold">Email Address</label>
-                                    <input type="email" class="form-control" name="email" 
-                                           value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>" 
-                                           required placeholder="Enter email address">
-                                    <div class="form-text">This will be used for login</div>
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Profile Picture</label>
-                                    <input type="file" class="form-control" name="profile_picture" 
-                                           accept="image/jpeg,image/jpg,image/png,image/gif">
-                                    <div class="form-text">Optional: JPEG, JPG, PNG, GIF. Max 5MB</div>
-                                </div>
-                            </div>
-                            
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label required fw-bold">Password</label>
-                                    <input type="password" class="form-control" name="password" 
-                                           minlength="6" required placeholder="Enter password (min. 6 characters)">
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label required fw-bold">Confirm Password</label>
-                                    <input type="password" class="form-control" name="confirm_password" 
-                                           minlength="6" required placeholder="Confirm password">
-                                </div>
-                            </div>
-                            
-                            <hr>
-                            
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label required fw-bold">Admin Password</label>
-                                    <input type="password" class="form-control" name="admin_password" 
-                                           required placeholder="Enter your admin password">
-                                    <div class="form-text">For security verification</div>
-                                </div>
-                            </div>
-                            
-                            <div class="alert alert-warning">
-                                <h6><i class="bi bi-exclamation-triangle"></i> Important Notice</h6>
-                                <ul class="mb-0">
-                                    <li>The current principal will be set to <strong>inactive</strong></li>
-                                    <li>This action requires admin password verification</li>
-                                    <li>The new principal will have full administrative access</li>
-                                    <li>This action will be logged for security purposes</li>
-                                </ul>
-                            </div>
-                            
-                            <div class="d-flex justify-content-between align-items-center">
-                                <button type="submit" name="add_principal" class="btn btn-primary" 
-                                        onclick="return confirmAddPrincipal()">
-                                    <i class="bi bi-person-plus"></i> Add New Principal
-                                </button>
-                            </div>
-                        </form>
-                    </div>
+                        
+                        <div class="text-end">
+                            <button type="submit" name="add_principal" class="btn btn-custom-primary px-5" 
+                                    onclick="return confirmAddPrincipal()">
+                                <i class="bi bi-check-lg"></i> Register Principal
+                            </button>
+                        </div>
+                    </form>
                 </div>
             </div>
+            
         </div>
     </div>
 
     <!-- Edit Principal Modal -->
-    <div class="modal fade" id="editPrincipalModal" tabindex="-1" aria-labelledby="editPrincipalModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
+    <div class="modal fade" id="editPrincipalModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content">
-                <div class="modal-header bg-warning text-dark">
-                    <h5 class="modal-title" id="editPrincipalModalLabel">
-                        <i class="bi bi-pencil"></i> Edit Principal Information
+                <div class="modal-header-custom">
+                    <h5 class="modal-title fw-bold">
+                        <i class="bi bi-pencil-square me-2"></i> Edit Principal Profile
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
@@ -694,70 +1006,95 @@ $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'manage';
                         <input type="hidden" name="admin_id" id="edit_admin_id">
                         <input type="hidden" name="update_principal" value="1">
                         
-                        <!-- Current Profile Picture -->
                         <div class="text-center mb-4">
-                            <img id="current_profile_picture" src="" alt="Current Profile Picture" class="modal-profile-picture">
-                            <div id="no_profile_picture" class="modal-profile-picture bg-secondary d-flex align-items-center justify-content-center text-white" style="display: none;">
-                                <i class="bi bi-person" style="font-size: 2.5rem;"></i>
+                            <img id="current_profile_picture" src="" alt="Profile" class="profile-avatar-large d-block mx-auto mt-0 mb-2 border">
+                            <div id="no_profile_picture" class="avatar-placeholder-large mx-auto mt-0 mb-2" style="display: none;">
+                                <i class="bi bi-person"></i>
                             </div>
-                            <p class="text-muted mb-0">Current Profile Picture</p>
+                            <p class="text-muted small text-uppercase fw-semibold">Current Avatar</p>
                         </div>
                         
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label required fw-bold">Full Name</label>
+                        <div class="row g-4 mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label required">Full Name</label>
                                 <input type="text" class="form-control" id="edit_full_name" name="full_name" required>
                             </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label required fw-bold">Position</label>
+                            <div class="col-md-6">
+                                <label class="form-label required">Position</label>
                                 <select class="form-select" id="edit_position" name="position" required>
                                     <option value="Head teacher">Head Teacher</option>
                                     <option value="Principal">Principal</option>
                                 </select>
                             </div>
-                        </div>
-                        
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label required fw-bold">Email Address</label>
+                            <div class="col-md-6">
+                                <label class="form-label required">Email Address</label>
                                 <input type="email" class="form-control" id="edit_email" name="email" required>
-                                <div class="form-text">This will be used for login</div>
                             </div>
-                            <div class="col-md-6 mb-3">
+                            <div class="col-md-6">
                                 <label class="form-label">New Profile Picture</label>
-                                <input type="file" class="form-control" name="profile_picture" 
-                                       accept="image/jpeg,image/jpg,image/png,image/gif">
-                                <div class="form-text">Optional: JPEG, JPG, PNG, GIF. Max 5MB</div>
+                                <input type="file" class="form-control" name="profile_picture" accept="image/jpeg,image/jpg,image/png,image/gif">
                             </div>
                         </div>
                         
-                        <hr>
-                        
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label required fw-bold">Admin Password</label>
-                                <input type="password" class="form-control" name="admin_password" 
-                                       required placeholder="Enter your admin password">
-                                <div class="form-text">For security verification</div>
-                            </div>
-                        </div>
-                        
-                        <div class="alert alert-info">
-                            <h6><i class="bi bi-info-circle"></i> Update Information</h6>
-                            <ul class="mb-0">
-                                <li>Upload a new profile picture only if you want to change the current one</li>
-                                <li>This action requires admin password verification</li>
-                                <li>This action will be logged for security purposes</li>
-                            </ul>
+                        <div class="p-3 bg-light rounded-3 border">
+                            <label class="form-label required text-danger"><i class="bi bi-shield-lock me-1"></i> Admin Password</label>
+                            <input type="password" class="form-control" name="admin_password" required placeholder="Verify to update">
                         </div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                            <i class="bi bi-x-circle"></i> Cancel
-                        </button>
-                        <button type="submit" class="btn btn-warning">
-                            <i class="bi bi-check-circle"></i> Update Principal
-                        </button>
+                    <div class="modal-footer bg-light">
+                        <button type="button" class="btn btn-custom-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-custom-primary">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Edit School Modal -->
+    <div class="modal fade" id="editSchoolModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header-custom">
+                    <h5 class="modal-title fw-bold">
+                        <i class="bi bi-building-add me-2"></i> Edit School Details
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form method="POST" action="" id="editSchoolForm">
+                    <div class="modal-body">
+                        <input type="hidden" name="update_school_details" value="1">
+                        
+                        <div class="row g-4 mb-4">
+                            <div class="col-12">
+                                <label class="form-label required">School Name</label>
+                                <input type="text" class="form-control" name="school_name" value="<?php echo htmlspecialchars($school_info['school_name'] ?? ''); ?>" required>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label required">School Address</label>
+                                <input type="text" class="form-control" name="school_address" value="<?php echo htmlspecialchars($school_info['school_address'] ?? ''); ?>" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Region</label>
+                                <input type="text" class="form-control" name="region" value="<?php echo htmlspecialchars($school_info['region'] ?? ''); ?>">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Division</label>
+                                <input type="text" class="form-control" name="division" value="<?php echo htmlspecialchars($school_info['division'] ?? ''); ?>">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Sub-Office</label>
+                                <input type="text" class="form-control" name="sub_office" value="<?php echo htmlspecialchars($school_info['sub_office'] ?? ''); ?>">
+                            </div>
+                        </div>
+                        
+                        <div class="p-3 bg-light rounded-3 border">
+                            <label class="form-label required text-danger"><i class="bi bi-shield-lock me-1"></i> Admin Password</label>
+                            <input type="password" class="form-control" name="admin_password" required placeholder="Verify to update">
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light">
+                        <button type="button" class="btn btn-custom-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-custom-primary">Save Changes</button>
                     </div>
                 </form>
             </div>
@@ -771,26 +1108,19 @@ $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'manage';
             addTab.show();
         }
         
-        function switchToManageTab() {
-            const manageTab = new bootstrap.Tab(document.getElementById('pills-manage-tab'));
-            manageTab.show();
-        }
-        
         function confirmAddPrincipal() {
             const currentPrincipal = "<?php echo $current_principal ? htmlspecialchars($current_principal['FullName']) : 'None'; ?>";
             const newPrincipal = document.querySelector('input[name="full_name"]').value;
-            
+            if(!newPrincipal) return true;
             return confirm(`Are you sure you want to add a new principal?\n\nCurrent Principal: ${currentPrincipal}\nNew Principal: ${newPrincipal}\n\nThis will set the current principal to inactive.`);
         }
         
-        // Function to load principal data into modal
         function loadPrincipalData(adminId, fullName, position, email, profilePicture) {
             document.getElementById('edit_admin_id').value = adminId;
             document.getElementById('edit_full_name').value = fullName;
             document.getElementById('edit_position').value = position;
             document.getElementById('edit_email').value = email;
             
-            // Handle profile picture display
             const profileImg = document.getElementById('current_profile_picture');
             const noProfileDiv = document.getElementById('no_profile_picture');
             
@@ -803,20 +1133,13 @@ $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'manage';
                 noProfileDiv.style.display = 'flex';
             }
             
-            // Clear the file input
             const fileInput = document.querySelector('#editPrincipalForm input[type="file"]');
-            if (fileInput) {
-                fileInput.value = '';
-            }
+            if (fileInput) fileInput.value = '';
             
-            // Clear admin password field
             const adminPasswordInput = document.querySelector('#editPrincipalForm input[name="admin_password"]');
-            if (adminPasswordInput) {
-                adminPasswordInput.value = '';
-            }
+            if (adminPasswordInput) adminPasswordInput.value = '';
         }
         
-        // Real-time password validation for add form
         document.addEventListener('DOMContentLoaded', function() {
             const password = document.querySelector('input[name="password"]');
             const confirmPassword = document.querySelector('input[name="confirm_password"]');
@@ -834,13 +1157,12 @@ $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'manage';
                 confirmPassword.addEventListener('input', validatePasswords);
             }
             
-            // File size validation
             const profilePictureInputs = document.querySelectorAll('input[name="profile_picture"]');
             profilePictureInputs.forEach(input => {
                 input.addEventListener('change', function() {
                     const file = this.files[0];
                     if (file) {
-                        const maxSize = 5 * 1024 * 1024; // 5MB
+                        const maxSize = 5 * 1024 * 1024;
                         if (file.size > maxSize) {
                             alert('File size exceeds 5MB. Please choose a smaller file.');
                             this.value = '';
@@ -849,7 +1171,6 @@ $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'manage';
                 });
             });
             
-            // Auto-dismiss alerts after 5 seconds
             const alerts = document.querySelectorAll('.alert');
             alerts.forEach(alert => {
                 setTimeout(() => {
@@ -860,7 +1181,6 @@ $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'manage';
                 }, 5000);
             });
             
-            // Set active tab based on URL parameter
             const urlParams = new URLSearchParams(window.location.search);
             const tab = urlParams.get('tab');
             if (tab) {
@@ -871,14 +1191,19 @@ $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'manage';
                 }
             }
             
-            // Clear modal form when modal is hidden
             const editModal = document.getElementById('editPrincipalModal');
             if (editModal) {
                 editModal.addEventListener('hidden.bs.modal', function () {
                     const form = document.getElementById('editPrincipalForm');
-                    if (form) {
-                        form.reset();
-                    }
+                    if (form) form.reset();
+                });
+            }
+            
+            const schoolModal = document.getElementById('editSchoolModal');
+            if (schoolModal) {
+                schoolModal.addEventListener('hidden.bs.modal', function () {
+                    const form = document.getElementById('editSchoolForm');
+                    if (form) form.reset();
                 });
             }
         });

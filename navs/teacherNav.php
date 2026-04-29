@@ -2,6 +2,15 @@
   if (session_status() === PHP_SESSION_NONE) session_start();
 
   $profilePicturePath = '../img/default.jpg';
+  
+  // Dynamic path prefix for reports/ subdirectory
+  $current_dir = dirname($_SERVER['SCRIPT_NAME']);
+  $path_prefix = (strpos($current_dir, '/reports') !== false) ? '../../' : '../';
+  
+  if (strpos($current_dir, '/reports') !== false) {
+      $profilePicturePath = '../../img/default.jpg';
+  }
+
   $t_db_full_name     = '';
   $isAdviser          = false;
 
@@ -456,7 +465,7 @@
 <!-- ── Header ── -->
 <nav class="app-header" id="appHeader">
   <div class="header-left">
-    <img src="../img/logo.png" alt="Logo" id="headerLogo">
+    <img src="<?php echo $path_prefix; ?>img/logo.png" alt="Logo" id="headerLogo">
     <span id="headerTitle">SMARTCARD</span>
     <button class="sidebar-toggle" id="sidebarToggle" title="Toggle Sidebar">
       <i class="bi bi-layout-sidebar" id="toggleIcon"></i>
@@ -488,7 +497,7 @@
 ?>
 <div class="admin-sidebar" id="adminSidebar">
   <div class="sidebar-topbar">
-    <img src="../img/logo.png" alt="Logo">
+    <img src="<?php echo $path_prefix; ?>img/logo.png" alt="Logo">
     <span class="sidebar-title">SMARTCARD</span>
     <button class="sidebar-close-btn" id="sidebarCloseBtn" title="Close">
       <i class="bi bi-layout-sidebar-reverse"></i>
@@ -505,26 +514,26 @@
 
   <div class="sidebar-content">
     <nav class="nav flex-column">
-      <a class="nav-link" href="../teacher/tdashboard.php">
+      <a class="nav-link" href="<?php echo $path_prefix; ?>teacher/tdashboard.php">
         <i class="bi bi-speedometer2"></i><span>Dashboard</span>
       </a>
-      <a class="nav-link" href="../teacher/select_class.php">
+      <a class="nav-link" href="<?php echo $path_prefix; ?>teacher/select_class.php">
         <i class="bi bi-calendar-check"></i><span>Attendance</span>
       </a>
-      <a class="nav-link" href="../teacher/grading_sheet.php">
+      <a class="nav-link" href="<?php echo $path_prefix; ?>teacher/grading_sheet.php">
         <i class="bi bi-book"></i><span>Grades</span>
       </a>
       <?php if ($isAdviser): ?>
-      <a class="nav-link" href="../teacher/values.php">
+      <a class="nav-link" href="<?php echo $path_prefix; ?>teacher/values.php">
         <i class="bi bi-card-list"></i><span>Values</span>
       </a>
-      <a class="nav-link" href="../teacher/record.php">
-        <i class="bi bi-folder"></i><span>Card</span>
+      <a class="nav-link" href="<?php echo $path_prefix; ?>teacher/record.php">
+        <i class="bi bi-folder"></i><span>Reports</span>
       </a>
-      <a class="nav-link" href="../teacher/achievement.php">
+      <a class="nav-link" href="<?php echo $path_prefix; ?>teacher/achievement.php">
         <i class="bi bi-award"></i><span>Achievements</span>
       </a>
-      <a class="nav-link" href="../teacher/announcement.php">
+      <a class="nav-link" href="<?php echo $path_prefix; ?>teacher/announcement.php">
         <i class="bi bi-bell"></i><span>Announcements</span>
       </a>
       <?php endif; ?>
@@ -535,7 +544,7 @@
     <!-- Popup menu (above) -->
     <div class="footer-popup" id="footerPopup">
       <a href="profile.php"><i class="bi bi-person-circle"></i> Profile</a>
-      <a href="../logout.php" class="danger"><i class="bi bi-box-arrow-right"></i> Sign Out</a>
+      <a href="<?php echo $path_prefix; ?>logout.php" class="danger"><i class="bi bi-box-arrow-right"></i> Sign Out</a>
     </div>
     <!-- Clickable user card -->
     <button class="footer-user-btn" id="footerUserBtn" type="button">
